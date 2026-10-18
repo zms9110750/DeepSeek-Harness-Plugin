@@ -1,0 +1,6 @@
+内容去看https://github.com/esengine/DeepSeek-Reasonix/discussions/11894
+
+检查是否有一种，类似于git的，把消息记录分支出来的东西。然后需要一种，配套的，计划表。当当前计划结束的时候，提供一个摘要，然后返回到这个消息的创建处分支，把摘要接上去。然后继续。隐藏之前的细节。
+
+这里有一个拟定的提案格式。先看。详细内容还需要进一步设计。
+C:\Users\16229\source\OpenSourceLibrary\ZMS.MCP\src\ZMS.MCP.Refactoring\plan\提案格式.md

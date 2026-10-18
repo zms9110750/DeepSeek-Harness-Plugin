@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "UI Screenshot",
+    "description": "Captures the current Harness window as a PNG. Only available when a rendered UI is attached."
+  }
+}
