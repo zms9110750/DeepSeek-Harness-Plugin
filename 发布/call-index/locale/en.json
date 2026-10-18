@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Call Index",
+    "description": "Numbers every tool call (#n), appends the number to its result, and lets the model list or re-show a call by number."
+  }
+}

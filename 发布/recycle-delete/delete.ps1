@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName Microsoft.VisualBasic
 
 if (-not (Test-Path -LiteralPath $Path)) {
-  throw '路劲不存在：' + $Path
+  throw '路径不存在：' + $Path
 }
 
 $item = Get-Item -LiteralPath $Path -Force

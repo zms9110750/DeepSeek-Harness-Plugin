@@ -1,6 +1,7 @@
 node_modules/
 *.log
 研究/screenshots/
+screenshots/
 
 # 编辑器/工具产物
 .vs/

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Call Index">
+  <rect x="8" y="12" width="48" height="40" rx="5" fill="#f7f9fc" stroke="#247bbf" stroke-width="3"/>
+  <text x="18" y="38" font-family="monospace" font-size="18" fill="#247bbf" font-weight="bold">#</text>
+  <text x="30" y="38" font-family="monospace" font-size="18" fill="#e2563f" font-weight="bold">1</text>
+  <line x1="14" y1="46" x2="50" y2="46" stroke="#247bbf" stroke-width="2" opacity="0.5"/>
+</svg>

@@ -1,0 +1,3 @@
+- insert:
+    - id: call-index
+      name: '@local/call-index'
