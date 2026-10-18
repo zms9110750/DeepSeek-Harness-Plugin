@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="DeepSeek Chat">
+  <path d="M10 18 Q10 12 16 12 L48 12 Q54 12 54 18 L54 40 Q54 46 48 46 L30 46 L20 54 L20 46 L16 46 Q10 46 10 40 Z"
+        fill="#f7f9fc" stroke="#247bbf" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="24" cy="29" r="3" fill="#247bbf"/>
+  <circle cx="32" cy="29" r="3" fill="#247bbf"/>
+  <circle cx="40" cy="29" r="3" fill="#247bbf"/>
+</svg>
