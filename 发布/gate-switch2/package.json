@@ -1,32 +1,26 @@
 {
-  "name": "@local/gate-button",
-  "version": "1.0.0",
+  "name": "@local/gate-switch2",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./index.js",
-    "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
   "files": [
     "index.js",
-    "client.js",
     "cordis.patch.yml",
     "locale/en.json",
     "locale/zh.json",
     "icon.svg"
   ],
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "immediately": true,
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-conversation"
-      ]
     }
   }
 }

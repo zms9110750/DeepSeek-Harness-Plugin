@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gate Toggle",
+    "description": "A switch in the composer that reads the gate state from the session projection, so typed commands and the button always agree."
+  }
+}

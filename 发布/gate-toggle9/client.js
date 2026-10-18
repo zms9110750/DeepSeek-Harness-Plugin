@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: '@local/gate-button',
+  id: '@local/gate-toggle9',
   factory(require) {
     const React = require('react');
 
@@ -8,61 +8,16 @@ window.__ModuleLoader__.load({
     /** Captured in apply(); the component has no direct access to the context. */
     let pluginCtx = null;
 
-    /** The Remote facade, however this build exposes it. */
-    function remoteOf() {
-      if (!pluginCtx) return undefined;
-
-      // A Cordis context throws on an unavailable service property, so every
-      // probe has to be guarded; ctx.get() is the documented lookup.
-      try {
-        if (typeof pluginCtx.get === 'function') {
-          const viaGet = pluginCtx.get('remote');
-          if (viaGet) return viaGet;
-        }
-      } catch {
-        /* fall through to the property probe */
-      }
-
-      try {
-        return pluginCtx.remote ?? undefined;
-      } catch {
-        return undefined;
-      }
-    }
-
-    /**
-     * Run one host command line. The Client face binds the agent itself in some
-     * builds and takes it explicitly in others, so try the declared arity first
-     * and fall back.
-     */
     async function runCommand(line, sessionId) {
-      const remote = remoteOf();
-      if (!remote) {
-        throw new Error('拿不到 ctx.remote（已试 ctx.get 与属性访问）');
-      }
-
-      const commands = remote.commands;
-      if (!commands || typeof commands.execute !== 'function') {
-        throw new Error('ctx.remote 里没有 commands.execute');
-      }
-
-      const signal = new AbortController().signal;
-      const agent = sessionId === undefined ? undefined : { id: sessionId };
-
-      if (commands.execute.length >= 4 && agent) {
-        return commands.execute(agent, line, [], signal);
-      }
-
-      try {
-        return await commands.execute(line, [], signal);
-      } catch (error) {
-        if (!agent) throw error;
-        return commands.execute(agent, line, [], signal);
-      }
+      return pluginCtx.remote.commands.execute(sessionId, line, []);
     }
 
-    function GateButton(props) {
-      const [closed, setClosed] = React.useState(false);
+    function GateToggle(props) {
+      // The session projection is the single source of truth: the button, the
+      // typed command, and a reloaded page all read the same view.
+      const view = props.useProjection('gate');
+      const closed = Boolean(view && view.closed);
+
       const [busy, setBusy] = React.useState(false);
       const [error, setError] = React.useState('');
 
@@ -72,9 +27,7 @@ window.__ModuleLoader__.load({
         setError('');
 
         try {
-          const next = closed ? 'off' : 'on';
-          await runCommand('/gate ' + next, props.sessionId);
-          setClosed(next === 'on');
+          await runCommand('/gate ' + (closed ? 'off' : 'on'), props.sessionId);
         } catch (failure) {
           setError(String((failure && failure.message) || failure));
         } finally {
@@ -113,7 +66,7 @@ window.__ModuleLoader__.load({
             type: 'button',
             onClick: click,
             disabled: busy,
-            title: note,
+            title: error || note,
             'aria-pressed': closed,
             style,
           },
@@ -127,7 +80,7 @@ window.__ModuleLoader__.load({
                 title: error,
                 style: {
                   fontSize: 11,
-                  maxWidth: 180,
+                  maxWidth: 150,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -141,17 +94,17 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots'],
+      inject: ['slots', 'remote', 'remote.commands'],
       apply(ctx) {
         pluginCtx = ctx;
         ctx.slots.inject('conversation.input.right', () =>
           ctx.slots.register(
             {
               name: 'conversation.input.right',
-              id: 'gate-button',
+              id: 'gate-toggle9',
               order: 20,
             },
-            GateButton,
+            GateToggle,
           ),
         );
       },

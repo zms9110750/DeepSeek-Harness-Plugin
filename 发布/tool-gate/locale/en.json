@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "Tool Gate",
-    "description": "A challenge switch: blocks every tool call in this session, including reading files, and tells the model it is blocked."
-  }
-}

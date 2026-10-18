@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gate Switch",
+    "description": "Blocks every tool call in this session, and publishes the switch state as a session projection so any UI can read it."
+  }
+}

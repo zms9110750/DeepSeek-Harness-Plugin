@@ -3,6 +3,9 @@ node_modules/
 研究/screenshots/
 screenshots/
 
+# 从 app.asar 解出来的源码树（可重新生成，183MB）
+探针/asar/
+
 # 编辑器/工具产物
 .vs/
 *.vsidx
