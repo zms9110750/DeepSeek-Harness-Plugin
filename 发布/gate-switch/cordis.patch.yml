@@ -1,0 +1,3 @@
+- insert:
+    - id: gate-switch
+      name: '@local/gate-switch'

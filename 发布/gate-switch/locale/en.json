@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gate Switch",
+    "description": "A slash command that blocks every tool call in this session. It is the user's control, not the model's."
+  }
+}

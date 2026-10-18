@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gate Button",
+    "description": "A switch in the composer that blocks every tool call in this session."
+  }
+}
