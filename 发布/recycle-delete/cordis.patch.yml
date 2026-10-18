@@ -1,0 +1,3 @@
+- insert:
+    - id: recycle-delete
+      name: '@local/recycle-delete'

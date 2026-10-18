@@ -1,3 +1,8 @@
 node_modules/
 *.log
 研究/screenshots/
+
+# 编辑器/工具产物
+.vs/
+*.vsidx
+*.suo

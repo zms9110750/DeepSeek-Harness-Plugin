@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Recycle Delete">
+  <rect x="18" y="18" width="28" height="8" rx="2" fill="none" stroke="#247bbf" stroke-width="3"/>
+  <path d="M22 26 L25 52 Q25.5 55 28.5 55 L35.5 55 Q38.5 55 39 52 L42 26" fill="none" stroke="#247bbf" stroke-width="3" stroke-linejoin="round"/>
+  <line x1="27" y1="32" x2="28" y2="48" stroke="#247bbf" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="37" y1="32" x2="36" y2="48" stroke="#247bbf" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M26 18 Q26 12 32 12 Q38 12 38 18" fill="none" stroke="#247bbf" stroke-width="3" stroke-linecap="round"/>
+  <path d="M45 40 A 10 10 0 0 1 45 52" fill="none" stroke="#4aa96c" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M42 50 L45 53 L49 50" fill="none" stroke="#4aa96c" stroke-width="2.6" stroke-linecap="round"/>
+</svg>

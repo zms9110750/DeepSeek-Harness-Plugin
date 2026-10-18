@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Recycle Delete",
+    "description": "Deletes a file or folder to the Windows Recycle Bin. Never deletes permanently; refuses when the item cannot be recycled."
+  }
+}
