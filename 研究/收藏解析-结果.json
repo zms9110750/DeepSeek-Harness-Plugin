@@ -1,0 +1,568 @@
+{
+  "source": "C:\\Users\\16229\\Desktop\\收藏20261018-221510.html",
+  "parsedAt": "2026-10-18T14:27:13.414Z",
+  "totals": {
+    "items": 1866,
+    "uniqueUrls": 1812,
+    "duplicateUrls": 54,
+    "folders": 86,
+    "maxDepth": 5,
+    "rootItems": 0,
+    "rootChildren": 2
+  },
+  "topLevel": [
+    {
+      "name": "手机收藏",
+      "total": 50
+    },
+    {
+      "name": "收藏栏",
+      "total": 1816
+    }
+  ],
+  "groups": [
+    {
+      "path": "手机收藏",
+      "own": 50,
+      "total": 50,
+      "children": 1
+    },
+    {
+      "path": "手机收藏/新闻",
+      "own": 0,
+      "total": 0,
+      "children": 0
+    },
+    {
+      "path": "收藏栏",
+      "own": 43,
+      "total": 1816,
+      "children": 4
+    },
+    {
+      "path": "收藏栏/游戏",
+      "own": 36,
+      "total": 150,
+      "children": 5
+    },
+    {
+      "path": "收藏栏/游戏/好玩游戏",
+      "own": 18,
+      "total": 18,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/游戏/回忆游戏",
+      "own": 49,
+      "total": 53,
+      "children": 1
+    },
+    {
+      "path": "收藏栏/游戏/回忆游戏/火柴人",
+      "own": 4,
+      "total": 4,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/游戏/老爹小店",
+      "own": 12,
+      "total": 12,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/游戏/网络游戏",
+      "own": 13,
+      "total": 13,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/游戏/无聊游戏",
+      "own": 18,
+      "total": 18,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/我的世界",
+      "own": 47,
+      "total": 441,
+      "children": 8
+    },
+    {
+      "path": "收藏栏/我的世界/1.11.2",
+      "own": 4,
+      "total": 4,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/我的世界/1.62",
+      "own": 38,
+      "total": 38,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/我的世界/1.7.10",
+      "own": 155,
+      "total": 155,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/我的世界/1.72",
+      "own": 114,
+      "total": 114,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/我的世界/教程",
+      "own": 40,
+      "total": 40,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/我的世界/引索",
+      "own": 20,
+      "total": 20,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/我的世界/整包",
+      "own": 6,
+      "total": 6,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/我的世界/MC地图",
+      "own": 17,
+      "total": 17,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物",
+      "own": 0,
+      "total": 431,
+      "children": 15
+    },
+    {
+      "path": "收藏栏/杂物/百度知道",
+      "own": 46,
+      "total": 46,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/孢子",
+      "own": 30,
+      "total": 30,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/游戏补丁/扩充/MOD",
+      "own": 4,
+      "total": 4,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/DNF多玩模型",
+      "own": 12,
+      "total": 12,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/DNF加点",
+      "own": 8,
+      "total": 8,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/多玩废弃",
+      "own": 27,
+      "total": 27,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/视频",
+      "own": 59,
+      "total": 96,
+      "children": 2
+    },
+    {
+      "path": "收藏栏/杂物/视频/我的世界",
+      "own": 26,
+      "total": 26,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/视频/优酷",
+      "own": 11,
+      "total": 11,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/整理1",
+      "own": 29,
+      "total": 29,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/整理2",
+      "own": 30,
+      "total": 30,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/整理3",
+      "own": 36,
+      "total": 36,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/整理4",
+      "own": 27,
+      "total": 27,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/整理5",
+      "own": 22,
+      "total": 22,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/整理6",
+      "own": 26,
+      "total": 26,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/整理7",
+      "own": 20,
+      "total": 20,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/杂物/整理8",
+      "own": 18,
+      "total": 18,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理",
+      "own": 21,
+      "total": 751,
+      "children": 6
+    },
+    {
+      "path": "收藏栏/整理/2019-10-26",
+      "own": 74,
+      "total": 74,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/cg",
+      "own": 25,
+      "total": 25,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/商品",
+      "own": 25,
+      "total": 25,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/编程",
+      "own": 71,
+      "total": 71,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/图库",
+      "own": 40,
+      "total": 40,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3",
+      "own": 0,
+      "total": 495,
+      "children": 7
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019上",
+      "own": 0,
+      "total": 32,
+      "children": 3
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019上/2019-4",
+      "own": 11,
+      "total": 11,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019上/2019-5",
+      "own": 6,
+      "total": 6,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019上/2019-6",
+      "own": 15,
+      "total": 15,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019下",
+      "own": 0,
+      "total": 128,
+      "children": 6
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019下/2019-7",
+      "own": 23,
+      "total": 23,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019下/2019-8",
+      "own": 25,
+      "total": 25,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019下/2019-9",
+      "own": 16,
+      "total": 16,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019下/2019-10",
+      "own": 42,
+      "total": 42,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019下/2019-11",
+      "own": 16,
+      "total": 16,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2019下/2019-12",
+      "own": 6,
+      "total": 6,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020上",
+      "own": 0,
+      "total": 55,
+      "children": 6
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020上/2020-1",
+      "own": 9,
+      "total": 9,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020上/2020-2",
+      "own": 9,
+      "total": 9,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020上/2020-3",
+      "own": 12,
+      "total": 12,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020上/2020-4",
+      "own": 12,
+      "total": 12,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020上/2020-5",
+      "own": 10,
+      "total": 10,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020上/2020-6",
+      "own": 3,
+      "total": 3,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020下",
+      "own": 0,
+      "total": 126,
+      "children": 6
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020下/2020-7",
+      "own": 28,
+      "total": 28,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020下/2020-8",
+      "own": 41,
+      "total": 41,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020下/2020-9",
+      "own": 18,
+      "total": 18,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020下/2020-10",
+      "own": 10,
+      "total": 10,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020下/2020-11",
+      "own": 11,
+      "total": 11,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2020下/2020-12",
+      "own": 18,
+      "total": 18,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021上",
+      "own": 0,
+      "total": 64,
+      "children": 6
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021上/2021-1",
+      "own": 2,
+      "total": 2,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021上/2021-2",
+      "own": 8,
+      "total": 8,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021上/2021-3",
+      "own": 19,
+      "total": 19,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021上/2021-4",
+      "own": 12,
+      "total": 12,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021上/2021-5",
+      "own": 10,
+      "total": 10,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021上/2021-6",
+      "own": 13,
+      "total": 13,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021下",
+      "own": 0,
+      "total": 72,
+      "children": 6
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021下/2021-7",
+      "own": 18,
+      "total": 18,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021下/2021-8",
+      "own": 3,
+      "total": 3,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021下/2021-9",
+      "own": 36,
+      "total": 36,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021下/2021-10",
+      "own": 7,
+      "total": 7,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021下/2021-11",
+      "own": 4,
+      "total": 4,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2021下/2021-12",
+      "own": 4,
+      "total": 4,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2022上",
+      "own": 0,
+      "total": 18,
+      "children": 2
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2022上/2022-1",
+      "own": 6,
+      "total": 6,
+      "children": 0
+    },
+    {
+      "path": "收藏栏/整理/新建文件夹3/2022上/2022-2",
+      "own": 12,
+      "total": 12,
+      "children": 0
+    }
+  ],
+  "sample": [
+    {
+      "path": "手机收藏",
+      "title": "湛蓝回忆",
+      "url": "http://m.so.com/s?q=%E6%B9%9B%E8%93%9D%E5%9B%9E%E5%BF%86&src=360aphone&user_id=1eb534b5d7bd69d67a1b60bea5e87ee7&poi_len=31&poi=PdhyZgc2KDD_XyjDBy8t4A8Jcxc5InKLTGBerJAmSs0=&tk=faf38e89556276a5caf49e56146e75bd&wid=1eb534b5d7bd69d67a1b60bea5e87ee7&chl=1001033"
+    },
+    {
+      "path": "手机收藏",
+      "title": "冷漠的微笑",
+      "url": "http://m.so.com/s?q=%E5%86%B7%E6%BC%A0%E7%9A%84%E5%BE%AE%E7%AC%91&src=360aphone&user_id=1eb534b5d7bd69d67a1b60bea5e87ee7&poi_len=31&poi=PdhyZgc2KDD_XyjDBy8t4A8Jcxc5InKLTGBerJAmSs0=&tk=faf38e89556276a5caf49e56146e75bd&wid=1eb534b5d7bd69d67a1b60bea5e87ee7&chl=1001033"
+    },
+    {
+      "path": "手机收藏",
+      "title": "是谁爱上我-360百科",
+      "url": "http://m.baike.so.com/doc/7254217-7483498.html"
+    },
+    {
+      "path": "手机收藏",
+      "title": "火影结印-好搜百科",
+      "url": "http://m.baike.haosou.com/doc/6037728-6250736.html"
+    },
+    {
+      "path": "手机收藏",
+      "title": "税收审计_法律法规中心_法易网法律法规库",
+      "url": "http://law.fayi.com.cn/type323.html"
+    }
+  ]
+}

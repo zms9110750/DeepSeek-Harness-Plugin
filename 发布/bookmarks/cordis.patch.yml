@@ -1,0 +1,3 @@
+- insert:
+    - id: bookmarks-tab10
+      name: '@local/bookmarks-tab10'

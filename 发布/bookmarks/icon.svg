@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Bookmarks">
+  <path d="M18 8 L46 8 Q50 8 50 12 L50 56 L32 44 L14 56 L14 12 Q14 8 18 8 Z"
+        fill="#f7f9fc" stroke="#247bbf" stroke-width="3" stroke-linejoin="round"/>
+  <line x1="23" y1="22" x2="41" y2="22" stroke="#247bbf" stroke-width="3" stroke-linecap="round"/>
+  <line x1="23" y1="30" x2="36" y2="30" stroke="#247bbf" stroke-width="3" stroke-linecap="round"/>
+</svg>
