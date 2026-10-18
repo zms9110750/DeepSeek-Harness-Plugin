@@ -1,15 +1,10 @@
-# A-问题
+# 需求
 
-## 痛点
-自定义工具一般以 MCP 实现。DSH 只有 `mcp-resources`（资源登记 + 三个共享工具），没有连接器，
-也没有官方 MCP bundle。外部工具接不进来。
+我做的东西基本都是 MCP 服务，我希望那边的工具能在这儿直接用。
 
-## 验收
-设置里能加一个 MCP 服务（JSON / 一行命令 / https 地址），列出工具数与 transport，能连能断。
+现在这儿只有 MCP 的"资源登记"，没有连接器 —— 接不进来。
 
-## 适用性
-stdio 要起子进程（沙箱问题）；http 要出网（VPN 问题）。
+我要的是：设置里能加一个 MCP 服务（贴一段 JSON、一行命令、或者一个 https 地址都行），
+能看到它有几个工具、走的什么 transport，能连能断。
 
-## 先例
-Reasonix 用**一个稳定代理** `use_capability(action=list|inspect|call|decline)`，
-明确为了不让 provider 工具表变化而破坏 KV 缓存；进程在批准之后才启动。
+参考图在 todo 里那两张。
