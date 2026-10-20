@@ -12,6 +12,8 @@
  */
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join } from 'node:path';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 
 export const name = 'plan-record';
@@ -158,6 +160,67 @@ export function apply(ctx) {
 			execute(args, exec) {
 				if (!exec.agent) throw new Error('plan_write requires an owning agent session');
 				return createPlan(exec.agent, args);
+			},
+		}),
+	);
+
+	// ---- 导出：唯一一条把计划写进工作区的路，而且必须是显式动作 ----
+	ctx.tools.register(
+		defineTool({
+			name: 'plan_export',
+			description:
+				'Export one recorded plan to a markdown file — for example into `docs/` — when the user wants a document. ' +
+				'Plans themselves are never files and nothing is written automatically: this tool is the only way out, ' +
+				'it is an explicit action, and the write goes through the same write lock as any other write.',
+			parameters: {
+				plan: { type: 'string', required: true, description: 'Plan id from plan_write, for example p3.' },
+				path: { type: 'string', required: true, description: 'Target path: absolute, or relative to the session working directory. A missing extension becomes .md.' },
+				overwrite: { type: 'boolean', description: 'Replace an existing file. Defaults to false.' },
+			},
+			output: {
+				schema: {
+					type: 'object',
+					additionalProperties: false,
+					properties: {
+						path: { type: 'string', required: true },
+						bytes: { type: 'integer', required: true },
+					},
+				},
+				render: (_args, value) => [{ type: 'text', text: `exported to ${value.path} (${value.bytes} bytes)` }],
+			},
+			execute(args, exec) {
+				const agent = exec.agent;
+				if (!agent) throw new Error('plan_export requires an owning agent session');
+				const state = plansOf(agent);
+				const plan = byRef(state, args.plan);
+				if (plan === undefined) throw new Error(`plan_export: 没有这份计划：${args.plan}`);
+
+				const body = typeof plan.body === 'string' && plan.body !== ''
+					? plan.body
+					// 0.15.x 的老记录只有文件：把它读回来，导出的东西才完整。
+					: (() => {
+							if (typeof plan.path !== 'string' || plan.path === '') {
+								throw new Error(`plan_export: ${plan.id} 没有正文（老记录也没有文件可读）`);
+							}
+							try {
+								return readFileSync(plan.path, 'utf8');
+							} catch (error) {
+								throw new Error(`plan_export: 读不到 ${plan.path}：${String(error?.message ?? error)}`);
+							}
+						})();
+
+				const cwd = agent.session.header.cwd ?? process.cwd();
+				let target = String(args.path ?? '').trim();
+				if (target === '') throw new Error('plan_export: 目标路径不能为空');
+				if (!isAbsolute(target)) target = join(cwd, target);
+				if (target.toLowerCase().endsWith('.md') === false && /\.[a-z0-9]+$/i.test(target) === false) target = `${target}.md`;
+
+				if (existsSync(target) && args.overwrite !== true) {
+					throw new Error(`plan_export: ${target} 已存在；要覆盖就传 overwrite: true`);
+				}
+				mkdirSync(dirname(target), { recursive: true });
+				writeFileSync(target, body, 'utf8');
+				return { path: target, bytes: statSync(target).size };
 			},
 		}),
 	);

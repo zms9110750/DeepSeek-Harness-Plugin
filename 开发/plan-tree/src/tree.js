@@ -6,6 +6,9 @@
  *
  * 计数在这里改，不另设服务：否决 +1、成功归零、搁置不动。计数按层分开、层是并存的。
  *
+ * 简报里**计划与节点都报**，而且结算要带出"为什么进行不下去"——
+ * 状态只是标签，坑才是下次不踩的东西。
+ *
  * @module @local/plan-tree/tree
  */
 import { z } from 'zod';
@@ -13,7 +16,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 
 export const name = 'plan-tree';
 
-export const inject = ['tools', 'sessionProjections', 'planEvents'];
+export const inject = ['tools', 'sessionProjections', 'planEvents', 'planStates'];
 
 const stateSchema = z.object({
 	nodes: z.record(z.string(), z.any()),
@@ -21,20 +24,60 @@ const stateSchema = z.object({
 	nextId: z.number(),
 });
 
-export function renderTree(state) {
+/** 把多行结算压成一句，方便放进树行里。 */
+function oneLine(text, limit = 160) {
+	const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
+	return flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
+}
+
+function planNumber(id) {
+	const match = /^p(\d+)$/.exec(String(id ?? ''));
+	return match === null ? Number.MAX_SAFE_INTEGER : Number(match[1]);
+}
+
+/**
+ * 简报：计划（状态 + 为什么卡住）→ 节点树 → 每层计数。
+ * @param state - `nodes` 投影。
+ * @param plansState - `plans` 投影；缺了只是不报计划段（比如 record 被单独关掉）。
+ * @param planStates - 状态机服务；缺了退化成一句话判断。
+ */
+export function renderTree(state, plansState, planStates) {
+	const lines = [];
+	const nodes = Object.values(state.nodes ?? {});
+
+	// ---- 计划：树的主干。状态之外，失败/搁置的把坑带出来。 ----
+	const plans = plansState === undefined ? [] : Object.values(plansState.plans ?? {});
+	if (plans.length > 0) {
+		lines.push('计划：');
+		for (const plan of [...plans].sort((a, b) => planNumber(a.id) - planNumber(b.id))) {
+			const own = nodes.filter((node) => node.planId === plan.id);
+			const status = planStates === undefined
+				? (plan.adopted === true ? '计划' : '草案')
+				: planStates.statusOf(plan, own);
+			const layer = plan.type === 'research' ? '研究' : plan.layer ?? '未分层';
+			lines.push(`  ${plan.id} [${layer}] ${status}  ${plan.title}`);
+			const settled = own.find((node) => node.verdict !== null && node.verdict !== undefined);
+			if (settled !== undefined) {
+				if (settled.pitfalls) lines.push(`      坑：${oneLine(settled.pitfalls)}`);
+				else if (settled.summary) lines.push(`      结算：${oneLine(settled.summary)}`);
+			}
+		}
+		lines.push('');
+	}
+
+	// ---- 节点：父子关系从 parentSession → childId 的映射里推。 ----
 	const bySession = new Map();
-	for (const node of Object.values(state.nodes)) {
+	for (const node of nodes) {
 		if (node.childId) bySession.set(node.childId, node);
 	}
 	const children = new Map();
-	for (const node of Object.values(state.nodes)) {
+	for (const node of nodes) {
 		const parent = bySession.get(node.parentSession);
 		const key = parent ? parent.id : '';
 		if (!children.has(key)) children.set(key, []);
 		children.get(key).push(node);
 	}
 
-	const lines = [];
 	const walk = (key, depth) => {
 		for (const node of children.get(key) ?? []) {
 			const layer = node.layer === null ? '研究' : node.layer;
@@ -42,16 +85,19 @@ export function renderTree(state) {
 			lines.push(`${pad}${node.id} [${layer}] ${node.status}  ${node.topic}`);
 			lines.push(`${pad}    派发：${node.reason}`);
 			if (node.summary) lines.push(`${pad}    结算：${node.summary}`);
+			if (node.pitfalls) lines.push(`${pad}    坑：${node.pitfalls}`);
 			walk(node.id, depth + 1);
 		}
 	};
 	walk('', 0);
 
-	if (lines.length === 0) lines.push('(树是空的：还没有派发过任何节点)');
+	if (nodes.length === 0) lines.push('(树是空的：还没有派发过任何节点)');
+
 	const counts = Object.entries(state.counts ?? {})
 		.map(([layer, used]) => `${layer}:${used}`)
 		.join(' ');
-	return { tree: lines.join('\n'), counts: counts === '' ? '（还没有计数）' : counts };
+
+	return { tree: lines.join('\n').trimEnd(), counts: counts === '' ? '（还没有计数）' : counts };
 }
 
 export function apply(ctx) {
@@ -82,6 +128,12 @@ export function apply(ctx) {
 						childId: data.childId,
 						verdict: null,
 						summary: null,
+						// 结算的五项都留着：树要能回答"为什么进行不下去"。
+						conclusion: null,
+						evidence: null,
+						artifacts: null,
+						pitfalls: null,
+						where: null,
 					},
 				},
 			};
@@ -102,7 +154,12 @@ export function apply(ctx) {
 						...node,
 						status: data.verdict,
 						verdict: data.verdict,
-						summary: data.conclusion,
+						summary: data.conclusion ?? null,
+						conclusion: data.conclusion ?? null,
+						evidence: data.evidence ?? null,
+						artifacts: data.artifacts ?? null,
+						pitfalls: data.pitfalls ?? null,
+						where: data.where ?? null,
 					},
 				},
 			};
@@ -124,8 +181,10 @@ export function apply(ctx) {
 		defineTool({
 			name: 'plan_tree',
 			description:
-				'Report the plan tree: shape, each node\'s layer and status, one line of dispatch reason, one line of settlement. ' +
-				'It carries no detail by design — the detail lives in each child session and in the settlement fields.',
+				'Report the plan tree: every plan with its status (草案 / 计划 / 进行中 / 完成 / 失败 / 搁置), ' +
+				'every dispatched node with its dispatch reason and settlement, and the per-layer rejection counts. ' +
+				'For a plan that stalled or failed it carries the pitfall line — that is the point of reading it. ' +
+				'Detail stays in each child session; this is the shape.',
 			parameters: {},
 			output: {
 				schema: {
@@ -139,7 +198,8 @@ export function apply(ctx) {
 				if (!exec.agent) throw new Error('plan_tree requires an owning agent session');
 				const state = ctx.sessionProjections.stateOf(exec.agent.session, 'nodes');
 				if (!state) throw new Error('plan_tree: the nodes projection is not available in this session');
-				return renderTree(state);
+				const plans = ctx.sessionProjections.stateOf(exec.agent.session, 'plans');
+				return renderTree(state, plans, ctx.planStates);
 			},
 		}),
 	);

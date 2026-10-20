@@ -8,6 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, rmSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const ROOT = 'X:/temp/dsh/开发/plan-tree';
@@ -89,7 +90,7 @@ test('十个插件各自 mount，注册面齐全', async () => {
 
 	assert.deepEqual(
 		ctx.tools.tools.map((tool) => tool.name).sort(),
-		['plan_dispatch', 'plan_file', 'plan_tree', 'plan_write'],
+		['plan_dispatch', 'plan_export', 'plan_file', 'plan_tree', 'plan_write'],
 	);
 	assert.deepEqual(
 		ctx.commands.commands.map((command) => command.name).sort(),
@@ -223,6 +224,55 @@ test('锁：没有子工作区时拒绝写；认领之后只放行认领目录�
 	// 用户手动放开。
 	ctx.commands.commands.find((command) => command.name === 'plan').handler({ agent: { session, id: 'agent' }, rawInput: 'off' });
 	assert.equal(guard(exec('write', { file_path: 'X:/anywhere.md' })), undefined);
+});
+
+test('树简报：计划带状态，卡住的把坑带出来', async () => {
+	const { ctx } = await mountAll();
+	const rec = (op, data) => ({ type: ctx.planEvents.type, data: { op, ...data } });
+	const events = [
+		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲' }),
+		rec('adopt', { id: 'p1' }),
+		rec('dispatch', { id: 'n1', planId: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '甲', reason: '试试', childId: 'c1', parentSession: 's' }),
+		rec('file', { id: 'n1', verdict: 'reject', conclusion: '不行', evidence: 'e', artifacts: 'a', pitfalls: '沙箱里 pwsh 起不来', where: 'w' }),
+	];
+	const nodes = ctx.foldInto('nodes', events);
+	const plans = ctx.foldInto('plans', events);
+	const { renderTree } = await load('src/tree.js');
+
+	const out = renderTree(nodes, plans, ctx.planStates);
+	assert.match(out.tree, /p1 \[B系列-设计\] 失败计划/);
+	assert.match(out.tree, /坑：沙箱里 pwsh 起不来/, '状态之外必须能读到为什么进行不下去');
+	assert.match(out.tree, /n1 \[B系列-设计\] reject/);
+	assert.match(out.counts, /B系列-设计:1/);
+
+	// 缺 plans 投影时只是不报计划段，不影响节点树。
+	const bare = renderTree(nodes, undefined, ctx.planStates);
+	assert.doesNotMatch(bare.tree, /p1/);
+});
+
+test('导出：显式写文件，已存在则拒绝', async () => {
+	const { ctx } = await mountAll();
+	const rec = (op, data) => ({ type: ctx.planEvents.type, data: { op, ...data } });
+	ctx.foldInto('plans', [rec('plan', { id: 'p1', title: '甲', body: '# 甲\n\n正文', type: 'plan' })]);
+
+	const tool = ctx.tools.tools.find((entry) => entry.name === 'plan_export');
+	assert.ok(tool, 'plan_export 应当注册');
+	const agent = { session: { id: 's1', header: { cwd: 'X:/temp/dsh/探针' } }, id: 'a1' };
+
+	const absolute = 'X:/temp/dsh/探针/export-test.md';
+	rmSync(absolute, { force: true });
+	rmSync('X:/temp/dsh/探针/export-rel.md', { force: true });
+	const first = await tool.execute({ plan: 'p1', path: absolute }, { agent });
+	assert.equal(first.path, absolute);
+	assert.equal(readFileSync(absolute, 'utf8'), '# 甲\n\n正文');
+	await assert.rejects(tool.execute({ plan: 'p1', path: absolute }, { agent }), /已存在/);
+
+	// 相对路径按会话工作目录解析，缺扩展名补 .md。
+	const relative = await tool.execute({ plan: 'p1', path: 'export-rel' }, { agent });
+	assert.equal(relative.path.replace(/\\/g, '/'), 'X:/temp/dsh/探针/export-rel.md');
+
+	rmSync(absolute, { force: true });
+	rmSync(relative.path, { force: true });
 });
 
 test('子工作区：路径包含关系按目录边界，不按字符串前缀', async () => {
