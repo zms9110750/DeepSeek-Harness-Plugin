@@ -24,6 +24,53 @@ const SETTLEMENT_KEYS = ['verdict', 'conclusion', 'evidence', 'artifacts', 'pitf
 const VERDICTS = ['success', 'reject', 'shelved'];
 
 /**
+ * 要不要用分叉种子建子会话。
+ *
+ * 这个宿主上带种子会失败（`api-session/added ... not lossless JSON`，内置 `subagent_fork`
+ * 同样失败），而且失败是"半成功"的：会话建出来了、转发炸了，于是不能靠重试兜底。
+ * 所以先关掉——子会话照样干活，只是不继承父的上下文，工单里会写明。
+ * 宿主修好后把这里改回 `true`，其余代码不用动。
+ */
+const USE_FORK_SEED = true;
+
+/**
+ * 「人工分叉」：宿主的分叉通道不可用时，把父会话最近的 surface 事件（用户与助手
+ * 的纯文本）压成一段前缀注入子会话。
+ *
+ * 它替代不了真正的 fork——没有 KV cache 复用，也丢了工具结果——但它是**语义**的
+ * 等价物：子会话因此知道这一段在做什么，而不只是拿到一张工单。
+ * 从后往前取，先保证最近的几轮在里面。
+ *
+ * @param events - 父会话的事件数组。
+ * @param limit - 最多取多少条消息。
+ * @param budget - 字符预算，超出就从最旧的开始丢。
+ */
+export function contextDigest(events, limit = 24, budget = 12000) {
+	const lines = [];
+	for (const event of events) {
+		if (event.type !== 'user/message' && event.type !== 'assistant/message') continue;
+		const blocks = event.data?.message?.content ?? [];
+		const text = blocks
+			.filter((block) => block?.type === 'text')
+			.map((block) => String(block.text ?? ''))
+			.join('\n')
+			.trim();
+		if (text === '') continue;
+		lines.push(`${event.type === 'user/message' ? '用户' : '助手'}：${text}`);
+	}
+	const picked = lines.slice(-limit);
+	const kept = [];
+	let used = 0;
+	for (let index = picked.length - 1; index >= 0; index -= 1) {
+		const entry = picked[index];
+		if (used + entry.length > budget) break;
+		kept.unshift(entry);
+		used += entry.length;
+	}
+	return kept.join('\n\n');
+}
+
+/**
  * 写进工单的六行格式。权威是 `计划/结算格式.md`（出口锚那份文件）：
  * 改那边就要改这里——两处必须一致，否则子按一套写、父按另一套解析。
  */
@@ -159,22 +206,44 @@ export function apply(ctx) {
 					childId,
 				});
 
-				// 3. 用父日志拼种子，边界就是刚才那条事件（含）。
+				// 3. 拼分叉种子。**这个宿主上先不用**：带种子建会话会在事件转发时抛
+				//      forwarded host event "api-session/added" argument 0 is not lossless JSON data
+				//    （内置 subagent_fork 同样失败，与本插件无关）。而且那次失败是**半成功**的：
+				//    会话已经建出来了，只是转发炸了——所以"失败了再重试一次不带种子"会撞上
+				//    那个半建的会话，报 `unseeded session inherited event count must be 0`。
+				//    因此这里一次性决定，只调一次 create。宿主修好后把开关改回 true 即可。
 				const events = agent.session.snapshotEvents();
 				const boundary = events.length - 1;
-				const seed = buildForkSeed(events, boundary);
+				const seed = USE_FORK_SEED ? JSON.parse(JSON.stringify(buildForkSeed(events, boundary))) : undefined;
 
 				// 4. 建子会话。
-				const presets = ctx.get('agentPresets');
-				const presetId = presets?.composedPreset?.(agent.ctx);
-				const selection = ctx.get('agentDefaultModel')?.currentSelection?.();
+				//    **不覆盖预设、也不指定模型**：子会话走宿主默认那条路（和内置 `subagent` 一样）。
+				//    覆盖过的两种都翻过车——
+				//      · 传 agentPreset 但没挂载它（原来靠 setup 挂载，setup 是函数，见下）：
+				//        系统提示词拼不出来，turn 直接 error：
+				//        prompt variable "{{model}}" has no value (section "deployment:persona-prefix")；
+				//      · 传 agentOptions 则可能把类实例塞进事件流。
+				//    什么时候要按父的模型/预设走，等宿主提供正经的入参再说。
 				const header = agent.session.header;
 				const cwd = workspace ?? header.cwd;
+				// 模型必须显式给：AgentOptions.provider + .model，否则系统提示词里的
+				// {{model}} 取不到值，子会话第一轮就 error（实测两次）。形状就是
+				// {provider, model, reasoningEffort?}，纯 JSON；仍过一道往返保险。
+				const selection = ctx.get('agentDefaultModel')?.currentSelection?.();
+				const agentOptions = selection === undefined ? undefined : JSON.parse(JSON.stringify(selection));
+				// 预设不只是提示词，它还带**工具集**：不给预设，子会话只剩 plan_*/delete/
+				// working_directory 这几个（实测，它连读文件的能力都没有）。而给了预设
+				// 必须同时挂载它，否则系统提示词拼不出来。这是我们 0.14–0.16 跑通过的老组合。
+				const presets = ctx.get('agentPresets');
+				const presetId = presets?.composedPreset?.(agent.ctx);
 				const meta = {
 					...(cwd === undefined ? {} : { cwd }),
+					// 预设与 setup 一律给：分叉出来的会话也要有完整工具集。
+					// （README:65 说 fork 拒绝 agentPreset，但摘要清洗之后实测是通的——
+					//  真分叉 + 完整工具集，两个都要。）
 					...(presetId === undefined ? {} : { agentPreset: presetId }),
 					parentSession: header.id,
-					isSeeded: true,
+					isSeeded: seed !== undefined,
 					origin: 'subagent',
 					delegationDepth: (header.delegationDepth ?? 0) + 1,
 				};
@@ -185,12 +254,17 @@ export function apply(ctx) {
 						sessionId: childId,
 						parentAgent: agent,
 						meta,
-						seed,
-						inheritedEventCount: boundary + 1,
-						...(selection === undefined ? {} : { agentOptions: selection }),
-						...(presetId === undefined || presets === undefined
+						...(agentOptions === undefined ? {} : { agentOptions }),
+						...(presets === undefined || presetId === undefined
 							? {}
-							: { setup: async (childCtx) => { await presets.mount(childCtx, presetId); } }),
+							: {
+									setup: async (childCtx) => {
+										await presets.mount(childCtx, presetId);
+									},
+								}),
+						...(seed === undefined
+							? { inheritedEventCount: 0 }
+							: { seed, inheritedEventCount: boundary + 1 }),
 					});
 				} catch (error) {
 					// 事件已经写进日志，但子会话没建成。别留一个永远 open 的幽灵节点。
@@ -211,7 +285,31 @@ export function apply(ctx) {
 				if (typeof child.followup !== 'function') {
 					throw new Error('plan_dispatch: the created child does not expose followup()');
 				}
-				child.followup(createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } }));
+				// 没有种子时，用「人工分叉」把父最近的对话带进去。
+				const digest = seed === undefined ? contextDigest(events) : '';
+				child.followup(
+					createUserMessage({
+						content: [
+							{
+								type: 'text',
+								text:
+									seed === undefined
+										? [
+												// 人工分叉：把父最近的对话注入进来，别让子会话只拿一张工单。
+												'The session you are working in was split off from a longer conversation. Here is its recent history, reproduced so you can pick up the thread:',
+												'',
+												digest,
+												'',
+												'--- end of history ---',
+												'',
+												prompt,
+											].join('\n')
+										: prompt,
+							},
+						],
+						source: { kind: 'user' },
+					}),
+				);
 
 				const settle = child.whenIdle ?? handle.whenIdle;
 				if (typeof settle === 'function') {
@@ -265,3 +363,4 @@ export function apply(ctx) {
 		}),
 	);
 }
+

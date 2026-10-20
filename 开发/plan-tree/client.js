@@ -128,26 +128,37 @@ window.__ModuleLoader__.load({
 			mono: { fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace' },
 		};
 
+		/** 没有 dir 的计划归到这一组：老记录（0.15.x 之前）没这个字段。 */
+		const NO_PROPOSAL = '未归入提案';
+
+		/** 提案文件夹就是 `plan.dir`；空值（老记录、研究节点）落到「未归入提案」。 */
+		function proposalOf(plan) {
+			const text = String(plan.dir ?? '').trim().replace(/[\\/]+$/u, '');
+			return text === '' ? NO_PROPOSAL : text;
+		}
+
 		/**
-		 * 一层：标题 + 计划行。只读投影对象——投影里的 plan 可能是冻结的，
-		 * 往上面挂字段会直接抛错，所以分支在渲染时现查。
+		 * 一份提案一组：同一份提案下的 A/B/C 各层计划聚在一起，层退化成行上的标签。
+		 * 组的次序按组内最小编号（提案被写下的先后）；「未归入提案」永远在最后。
+		 * 只读投影对象——投影里的 plan 可能是冻结的，往上面挂字段会直接抛错。
 		 */
-		function layerGroups(plans, layerOf) {
+		function proposalGroups(plans, layerOf) {
 			const groups = new Map();
 			for (const plan of [...plans].sort((a, b) => planNumber(a.id) - planNumber(b.id))) {
-				const key = layerOf(plan);
+				const key = proposalOf(plan);
 				if (!groups.has(key)) {
-					groups.set(key, {
-						layer: key,
-						rank: typeof plan.layerIndex === 'number' ? plan.layerIndex : 90,
-						plans: [],
-					});
+					groups.set(key, { dir: key, rank: planNumber(plan.id), layers: [], plans: [] });
 				}
 				const group = groups.get(key);
-				group.rank = Math.min(group.rank, typeof plan.layerIndex === 'number' ? plan.layerIndex : 90);
+				group.rank = Math.min(group.rank, planNumber(plan.id));
+				const layer = layerOf(plan);
+				if (!group.layers.includes(layer)) group.layers.push(layer);
 				group.plans.push(plan);
 			}
-			return [...groups.values()].sort((a, b) => a.rank - b.rank || a.layer.localeCompare(b.layer));
+			const tail = (group) => (group.dir === NO_PROPOSAL ? 1 : 0);
+			return [...groups.values()].sort(
+				(a, b) => tail(a) - tail(b) || a.rank - b.rank || a.dir.localeCompare(b.dir),
+			);
 		}
 
 		function PlanTreePage(props) {
@@ -300,13 +311,13 @@ window.__ModuleLoader__.load({
 				}
 			};
 
-			const groups = layerGroups(plans, layerOf);
+			const groups = proposalGroups(plans, layerOf);
 			const visible = groups
 				.map((group) => ({
 					...group,
 					plans: group.plans.filter((plan) => {
 						const status = statusOf(plan, nodes);
-						if (layerOnly !== '' && group.layer !== layerOnly) return false;
+						if (layerOnly !== '' && layerOf(plan) !== layerOnly) return false;
 						if (!showShelved && status === '搁置') return false;
 						return true;
 					}),
@@ -359,6 +370,7 @@ window.__ModuleLoader__.load({
 							},
 							plan.title,
 						),
+						h('span', { style: { ...styles.muted, flex: 'none' } }, layerOf(plan)),
 						h('span', { style: { ...styles.muted, flex: 'none' } }, status),
 						plan.author === 'user' ? h('span', { style: { ...styles.muted, flex: 'none' } }, '我') : null,
 					),
@@ -443,6 +455,7 @@ window.__ModuleLoader__.load({
 				}
 
 				const status = statusOf(selected, nodes);
+				const home = proposalOf(selected);
 				const body = reading === undefined || reading.loading === true
 					? h('div', { style: { ...styles.muted, padding: 8 } }, '读取中…')
 					: reading.error !== undefined
@@ -486,7 +499,7 @@ window.__ModuleLoader__.load({
 					h(
 						'div',
 						{ style: { ...styles.muted, ...styles.mono, wordBreak: 'break-all', lineHeight: 1.5 } },
-						`${selected.id} · ${selected.layer ?? '研究'}${selected.path ? ` · ${selected.path}` : ' · 日志记录（不落盘）'}`,
+						`${selected.id} · ${selected.layer ?? '研究'} · ${home}${selected.path ? ` · ${selected.path}` : ' · 日志记录（不落盘）'}`,
 					),
 					h(
 						'div',
@@ -599,11 +612,14 @@ window.__ModuleLoader__.load({
 								: visible.map((group) =>
 										h(
 											'div',
-											{ key: group.layer, style: { marginBottom: 4 } },
+											{ key: group.dir, style: { marginBottom: 4 } },
 											h(
 												'div',
-												{ style: { ...styles.group, padding: '4px 6px 2px' } },
-												`${group.layer} · ${group.plans.length}`,
+												{
+													style: { ...styles.group, padding: '4px 6px 2px' },
+													title: group.layers.join(' / '),
+												},
+												`${group.dir} · ${group.plans.length}`,
 											),
 											group.plans.map(renderPlanRow),
 										),

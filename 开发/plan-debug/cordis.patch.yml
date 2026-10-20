@@ -1,0 +1,4 @@
+# 开发期专用，发布时不要装这个包。
+- insert:
+    - id: plan-debug
+      name: '@local/plan-debug'

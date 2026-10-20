@@ -54,13 +54,10 @@ export function apply(ctx) {
 		const state = scopes.stateOf(agent);
 		const claims = scopes.claimsOf(state);
 
-		if (claims.length === 0) {
-			return (
-				`本会话还没有子工作区，只能读。记计划（plan_write）不受影响——它不落盘。\n` +
-				`要开工：采纳一份计划并 plan_dispatch（带 workspace 就会认领那一块），` +
-				`或 /sub-workspace add <绝对路径>，或用 /plan off 放开。`
-			);
-		}
+		// 一块都没认领 = 这一支还没有划定范围 = 谈不上并发，因此**不拦**。
+		// 锁的职责是别让两支写同一块地方，不是给每个新会话上枷锁。
+		// （早期版本在这里直接拒绝，结果新开的会话一进来就写不了任何东西。）
+		if (claims.length === 0) return undefined;
 
 		const args = exec?.args ?? exec?.input ?? {};
 		const target = String(args.file_path ?? args.path ?? args.cwd ?? '');

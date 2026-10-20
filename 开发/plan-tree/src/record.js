@@ -228,6 +228,11 @@ export function apply(ctx) {
 		}),
 	);
 
+	// ---- 采纳**不在**这里 ----
+	// 采纳是用户的决定：面板按钮，或 `/plan-adopt` 命令（下面注册）。模型没有这个工具，
+	// 所以它不能自己批准自己的计划。开发期要让 agent 自己走完闭环，装 `@local/plan-debug`，
+	// 那条授权在那个包里，拆掉即恢复。
+
 	// ---- 用户对草案的决定：三条命令，面板和输入框都走它们 ----
 	const decideByRef = (rawInput, decide) => {
 		const ref = String(rawInput ?? '').trim();

@@ -137,4 +137,40 @@ export function apply(ctx) {
       if (controller.fork === wrapped) controller.fork = original;
     };
   });
+
+  /**
+   * 第二个补丁：会话摘要里带不动的值。
+   *
+   * 宿主创建会话之后要发 `api-session/added` 给界面，发之前过一道 `assertJsonArgs`，
+   * 要求参数是**无损 JSON**。参数是 `listState.summaryFor(session)`，里面带着
+   * `projections`。
+   *
+   * 分叉出来的会话，投影是从父的**活事件对象**折叠的（`buildForkSeed` 的注释写着
+   * "retaining the source event objects"），活对象里有类实例、Date 之类，检查直接拒：
+   *   forwarded host event "api-session/added" argument 0 is not lossless JSON data
+   * 内置 `subagent_fork` 同样中招，所以不是调用方的问题。
+   *
+   * 这里不碰 fork 本身——fork 已经成功了，炸的是"报告新会话"。所以只在摘要出站前
+   * 把它洗成纯 JSON。这一层在会话内部，插件只能从外面裹。
+   */
+  ctx.effect(() => {
+    const listState = ctx.sessionController?.listState;
+    const original = listState?.summaryFor;
+    if (typeof original !== 'function') return () => {};
+
+    const wrapped = function cleanSummaryFor(session) {
+      const summary = original.call(this, session);
+      try {
+        // 往返一次：去掉 undefined、把类实例摊平成普通对象、Date 变字符串。
+        return JSON.parse(JSON.stringify(summary));
+      } catch {
+        return summary;
+      }
+    };
+
+    listState.summaryFor = wrapped;
+    return () => {
+      if (listState.summaryFor === wrapped) listState.summaryFor = original;
+    };
+  });
 }

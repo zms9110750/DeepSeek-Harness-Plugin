@@ -187,41 +187,42 @@ test('折叠：记录、采纳、派发、结算之后，两份投影各自正�
 	assert.equal(after.nodes.n2.status, 'success');
 });
 
-test('锁：没有子工作区时拒绝写；认领之后只放行认领目录内', async () => {
+test('锁：没有认领就不拦；划了范围才收窄到范围里', async () => {
 	const { ctx } = await mountAll();
 	const [guard] = ctx.tools.guards;
 
-	const claims = { claims: { 'x:\\a\\sub': { path: 'X:/a/sub', planId: 'p1' } } };
-	ctx.sessionProjections.stateOf = (_session, key) => {
-		if (key === 'permissions') return { sandbox: 'workspace-write' };
-		if (key === 'subWorkspaces') return claims;
-		return undefined;
-	};
+	const empty = { claims: {} };
+	const scoped = { claims: { 'x:\\a\\sub': { path: 'X:/a/sub', planId: 'p1' } } };
 	const session = { id: 'session-x', header: { cwd: 'X:/a' } };
 	const exec = (tool, args) => ({ agent: { session, id: 'agent' }, tool: { name: tool }, args });
+	const at = (sandbox, state) => {
+		ctx.sessionProjections.stateOf = (_session, key) => {
+			if (key === 'permissions') return { sandbox };
+			if (key === 'subWorkspaces') return state;
+			return undefined;
+		};
+	};
 
-	assert.equal(guard(exec('read', { file_path: 'X:/a/x' })), undefined, '读不拦');
-	assert.equal(guard(exec('write', { file_path: 'X:/a/sub/ok.md' })), undefined, '认领目录内放行');
+	assert.equal(guard(exec('read', { file_path: 'X:/a/x' })), undefined, '读从不拦');
+
+	// 没有认领：不拦。新会话开箱即用，锁不负责管它。
+	at('workspace-write', empty);
+	assert.equal(guard(exec('write', { file_path: 'X:/a/out.md' })), undefined);
+	at('read-only', empty);
+	assert.equal(guard(exec('pwsh', {})), undefined, '没有范围时连看不出目录的工具也不拦');
+
+	// 划了范围：只许写范围内。
+	at('workspace-write', scoped);
+	assert.equal(guard(exec('write', { file_path: 'X:/a/sub/ok.md' })), undefined, '范围内放行');
 	assert.match(String(guard(exec('write', { file_path: 'X:/a/out.md' }))), /不在任何子工作区/);
 	assert.match(String(guard(exec('pwsh', {}))), /看不出要写哪个目录/);
 
 	// 完全权限：整套跳过。
-	ctx.sessionProjections.stateOf = (_session, key) => {
-		if (key === 'permissions') return { sandbox: 'danger-full-access' };
-		if (key === 'subWorkspaces') return { claims: {} };
-		return undefined;
-	};
+	at('danger-full-access', scoped);
 	assert.equal(guard(exec('write', { file_path: 'X:/anywhere.md' })), undefined);
 
-	// 没有任何认领：给出"从哪儿开始"的提示，而不是只骂一句。
-	ctx.sessionProjections.stateOf = (_session, key) => {
-		if (key === 'permissions') return { sandbox: 'read-only' };
-		if (key === 'subWorkspaces') return { claims: {} };
-		return undefined;
-	};
-	assert.match(String(guard(exec('write', { file_path: 'X:/a/x.md' }))), /还没有子工作区/);
-
 	// 用户手动放开。
+	at('workspace-write', scoped);
 	ctx.commands.commands.find((command) => command.name === 'plan').handler({ agent: { session, id: 'agent' }, rawInput: 'off' });
 	assert.equal(guard(exec('write', { file_path: 'X:/anywhere.md' })), undefined);
 });
