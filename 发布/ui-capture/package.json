@@ -16,8 +16,13 @@
     "locale/zh.json",
     "icon.svg"
   ],
-  "dependencies": {
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.2"
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
   },
   "dsh": {
     "bundle": {

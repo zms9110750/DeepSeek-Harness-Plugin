@@ -1,0 +1,59 @@
+{
+  "name": "@local/plan-tree2",
+  "version": "0.17.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./events": "./src/events.js",
+    "./template": "./src/template.js",
+    "./state": "./src/state.js",
+    "./record": "./src/record.js",
+    "./gate": "./src/gate.js",
+    "./dispatch": "./src/dispatch.js",
+    "./settle": "./src/settle.js",
+    "./tree": "./src/tree.js",
+    "./sub-workspace": "./src/sub-workspace.js",
+    "./lock": "./src/lock.js"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "cordis.patch.yml",
+    "templates"
+  ],
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-llm": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  }
+}
+

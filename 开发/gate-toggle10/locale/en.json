@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gate Toggle",
+    "description": "A switch in the composer. The gate lives in host memory: the button queries /gate status on mount and runs /gate on|off when clicked."
+  }
+}

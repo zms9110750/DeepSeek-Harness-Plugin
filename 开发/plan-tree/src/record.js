@@ -1,0 +1,261 @@
+/**
+ * plan-record · 计划记录的持久化与用户决定。
+ *
+ * 计划**不落盘**：正文是日志里的一条可忽略记录（`op:'plan'`），投影 `plans`
+ * 把它带给面板。所以只读会话也能记计划——它不动工作区，也就绕不过权限；
+ * 而 agent 循环只把 surface 事件映射成消息，这条记录不进上下文。
+ *
+ * 这里也是"用户对草案做了什么"的唯一入口：采纳、否决、搁置。
+ * 状态本身怎么算在 plan-state 里，这里只写事件。
+ *
+ * @module @local/plan-tree/record
+ */
+import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
+import { defineTool } from '@deepseek-ai/dsh-tools';
+
+export const name = 'plan-record';
+
+export const inject = ['tools', 'commands', 'sessionProjections', 'planEvents', 'proposalTemplate'];
+
+const stateSchema = z.object({
+	plans: z.record(z.string(), z.any()),
+	planSeq: z.number(),
+});
+
+/** 文件名安全的名字；保留中日韩，去掉标点与空白。 */
+export function slugify(title) {
+	const cleaned = String(title)
+		.trim()
+		.replace(/[\\/:*?"<>|\s]+/g, '-')
+		.replace(/-+/g, '-')
+		.replace(/^-|-$/g, '');
+	return cleaned === '' ? randomUUID().slice(0, 8) : cleaned.slice(0, 60);
+}
+
+export function apply(ctx) {
+	const { append, opOf } = ctx.planEvents;
+	const template = ctx.proposalTemplate;
+
+	const init = () => ({ plans: {}, planSeq: 1 });
+
+	const fold = (state, event) => {
+		const op = opOf(event);
+		const data = event.data;
+
+		if (op === 'plan') {
+			return {
+				...state,
+				planSeq: state.planSeq + 1,
+				plans: { ...state.plans, [data.id]: { ...data, adopted: false } },
+			};
+		}
+
+		if (op === 'adopt' || op === 'reject-draft' || op === 'shelve-draft') {
+			const plan = state.plans[data.id];
+			if (plan === undefined) return state;
+			const patch =
+				op === 'adopt'
+					? { adopted: true }
+					: op === 'reject-draft'
+						? { rejected: true }
+						: { shelved: data.shelved !== false };
+			return { ...state, plans: { ...state.plans, [plan.id]: { ...plan, ...patch } } };
+		}
+
+		return state;
+	};
+
+	ctx.sessionProjections.register({
+		key: 'plans',
+		stateVersion: 1,
+		stateSchema,
+		init,
+		apply: fold,
+		wire: { viewSchema: stateSchema, view: (state) => state },
+	});
+
+	const plansOf = (agent) => {
+		const state = ctx.sessionProjections.stateOf(agent.session, 'plans');
+		if (!state) throw new Error('plans 投影不可用：没有装 plan-record？');
+		return state;
+	};
+
+	/** id 优先，其次认老的"文件路径"引用。 */
+	const byRef = (state, ref) => {
+		const text = String(ref ?? '').trim();
+		if (text === '') return undefined;
+		const plan = state.plans[text];
+		if (plan !== undefined) return plan;
+		return Object.values(state.plans).find((candidate) => candidate.path === text);
+	};
+
+	/** 唯一的"记一份计划"实现：模型和面板走同一条路。 */
+	const createPlan = (agent, args) => {
+		const state = plansOf(agent);
+		const research = args.type === 'research';
+		const templatePath = template.resolve(args.template);
+
+		let layer = { title: '研究', sections: [] };
+		let layerIndex = null;
+		if (!research) {
+			const layers = template.load(templatePath);
+			const asked = String(args.layer ?? '').trim();
+			layerIndex = layers.findIndex(
+				(candidate) => candidate.title === asked || candidate.title.toUpperCase().startsWith(asked.toUpperCase()),
+			);
+			if (layerIndex < 0) {
+				throw new Error(
+					`plan_write: no layer "${asked}" in ${templatePath}; available: ` +
+						layers.map((candidate) => candidate.title).join(' / '),
+				);
+			}
+			layer = layers[layerIndex];
+		}
+
+		const id = `p${state.planSeq}`;
+		append(agent.session, 'plan', {
+			id,
+			title: args.title,
+			body: template.render(args, layer),
+			type: research ? 'research' : 'plan',
+			layer: layer.title,
+			layerIndex,
+			templatePath,
+			topic: args.title,
+			// 用户自拟的计划可能没有目的/判据/去处：记录里给标题兜底，派发时子会话不会读到空值。
+			goal: String(args.goal ?? '').trim() || String(args.title ?? ''),
+			done_when: String(args.done_when ?? '').trim(),
+			where_to_learn: String(args.where_to_learn ?? '').trim(),
+			author: args.author === 'user' ? 'user' : 'model',
+			createdAt: Date.now(),
+			parentSession: agent.session.id,
+		});
+		return { id };
+	};
+
+	ctx.tools.register(
+		defineTool({
+			name: 'plan_write',
+			description:
+				'Record one plan for the user to review. The plan lives in this session\'s log as an ignorable plugin record — ' +
+				'nothing is written to the workspace and nothing enters the conversation, so this is allowed even while the session is read-only. ' +
+				'It does not dispatch anything: the user adopts it in the plan panel, and dispatching is a separate call.',
+			parameters: {
+				title: { type: 'string', required: true, description: 'Heading of the plan.' },
+				goal: { type: 'string', required: true, description: 'What this plan is for.' },
+				done_when: { type: 'string', required: true, description: 'How the work will be judged finished.' },
+				where_to_learn: { type: 'string', required: true, description: 'Where to look when the executor does not know how.' },
+				body: { type: 'string', description: 'Optional free text appended after the template skeleton.' },
+				type: { type: 'string', enum: ['plan', 'research'], description: 'plan (default) or research.' },
+				layer: { type: 'string', description: 'Layer for a plan; omit for research.' },
+				template: { type: 'string', description: 'Template markdown file whose ## layers and - sections shape the document.' },
+			},
+			output: {
+				schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true } } },
+				render: (_args, value) => [{ type: 'text', text: `recorded plan ${value.id}` }],
+			},
+			execute(args, exec) {
+				if (!exec.agent) throw new Error('plan_write requires an owning agent session');
+				return createPlan(exec.agent, args);
+			},
+		}),
+	);
+
+	// ---- 用户对草案的决定：三条命令，面板和输入框都走它们 ----
+	const decideByRef = (rawInput, decide) => {
+		const ref = String(rawInput ?? '').trim();
+		if (ref === '') return { kind: 'error', text: '用法：/plan-adopt <计划 id，如 p3>（老计划也可以用文件路径）' };
+		try {
+			return { kind: 'success', text: decide(ref) };
+		} catch (error) {
+			return { kind: 'error', text: String(error?.message ?? error) };
+		}
+	};
+
+	ctx.commands.register({
+		name: 'plan-adopt',
+		description: '采纳一份计划（面板按钮调用）',
+		input: { hint: '<计划 id>' },
+		recordInput: false,
+		handler({ agent, rawInput }) {
+			return decideByRef(rawInput, (ref) => {
+				const state = plansOf(agent);
+				const plan = byRef(state, ref);
+				if (plan === undefined) throw new Error(`没有这份计划：${ref}`);
+				if (plan.rejected === true) throw new Error(`${plan.id} 已被否决，另写一份`);
+				if (plan.adopted !== true) append(agent.session, 'adopt', { id: plan.id });
+				return `已采纳 ${plan.id}`;
+			});
+		},
+	});
+
+	ctx.commands.register({
+		name: 'plan-reject',
+		description: '否决一份计划草案（面板按钮调用）',
+		input: { hint: '<计划 id>' },
+		recordInput: false,
+		handler({ agent, rawInput }) {
+			return decideByRef(rawInput, (ref) => {
+				const state = plansOf(agent);
+				const plan = byRef(state, ref);
+				if (plan === undefined) throw new Error(`没有这份计划：${ref}`);
+				if (plan.rejected !== true) append(agent.session, 'reject-draft', { id: plan.id });
+				return `已否决 ${plan.id}`;
+			});
+		},
+	});
+
+	ctx.commands.register({
+		name: 'plan-shelve',
+		description: '搁置 / 取消搁置一份计划草案（面板按钮调用）',
+		input: { hint: '<计划 id>' },
+		recordInput: false,
+		handler({ agent, rawInput }) {
+			return decideByRef(rawInput, (ref) => {
+				const state = plansOf(agent);
+				const plan = byRef(state, ref);
+				if (plan === undefined) throw new Error(`没有这份计划：${ref}`);
+				if (plan.adopted === true) throw new Error(`${plan.id} 已采纳，不能搁置`);
+				if (plan.rejected === true) throw new Error(`${plan.id} 已否决，不能搁置`);
+				const shelved = plan.shelved !== true;
+				append(agent.session, 'shelve-draft', { id: plan.id, shelved });
+				return shelved ? `已搁置 ${plan.id}` : `已取消搁置 ${plan.id}`;
+			});
+		},
+	});
+
+	// 面板的「新建计划」：一行 JSON 进，和 plan_write 走同一条写路径。
+	ctx.commands.register({
+		name: 'plan-new',
+		description: '面板新建一份计划（JSON：{title, layer, body}）',
+		input: { hint: '{"title":"…","layer":"…","body":"…"}' },
+		recordInput: false,
+		handler({ agent, rawInput }) {
+			let payload;
+			try {
+				payload = JSON.parse(String(rawInput ?? '').trim() === '' ? '{}' : String(rawInput).trim());
+			} catch {
+				return { kind: 'error', text: '新建计划要一行 JSON：{"title":"…","layer":"…","body":"…"}' };
+			}
+			const title = String(payload?.title ?? '').trim();
+			if (title === '') return { kind: 'error', text: '新建计划缺少标题' };
+			const layer = String(payload?.layer ?? '').trim() || 'A';
+			try {
+				const { id } = createPlan(agent, {
+					title,
+					type: 'plan',
+					layer,
+					goal: String(payload?.goal ?? '').trim(),
+					done_when: String(payload?.done_when ?? '').trim(),
+					where_to_learn: String(payload?.where_to_learn ?? '').trim(),
+					body: String(payload?.body ?? ''),
+					author: 'user',
+				});
+				return { kind: 'success', text: `已登记 ${id}：${title}（${layer}）` };
+			} catch (error) {
+				return { kind: 'error', text: String(error?.message ?? error) };
+			}
+		},
+	});
+}

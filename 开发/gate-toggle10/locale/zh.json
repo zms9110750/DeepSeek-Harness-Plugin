@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "工具闸门开关",
+    "description": "输入框工具行上的开关。状态由宿主内存持有，按钮挂载时查询一次 /gate status，点击时执行 /gate on|off。"
+  }
+}

@@ -1,0 +1,3 @@
+- insert:
+    - id: session-fork-repair
+      name: '@local/session-fork-repair'

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gate Switch",
+    "description": "Blocks every tool call in this session. The state is kept in memory only and never written to the session log; a restart reopens the gate."
+  }
+}

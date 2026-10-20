@@ -10,3 +10,11 @@ screenshots/
 .vs/
 *.vsidx
 *.suo
+
+# 插件管理器留下的覆盖文件 / 一次性探针产物
+*.orig
+.session-repair/
+备份/
+shot.png
+smoke-test.html
+sandbox-write-probe.txt

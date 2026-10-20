@@ -1,0 +1,3 @@
+- insert:
+    - id: session-fork-bridge
+      name: '@local/session-fork-bridge'

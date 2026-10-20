@@ -1,0 +1,23 @@
+# 一个包，十个插件。每行是一个独立的 loader entry：能单独启停、单独替换。
+# 依赖关系在代码里用 inject 声明，不靠这里的顺序。
+- insert:
+    - id: plan-sub-workspace
+      name: '@local/plan-tree2/sub-workspace'
+    - id: plan-lock
+      name: '@local/plan-tree2/lock'
+    - id: plan-events
+      name: '@local/plan-tree2/events'
+    - id: plan-template
+      name: '@local/plan-tree2/template'
+    - id: plan-state
+      name: '@local/plan-tree2/state'
+    - id: plan-record
+      name: '@local/plan-tree2/record'
+    - id: plan-gate
+      name: '@local/plan-tree2/gate'
+    - id: plan-dispatch
+      name: '@local/plan-tree2/dispatch'
+    - id: plan-settle
+      name: '@local/plan-tree2/settle'
+    - id: plan-nodes
+      name: '@local/plan-tree2/tree'
