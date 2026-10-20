@@ -23,6 +23,10 @@ export const inject = ['tools', 'agents', 'sessionProjections', 'planEvents', 'p
 const SETTLEMENT_KEYS = ['verdict', 'conclusion', 'evidence', 'artifacts', 'pitfalls', 'where'];
 const VERDICTS = ['success', 'reject', 'shelved'];
 
+/**
+ * 写进工单的六行格式。权威是 `计划/结算格式.md`（出口锚那份文件）：
+ * 改那边就要改这里——两处必须一致，否则子按一套写、父按另一套解析。
+ */
 const SETTLEMENT = [
 	'verdict: success | reject | shelved — your own call on whether the goal was met.',
 	'conclusion: what was done, or what could not be done. One line.',
