@@ -55,7 +55,9 @@ export function renderTree(state, plansState, planStates) {
 				? (plan.adopted === true ? '计划' : '草案')
 				: planStates.statusOf(plan, own);
 			const layer = plan.type === 'research' ? '研究' : plan.layer ?? '未分层';
-			lines.push(`  ${plan.id} [${layer}] ${status}  ${plan.title}`);
+			// 提案文件夹显示在标题前：一眼看出这条结算出自哪份提案。
+			const home = plan.dir ? `【${plan.dir}】` : '';
+			lines.push(`  ${plan.id} [${layer}] ${status}  ${home}${plan.title}`);
 			const settled = own.find((node) => node.verdict !== null && node.verdict !== undefined);
 			if (settled !== undefined) {
 				if (settled.pitfalls) lines.push(`      坑：${oneLine(settled.pitfalls)}`);
@@ -119,6 +121,7 @@ export function apply(ctx) {
 						id: data.id,
 						parentSession: data.parentSession,
 						planId: data.planId ?? null,
+						dir: data.dir ?? null,
 						type: data.type,
 						layer: data.layer,
 						layerIndex: data.layerIndex,

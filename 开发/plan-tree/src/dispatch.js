@@ -149,6 +149,8 @@ export function apply(ctx) {
 					id,
 					parentSession: agent.session.id,
 					planId: plan.id,
+					// 提案文件夹跟着节点走：结算因此能指回它出自哪份提案。
+					dir: plan.dir ?? null,
 					type: verdict.type,
 					layer: verdict.layer,
 					layerIndex: verdict.layerIndex,

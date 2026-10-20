@@ -120,6 +120,8 @@ export function apply(ctx) {
 			id,
 			title: args.title,
 			body: template.render(args, layer),
+			// 提案所在的文件夹（人写的那份文档在这儿），结算据此指回来。
+			dir: String(args.dir ?? '').trim() || null,
 			type: research ? 'research' : 'plan',
 			layer: layer.title,
 			layerIndex,
@@ -152,6 +154,7 @@ export function apply(ctx) {
 				type: { type: 'string', enum: ['plan', 'research'], description: 'plan (default) or research.' },
 				layer: { type: 'string', description: 'Layer for a plan; omit for research.' },
 				template: { type: 'string', description: 'Template markdown file whose ## layers and - sections shape the document.' },
+				dir: { type: 'string', description: 'Proposal folder this plan belongs to (for example 计划/15-计划即提案). Recorded so that a settlement can be traced back to the proposal it came from.' },
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true } } },

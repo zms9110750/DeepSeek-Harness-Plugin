@@ -230,7 +230,7 @@ test('树简报：计划带状态，卡住的把坑带出来', async () => {
 	const { ctx } = await mountAll();
 	const rec = (op, data) => ({ type: ctx.planEvents.type, data: { op, ...data } });
 	const events = [
-		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲' }),
+		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲', dir: '计划/15-计划即提案' }),
 		rec('adopt', { id: 'p1' }),
 		rec('dispatch', { id: 'n1', planId: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '甲', reason: '试试', childId: 'c1', parentSession: 's' }),
 		rec('file', { id: 'n1', verdict: 'reject', conclusion: '不行', evidence: 'e', artifacts: 'a', pitfalls: '沙箱里 pwsh 起不来', where: 'w' }),
@@ -241,6 +241,7 @@ test('树简报：计划带状态，卡住的把坑带出来', async () => {
 
 	const out = renderTree(nodes, plans, ctx.planStates);
 	assert.match(out.tree, /p1 \[B系列-设计\] 失败计划/);
+	assert.ok(out.tree.includes('【计划/15-计划即提案】'), '计划行要带提案文件夹，结算才指得回去');
 	assert.match(out.tree, /坑：沙箱里 pwsh 起不来/, '状态之外必须能读到为什么进行不下去');
 	assert.match(out.tree, /n1 \[B系列-设计\] reject/);
 	assert.match(out.counts, /B系列-设计:1/);
