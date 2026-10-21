@@ -23,7 +23,7 @@ const WRITE_TOOLS = new Set(['write', 'edit', 'pwsh', 'bash', 'delete']);
 
 export function apply(ctx) {
 	/**
-	 * 用户用 `/plan off` 手动放开的会话。
+	 * 用户用 `/plan-tree off` 手动放开的会话。
 	 * 放在 apply 里而不是模块顶层：这是会话级的活状态，插件一卸载就该跟着消失，
 	 * 否则关掉再开回来，上一份的"已放开"会悄悄继承过来。
 	 */
@@ -65,7 +65,7 @@ export function apply(ctx) {
 			return (
 				`${toolName} 看不出要写哪个目录，而写只允许落在子工作区里：\n` +
 				claims.map((claim) => `  ${claim.path}`).join('\n') +
-				'\n要放开用 /plan off。'
+				'\n要放开用 /plan-tree off。'
 			);
 		}
 		if (scopes.owns(state, target)) return undefined;
@@ -73,12 +73,12 @@ export function apply(ctx) {
 		return (
 			`${target} 不在任何子工作区里：\n` +
 			claims.map((claim) => `  ${claim.path}`).join('\n') +
-			'\n要放开用 /plan off，或 /sub-workspace add <路径>。'
+			'\n要放开用 /plan-tree off，或 /sub-workspace add <路径>。'
 		);
 	});
 
 	ctx.commands.register({
-		name: 'plan',
+		name: 'plan-tree',
 		description: '放开 / 收回"没有子工作区就只能读"的锁',
 		input: { hint: 'on | off | status' },
 		recordInput: false,
@@ -90,9 +90,9 @@ export function apply(ctx) {
 				return {
 					kind: 'success',
 					text: unlocked.has(id)
-						? '锁已放开：可以写工作区。用 /plan on 收回。'
+						? '锁已放开：可以写工作区。用 /plan-tree on 收回。'
 						: claims.length === 0
-							? '锁生效：没有子工作区，只能读。用 /plan off 放开。'
+							? '锁生效：没有子工作区，只能读。用 /plan-tree off 放开。'
 							: `锁生效：只能写进 ${claims.map((claim) => claim.path).join(' / ')}。`,
 				};
 			}
@@ -104,7 +104,7 @@ export function apply(ctx) {
 				unlocked.delete(id);
 				return { kind: 'success', text: '锁已收回。' };
 			}
-			return { kind: 'error', text: '用法：/plan on | off | status' };
+			return { kind: 'error', text: '用法：/plan-tree on | off | status' };
 		},
 	});
 }

@@ -8,6 +8,8 @@
  *   3. 用父日志拼种子，边界就是刚才那条事件（含）；
  *   4. 建子会话（origin:'subagent'，不进会话列表）；
  *   5. 把工单塞进子的收件箱，它停稳后把最后一条消息带回父。
+ *      默认不回等（GUI 里父会话还活着，收得到）；`wait:true` 才会在这一轮里等结算，
+ *      一次性进程（headless）必须用它，否则父退出时子被一起带走。
  *
  * @module @local/plan-tree/dispatch
  */
@@ -22,6 +24,13 @@ export const inject = ['tools', 'agents', 'sessionProjections', 'planEvents', 'p
 
 const SETTLEMENT_KEYS = ['verdict', 'conclusion', 'evidence', 'artifacts', 'pitfalls', 'where'];
 const VERDICTS = ['success', 'reject', 'shelved'];
+/**
+ * `wait` 的上界：默认十分钟。
+ *
+ * 等结算会把父的这一轮拉到跟子一样长，所以必须有天花板——否则子卡住时
+ * 父也跟着卡死。超时不算失败：节点仍留在树上，结算依旧会在子停稳后异步落进日志。
+ */
+const DEFAULT_WAIT_MS = 10 * 60 * 1000;
 
 /**
  * 要不要用分叉种子建子会话。
@@ -129,6 +138,13 @@ export function apply(ctx) {
 				plan: { type: 'string', required: true, description: 'Adopted plan id from plan_write (for example p1).' },
 				reason: { type: 'string', required: true, description: 'One-line reason this node exists, for the tree.' },
 				workspace: { type: 'string', description: 'Writable directory this child owns. Children cannot change it.' },
+				wait: {
+					type: 'boolean',
+					description:
+						'Wait for the child to finish and file its settlement before returning. Off by default: the settlement arrives later ' +
+						'as a notice. A one-shot process (headless) exits at the end of this turn, so it must wait or the child is cut off.',
+				},
+				waitTimeoutMs: { type: 'number', description: `Upper bound for wait, in ms (default ${DEFAULT_WAIT_MS}). Ignored without wait.` },
 			},
 			output: {
 				schema: {
@@ -138,9 +154,18 @@ export function apply(ctx) {
 						id: { type: 'string', required: true },
 						childId: { type: 'string', required: true },
 						layer: { type: 'string' },
+						settled: { type: 'boolean' },
+						verdict: { type: 'string' },
 					},
 				},
-				render: (_args, value) => [{ type: 'text', text: `dispatched ${value.id} as child session ${value.childId}` }],
+				render: (_args, value) => [
+					{
+						type: 'text',
+						text: value.settled === true
+							? `dispatched ${value.id} as child session ${value.childId}; settled ${value.verdict ?? 'without a verdict'}`
+							: `dispatched ${value.id} as child session ${value.childId}`,
+					},
+				],
 			},
 			async execute(args, exec) {
 				const agent = exec.agent;
@@ -225,6 +250,8 @@ export function apply(ctx) {
 				//      · 传 agentOptions 则可能把类实例塞进事件流。
 				//    什么时候要按父的模型/预设走，等宿主提供正经的入参再说。
 				const header = agent.session.header;
+				// 树根：本会话自己就是某棵树里的节点就沿用它的根，否则本会话就是根。
+				const treeRoot = header.treeRoot ?? agent.session.id;
 				const cwd = workspace ?? header.cwd;
 				// 模型必须显式给：AgentOptions.provider + .model，否则系统提示词里的
 				// {{model}} 取不到值，子会话第一轮就 error（实测两次）。形状就是
@@ -242,6 +269,8 @@ export function apply(ctx) {
 					// （README:65 说 fork 拒绝 agentPreset，但摘要清洗之后实测是通的——
 					//  真分叉 + 完整工具集，两个都要。）
 					...(presetId === undefined ? {} : { agentPreset: presetId }),
+					// 树根：子会话把这个 id 一路传下去，于是"一棵树一个库"能定名。
+					treeRoot,
 					parentSession: header.id,
 					isSeeded: seed !== undefined,
 					origin: 'subagent',
@@ -280,6 +309,19 @@ export function apply(ctx) {
 					throw error;
 				}
 
+				// 5b. 把这棵树的边登记进树形上下文库：这个子会话从父的第几条接上。
+				//     库只存"谁接谁、接在第几条"，正文仍在各自的原版日志里。
+				try {
+					ctx.get('treeSessions')?.atRoot(treeRoot)?.registerSession(childId, {
+						parent: agent.session.id,
+						atSeq: boundary + 1,
+						planId: plan.id,
+					});
+				} catch (error) {
+					// 树库写失败不该让派发失败：会话已经建好了，边关系可以后补。
+					ctx.logger?.warn?.(`plan_dispatch: 树库登记失败：${String(error?.message ?? error)}`);
+				}
+
 				// 5. 接线：工单进子的收件箱；停稳后把它最后一段话带回父。
 				const child = handle.agent ?? handle;
 				if (typeof child.followup !== 'function') {
@@ -312,53 +354,74 @@ export function apply(ctx) {
 				);
 
 				const settle = child.whenIdle ?? handle.whenIdle;
+				/** 把子停稳后的最后一段话带回父，并在子自己报了六行时直接归档。 */
+				const settleInto = () => {
+					// 插件已经卸载：这条回传不再属于任何活着的 fiber，丢掉。
+					if (disposed) return undefined;
+					const tail = child.session.snapshotEvents().slice(-40);
+					const last = [...tail].reverse().find((event) => event.type === 'assistant/message');
+					const blocks = last?.data?.message?.content ?? [];
+					const body =
+						blocks.filter((block) => block.type === 'text').map((block) => block.text).join('\n\n') ||
+						'(no final text)';
+					const text = `[node ${id} finished]\n${body}`;
+					// 子自己报了六行就直接归档，不再要父手工 plan_file。
+					const settlement = parseSettlement(body);
+					let autoFiled = false;
+					if (settlement !== undefined) {
+						try {
+							append(agent.session, 'file', { id, ...settlement });
+							autoFiled = true;
+						} catch {
+							autoFiled = false;
+						}
+					}
+					// 宿主消息只能走 user/message：system/message 是步骤内的面事件，
+					// 异步回传时根本没有打开的步骤，写进去必炸。
+					const firstLine = body.split('\n')[0]?.trim() || `node ${id}`;
+					const note = autoFiled
+						? `[已自动归档：${settlement.verdict}]`
+						: '[未自动归档：子没按六行回报，需要父手工 plan_file]';
+					if (typeof agent.followup === 'function') {
+						agent.followup(
+							createUserMessage({
+								content: [{ type: 'text', text: `${text}\n\n${note}` }],
+								source: {
+									kind: 'subagent-settled',
+									form: 'notice',
+									summary: boundContextSummary(firstLine),
+									senderSessionId: childId,
+								},
+							}),
+						);
+					}
+					return { autoFiled, verdict: settlement?.verdict };
+				};
+
+				let settled = undefined;
 				if (typeof settle === 'function') {
-					Promise.resolve(settle.call(child))
-						.then(() => {
-							// 插件已经卸载：这条回传不再属于任何活着的 fiber，丢掉。
-							if (disposed) return;
-							const tail = child.session.snapshotEvents().slice(-40);
-							const last = [...tail].reverse().find((event) => event.type === 'assistant/message');
-							const blocks = last?.data?.message?.content ?? [];
-							const body =
-								blocks.filter((block) => block.type === 'text').map((block) => block.text).join('\n\n') ||
-								'(no final text)';
-							const text = `[node ${id} finished]\n${body}`;
-							// 子自己报了六行就直接归档，不再要父手工 plan_file。
-							const settlement = parseSettlement(body);
-							let autoFiled = false;
-							if (settlement !== undefined) {
-								try {
-									append(agent.session, 'file', { id, ...settlement });
-									autoFiled = true;
-								} catch {
-									autoFiled = false;
-								}
-							}
-							// 宿主消息只能走 user/message：system/message 是步骤内的面事件，
-							// 异步回传时根本没有打开的步骤，写进去必炸。
-							const firstLine = body.split('\n')[0]?.trim() || `node ${id}`;
-							const note = autoFiled
-								? `[已自动归档：${settlement.verdict}]`
-								: '[未自动归档：子没按六行回报，需要父手工 plan_file]';
-							if (typeof agent.followup === 'function') {
-								agent.followup(
-									createUserMessage({
-										content: [{ type: 'text', text: `${text}\n\n${note}` }],
-										source: {
-											kind: 'subagent-settled',
-											form: 'notice',
-											summary: boundContextSummary(firstLine),
-											senderSessionId: childId,
-										},
-									}),
-								);
-							}
-						})
-						.catch(() => {});
+					const running = Promise.resolve(settle.call(child)).then(settleInto).catch(() => undefined);
+					if (args.wait === true) {
+						const limit = Number.isFinite(args.waitTimeoutMs) && args.waitTimeoutMs > 0 ? args.waitTimeoutMs : DEFAULT_WAIT_MS;
+						let timer;
+						const expiry = new Promise((resolve) => {
+							timer = setTimeout(() => resolve(undefined), limit);
+							timer.unref?.();
+						});
+						settled = await Promise.race([running, expiry]);
+						clearTimeout(timer);
+					} else {
+						// 不等：结算在子停稳后自己落进日志，GUI 里父会话还活着，收得到。
+						void running;
+					}
 				}
 
-				return { id, childId, ...(verdict.layer === null ? {} : { layer: verdict.layer }) };
+				return {
+					id,
+					childId,
+					...(verdict.layer === null ? {} : { layer: verdict.layer }),
+					...(settled === undefined ? {} : { settled: true, ...(settled.verdict === undefined ? {} : { verdict: String(settled.verdict) }) }),
+				};
 			},
 		}),
 	);

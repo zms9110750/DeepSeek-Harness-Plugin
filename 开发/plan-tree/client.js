@@ -379,11 +379,21 @@ window.__ModuleLoader__.load({
 							'div',
 							{
 								key: `${plan.id}:${node.id}`,
+								// 点一行 = 跳到那个子会话。树的每一行都该能点进去。
+								onClick: () => {
+									try {
+										runtime?.uiWorkspace?.openSession(node.childId);
+									} catch (error) {
+										setNotice(String(error?.message ?? error));
+										setFailed(true);
+									}
+								},
 								style: {
 									...styles.row,
 									marginLeft: 18,
 									padding: '2px 6px',
 									opacity: 0.85,
+									cursor: 'pointer',
 								},
 								title: node.reason,
 							},
@@ -631,7 +641,7 @@ window.__ModuleLoader__.load({
 		}
 
 		return {
-			inject: ['slots', 'sidebarRightTabs', 'remote', 'remote.commands', 'remote.workspaceFiles'],
+			inject: ['slots', 'sidebarRightTabs', 'remote', 'remote.commands', 'remote.workspaceFiles', 'uiWorkspace'],
 			apply(ctx) {
 				runtime = ctx;
 				// 卸载时断开创建引用：页面若还挂着，宁可报"没有 remote"也不要对死掉的 ctx 操作。

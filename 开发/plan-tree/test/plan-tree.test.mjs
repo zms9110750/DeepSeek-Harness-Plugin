@@ -94,32 +94,44 @@ test('十个插件各自 mount，注册面齐全', async () => {
 	);
 	assert.deepEqual(
 		ctx.commands.commands.map((command) => command.name).sort(),
-		['plan', 'plan-adopt', 'plan-new', 'plan-reject', 'plan-shelve', 'sub-workspace'],
+		['plan-adopt', 'plan-new', 'plan-reject', 'plan-shelve', 'plan-tree', 'sub-workspace'],
 	);
 	assert.deepEqual([...ctx.sessionProjections.defs.keys()].sort(), ['nodes', 'plans', 'subWorkspaces']);
 	assert.equal(ctx.tools.guards.length, 1, '只有锁注册守卫；闸门是纯函数，不注册 guard');
 });
 
-test('状态机：B-03 的扳机表与 statusOf 一致', async () => {
-	const { STATUS, TRIGGERS, statusOf } = await load('src/state.js');
+test('状态机：九态取自 A2A，扳机表与 statusOf 一致', async () => {
+	const { STATUS, TRIGGERS, statusOf, labelOf, TERMINAL } = await load('src/state.js');
 
-	const draft = { id: 'p1' };
+	const draft = { id: 'p1', status: null };
 	const adopted = { id: 'p1', adopted: true };
 	const rejected = { id: 'p1', rejected: true };
 	const node = (verdict, status = verdict) => [{ planId: 'p1', status, verdict }];
 
-	assert.equal(statusOf(draft, []), STATUS.DRAFT);
-	assert.equal(statusOf(adopted, []), STATUS.PLAN);
-	assert.equal(statusOf(rejected, []), STATUS.SHELVED_DRAFT);
-	assert.equal(statusOf(adopted, node(null, 'open')), STATUS.RUNNING);
-	assert.equal(statusOf(adopted, node('success')), STATUS.DONE);
+	// 有 status 字段就以字段为准（新记录）；没有才从布尔与节点推（老记录）。
+	assert.equal(statusOf(draft, []), null);
+	assert.equal(labelOf(null), '草案');
+	assert.equal(statusOf(rejected, []), STATUS.REJECTED);
+	assert.equal(statusOf(adopted, []), STATUS.SUBMITTED);
+	assert.equal(statusOf(adopted, node(null, 'open')), STATUS.WORKING);
+	assert.equal(statusOf(adopted, node('success')), STATUS.COMPLETED);
 	assert.equal(statusOf(adopted, node('reject')), STATUS.FAILED);
-	assert.equal(statusOf(adopted, node('shelved')), STATUS.HELD);
+	assert.equal(statusOf(adopted, node('shelved')), STATUS.INPUT_REQUIRED);
 
-	// 表里每一行的终态都必须是真实存在的状态之一。
-	const states = new Set(Object.values(STATUS));
+	// 节点的事实比记录里的 status 更可信；但用户拍板的状态不可推翻。
+	assert.equal(statusOf({ id: 'p1', status: STATUS.COMPLETED }, node(null, 'open')), STATUS.WORKING);
+	assert.equal(statusOf({ id: 'p1', status: STATUS.REJECTED }, node(null, 'open')), STATUS.REJECTED);
+
+	// 文案与终结态。
+	assert.equal(labelOf(STATUS.FAILED), '失败计划');
+	assert.equal(labelOf(STATUS.INPUT_REQUIRED), '搁置');
+	assert.ok(TERMINAL.has(STATUS.REJECTED));
+	assert.equal(TERMINAL.has(STATUS.WORKING), false);
+
+	// 表里每一行的终态都必须是真实存在的状态之一（草案允许 null）。
+	const states = new Set([...Object.values(STATUS), null]);
 	for (const row of TRIGGERS) assert.ok(states.has(row.to), `trigger ${row.op} points at unknown state ${row.to}`);
-	assert.equal(TRIGGERS.length, 9);
+	assert.equal(TRIGGERS.length, 10);
 });
 
 test('闸门：三项检查各自会拒，研究不受层规则约束', async () => {
@@ -223,7 +235,7 @@ test('锁：没有认领就不拦；划了范围才收窄到范围里', async ()
 
 	// 用户手动放开。
 	at('workspace-write', scoped);
-	ctx.commands.commands.find((command) => command.name === 'plan').handler({ agent: { session, id: 'agent' }, rawInput: 'off' });
+	ctx.commands.commands.find((command) => command.name === 'plan-tree').handler({ agent: { session, id: 'agent' }, rawInput: 'off' });
 	assert.equal(guard(exec('write', { file_path: 'X:/anywhere.md' })), undefined);
 });
 

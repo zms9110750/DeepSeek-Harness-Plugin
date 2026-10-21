@@ -1,6 +1,6 @@
 {
   "name": "@local/plan-tree2",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -14,6 +14,8 @@
     "./dispatch": "./src/dispatch.js",
     "./settle": "./src/settle.js",
     "./tree": "./src/tree.js",
+    "./tree-store": "./src/tree-store.js",
+    "./tree-provider": "./src/tree-provider.js",
     "./sub-workspace": "./src/sub-workspace.js",
     "./lock": "./src/lock.js"
   },
@@ -56,5 +58,6 @@
     }
   }
 }
+
 
 

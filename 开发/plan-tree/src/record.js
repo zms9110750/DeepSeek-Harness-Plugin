@@ -18,7 +18,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 
 export const name = 'plan-record';
 
-export const inject = ['tools', 'commands', 'sessionProjections', 'planEvents', 'proposalTemplate'];
+export const inject = ['tools', 'commands', 'sessionProjections', 'planEvents', 'proposalTemplate', 'planStates'];
 
 const stateSchema = z.object({
 	plans: z.record(z.string(), z.any()),
@@ -44,24 +44,30 @@ export function apply(ctx) {
 	const fold = (state, event) => {
 		const op = opOf(event);
 		const data = event.data;
+		const statuses = ctx.planStates?.STATUS;
 
 		if (op === 'plan') {
 			return {
 				...state,
 				planSeq: state.planSeq + 1,
-				plans: { ...state.plans, [data.id]: { ...data, adopted: false } },
+				// 草案还不是一个 task，所以 status 为空；采纳之后才变成 submitted。
+				plans: { ...state.plans, [data.id]: { ...data, adopted: false, status: null } },
 			};
 		}
 
-		if (op === 'adopt' || op === 'reject-draft' || op === 'shelve-draft') {
+		if (op === 'adopt' || op === 'reject-draft' || op === 'shelve-draft' || op === 'status') {
 			const plan = state.plans[data.id];
 			if (plan === undefined) return state;
-			const patch =
-				op === 'adopt'
-					? { adopted: true }
-					: op === 'reject-draft'
-						? { rejected: true }
-						: { shelved: data.shelved !== false };
+			let patch;
+			if (op === 'adopt') patch = { adopted: true, status: statuses?.SUBMITTED ?? 'submitted' };
+			else if (op === 'reject-draft') patch = { rejected: true, status: statuses?.REJECTED ?? 'rejected' };
+			else if (op === 'shelve-draft') {
+				const shelved = data.shelved !== false;
+				patch = { shelved, status: shelved ? statuses?.INPUT_REQUIRED ?? 'input-required' : null };
+			} else {
+				// status:fail / status:resume —— 对搁置的计划判死或恢复。
+				patch = { status: data.to ?? plan.status };
+			}
 			return { ...state, plans: { ...state.plans, [plan.id]: { ...plan, ...patch } } };
 		}
 
@@ -330,3 +336,4 @@ export function apply(ctx) {
 		},
 	});
 }
+

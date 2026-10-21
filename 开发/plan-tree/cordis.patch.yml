@@ -21,3 +21,8 @@
       name: '@local/plan-tree2/settle'
     - id: plan-nodes
       name: '@local/plan-tree2/tree'
+    - id: plan-tree-store
+      name: '@local/plan-tree2/tree-store'
+    - id: plan-tree-provider
+      name: '@local/plan-tree2/tree-provider'
+

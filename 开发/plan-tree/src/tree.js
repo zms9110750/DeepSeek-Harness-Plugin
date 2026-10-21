@@ -51,9 +51,11 @@ export function renderTree(state, plansState, planStates) {
 		lines.push('计划：');
 		for (const plan of [...plans].sort((a, b) => planNumber(a.id) - planNumber(b.id))) {
 			const own = nodes.filter((node) => node.planId === plan.id);
-			const status = planStates === undefined
-				? (plan.adopted === true ? '计划' : '草案')
+			const raw = planStates === undefined
+				? (plan.adopted === true ? 'submitted' : null)
 				: planStates.statusOf(plan, own);
+			// 存储与协议用码值，树给人看，所以打文案。
+			const status = planStates?.labelOf?.(raw) ?? (raw ?? '草案');
 			const layer = plan.type === 'research' ? '研究' : plan.layer ?? '未分层';
 			// 提案文件夹显示在标题前：一眼看出这条结算出自哪份提案。
 			const home = plan.dir ? `【${plan.dir}】` : '';

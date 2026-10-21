@@ -1,0 +1,17 @@
+{
+  "name": "@local/secrets-llm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read an LLM route's url / apiKey / model from a .NET user-secrets file at launch; provide the value behind credential references and mount llm-pi-ai with that route.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "license": "MIT"
+}
