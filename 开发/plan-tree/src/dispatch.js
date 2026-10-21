@@ -400,6 +400,22 @@ export function apply(ctx) {
 					});
 					// 子会话自己写记录时要落到同一棵树里，所以这一刻就把归属记下。
 					ctx.get('treeSessions')?.note?.(childId, treeRoot);
+
+					// 提案摆上共享任务板：subject 是标题，description 是正文，writeScopes 就是这次认领的目录。
+					// 任务板是可选能力——没装团队、或调用方不是团队成员时会抛，忽略即可。
+					// 「提案只是给人看的」，所以这里抄一份过去，不指望它回写。
+					try {
+						const teams = ctx.get('agentTeams');
+						if (teams !== undefined && typeof teams.createTask === 'function') {
+							await teams.createTask(agent, {
+								subject: String(plan.title ?? plan.topic ?? '计划').slice(0, 200),
+								description: String(plan.body ?? '').slice(0, 16384) || '(没有正文)',
+								writeScopes: workspace === undefined ? [] : [workspace],
+							});
+						}
+					} catch (error) {
+						ctx.logger?.warn?.(`plan_dispatch: 任务板登记失败（不影响派发）：${String(error?.message ?? error)}`);
+					}
 				} catch (error) {
 					// 树库写失败不该让派发失败：会话已经建好了，边关系可以后补。
 					ctx.logger?.warn?.(`plan_dispatch: 树库登记失败：${String(error?.message ?? error)}`);
