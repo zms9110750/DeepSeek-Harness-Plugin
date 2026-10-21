@@ -6,6 +6,10 @@
  *
  * 读范围（A-5：以用户选的工作区为基准、可读别的项目、范围外逐个授权）**还没做**。
  *
+ * **锁是提示，不是墙**：它的作用是让模型在动手写之前先划范围、把范围摆给用户过目，
+ * 而不是拦住模型。所以 `sub_workspace` 工具给模型 add / remove / list 全套——
+ * 要用户来解开这个限制，就得再做一个界面，而限制本身只是一句提醒，不值得。
+ *
  * @module @local/plan-tree/sub-workspace
  */
 import { z } from 'zod';
@@ -145,8 +149,8 @@ export function apply(ctx) {
 				'When the user has NOT yet allowed it, do not claim anything: write a proposal with plan_write so the user can review it, ' +
 				'and claim the directory at dispatch time through plan_dispatch(workspace).',
 			parameters: {
-				action: { type: 'string', required: true, enum: ['list', 'add'], description: 'What to do. Releasing a claim is the user\'s call, not the model\'s.' },
-				path: { type: 'string', description: 'Absolute directory to claim. Required for add.' },
+				action: { type: 'string', required: true, enum: ['list', 'add', 'remove'], description: 'What to do.' },
+				path: { type: 'string', description: 'Absolute directory to claim or release. Required for add and remove.' },
 				plan: { type: 'string', description: 'Optional plan id this claim belongs to.' },
 			},
 			output: {
@@ -173,8 +177,15 @@ export function apply(ctx) {
 					ctx.get('subWorkspaces').claim(agent, path, args.plan);
 					return { text: `已认领 ${path}——这一支现在只能写这里面的东西。` };
 				}
-				// 释放只能由用户来：模型自己撤掉认领，等于把锁自己打开（实测发生过）。
-				throw new Error(`sub_workspace: unknown action "${args.action}"；释放认领请让用户用 /sub-workspace remove`);
+				if (args.action === 'remove') {
+					// 释放也交给模型：锁是**提示**，不是墙。要用户来解就得再做一个界面，
+					// 而这个限制本身只是提醒"先划范围、让用户过目"，划错了模型自己该能改。
+					const path = String(args.path ?? '').trim();
+					if (path === '') throw new Error('sub_workspace remove: path is required');
+					ctx.get('subWorkspaces').release(agent, path);
+					return { text: `已释放 ${path}` };
+				}
+				throw new Error(`sub_workspace: unknown action "${args.action}"`);
 			},
 		}),
 	);
