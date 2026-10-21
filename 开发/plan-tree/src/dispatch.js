@@ -171,22 +171,16 @@ export function apply(ctx) {
 					properties: {
 						id: { type: 'string', required: true },
 						childId: { type: 'string', required: true },
+						plan: { type: 'string', required: true },
 						status: { type: 'string', required: true },
-						via: { type: 'string' },
-						layer: { type: 'string' },
+						label: { type: 'string', required: true },
 						topic: { type: 'string' },
+						layer: { type: 'string' },
 					},
 				},
+				// 与状态通知同形：一份计划 + 它的新状态 + 标题。一句话说完。
 				render: (_args, value) => [
-					{
-						type: 'text',
-						text: [
-							`${value.id} 已启动：子会话 ${value.childId}${value.via === 'team' ? '（团队队友）' : ''}`,
-							`受派：${value.topic || '(未命名)'}${value.layer === undefined ? '（研究）' : `　层 ${value.layer}`}`,
-							'它需要更多信息会自己回来问；跑完交回六行时，那是一条新消息。',
-							'本轮到此结束。',
-						].join('\n'),
-					},
+					{ type: 'text', text: `${value.plan} ${value.label}${value.layer === undefined ? '（研究）' : `［${value.layer}］`}：${value.topic || '(未命名)'} → ${value.id}` },
 				],
 			},
 			async execute(args, exec) {
@@ -473,15 +467,17 @@ export function apply(ctx) {
 				// 之后要恢复，只有两条来源：用户说话，或子会话的结算（followup 开新轮）。
 				exec.concludeTurn?.();
 
-				// 返回值只说明"它开跑了"：子任务可能还要回来补充信息（input-required），
-				// 也可能要跑很久。真正的结算由它自己交回来，那是另一条消息、另一轮。
+				// 返回值只是一条**状态变化**：这颗子节点派发出去了，计划进入"进行中"。
+				// 和将来广播给父/兄弟的那种汇报同一个形状——标题 + 状态，别的都不说。
+				// 之后回来的东西（用户的话、子的提问、子的六行）都是另外的消息、另外的轮次。
 				return {
 					id,
 					childId,
-					status: 'started',
-					via,
-					...(verdict.layer === null ? {} : { layer: verdict.layer }),
+					plan: plan.id,
+					status: 'working',
+					label: ctx.planStates?.labelOf?.('working') ?? '进行中',
 					topic: String(plan.topic ?? ''),
+					...(verdict.layer === null ? {} : { layer: verdict.layer }),
 				};
 			},
 		}),
