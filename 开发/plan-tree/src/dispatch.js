@@ -32,8 +32,7 @@ const VERDICTS = ['success', 'reject', 'shelved'];
  */
 const DEFAULT_WAIT_MS = 10 * 60 * 1000;
 
-/** 团队成员的描述是一行短文本，别把整段理由塞进去。 */
-function oneLine(text, limit = 120) {
+/** 团队成员的描述是一行短文本，别把整段理由塞进去。 */function oneLine(text, limit = 120) {
 	const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
 	return flat.length === 0 ? 'plan node' : flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
 }
@@ -474,5 +473,53 @@ export function apply(ctx) {
 			},
 		}),
 	);
+
+	// ---- 派发之后，父这一轮就到此为止 ----
+	//
+	// 宿主的循环规则很简单：**某一步没有工具调用，这一轮就结束**（agent-loop:
+	// `if (toolCalls.length === 0) return { kind: "completed" }`）。所以让父停下来，
+	// 不是去 cancel 它（那会把这一轮记成"取消"），而是让它在派发之后再拿不到能用的工具——
+	// 它自然会收尾成一次正常的 completed。
+	//
+	// "有来源才继续"由宿主免费提供：子会话结算时走 followup，那是一条新消息、
+	// 一个新轮次，守卫看的是"本轮有没有派发"，所以新轮次不受影响。
+	const STILL_ALLOWED = new Set(['plan_tree', 'plan_show', 'plan_file']);
+	const TURN_TAIL = 400;
+
+	ctx.tools.guard((exec) => {
+		const agent = exec?.agent;
+		if (!agent) return undefined;
+		const toolName = exec?.tool?.name ?? exec?.name;
+		// 只读的树/结算入口留着：派发之后还要能把结果报告出来。
+		if (STILL_ALLOWED.has(toolName)) return undefined;
+
+		let events;
+		try {
+			events = agent.session.snapshotEvents();
+		} catch {
+			return undefined;
+		}
+		const tail = events.slice(-TURN_TAIL);
+		let start = -1;
+		for (let index = tail.length - 1; index >= 0; index -= 1) {
+			if (tail[index].type === 'turn/start') {
+				start = index;
+				break;
+			}
+		}
+		if (start < 0) return undefined;
+
+		// parentSession 必须是自己：子会话的日志里带着父那条派发记录（前缀），
+		// 不加这个条件，子一进来就会被这条守卫锁死。
+		const dispatched = tail
+			.slice(start)
+			.some((event) => ctx.planEvents.opOf(event) === 'dispatch' && event.data?.parentSession === agent.session.id);
+		if (!dispatched) return undefined;
+
+		return (
+			'这一轮已经派发过节点，父的循环到此为止：子会话会带着六行结算回来，那是新的一轮。\n' +
+			'现在不要再调工具——把派发结果报告给用户即可。要跟进就 `plan_tree` / `plan_show`。'
+		);
+	});
 }
 
