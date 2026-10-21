@@ -20,7 +20,7 @@ import { createUserMessage, boundContextSummary } from '@deepseek-ai/dsh-llm';
 
 export const name = 'plan-dispatch';
 
-export const inject = ['tools', 'agents', 'sessionProjections', 'planEvents', 'planGate'];
+export const inject = ['tools', 'agents', 'sessionProjections', 'planEvents', 'planGate', 'planStates'];
 
 const SETTLEMENT_KEYS = ['verdict', 'conclusion', 'evidence', 'artifacts', 'pitfalls', 'where'];
 const VERDICTS = ['success', 'reject', 'shelved'];
