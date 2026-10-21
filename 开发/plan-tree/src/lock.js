@@ -14,12 +14,49 @@
  *
  * @module @local/plan-tree/lock
  */
+import { join } from 'node:path';
+
 export const name = 'plan-lock';
 
 export const inject = ['tools', 'sessionProjections', 'subWorkspaces', 'commands'];
 
 /** 会改工作区的工具。其余一律当作只读，不拦。 */
 const WRITE_TOOLS = new Set(['write', 'edit', 'pwsh', 'bash', 'delete']);
+
+/**
+ * 从官方任务板取可写范围（依赖劫持）。
+ *
+ * 他们的 `writeScopes` 明确是 **advisory、不是锁**（源码注释："without treating it as a lock"），
+ * 而且路径是 **workspace 相对**、不许绝对路径与 `..`。我们把它当作唯一的声明处，
+ * 自己来执行：相对路径按会话 cwd 换算成绝对路径，交给下面的守卫。
+ *
+ * 读不到就返回空 = 放行：任务板是实验包的私有结构，字段一变我们就读不到，
+ * 那时候宁可退回"不设限"，也不能把会话锁死。
+ */
+function scopesFromTasks(ctx, agent) {
+	try {
+		const teams = ctx.get?.('agentTeams');
+		if (teams === undefined || typeof teams.tryMembership !== 'function' || typeof teams.listTasks !== 'function') return [];
+		const membership = teams.tryMembership(agent);
+		if (membership === undefined) return [];
+		const root = agent.session?.header?.cwd;
+		if (typeof root !== 'string' || root === '') return [];
+		const tasks = teams.listTasks(membership) ?? [];
+		const mine = membership.target ?? membership.id;
+		const out = [];
+		for (const task of tasks) {
+			// 没有 owner 的任务是"谁都能认"，也算进来；有 owner 的只看自己那份。
+			if (task.owner !== undefined && task.owner !== null && task.owner !== mine) continue;
+			for (const scope of task.writeScopes ?? []) {
+				const relative = String(scope).replace(/^[\\/]+/, '').replace(/\//g, '\\');
+				out.push({ path: join(root, relative), planId: null, task: task.id });
+			}
+		}
+		return out;
+	} catch {
+		return [];
+	}
+}
 
 export function apply(ctx) {
 	/**
@@ -52,7 +89,9 @@ export function apply(ctx) {
 
 		const scopes = ctx.subWorkspaces;
 		const state = scopes.stateOf(agent);
-		const claims = scopes.claimsOf(state);
+		// 两处声明合并：我们自己的 claim 记录 + 官方任务板的 writeScopes。
+		// 任务板是将来唯一该用的地方；claim 留着是为了没装团队时还能用。
+		const claims = [...scopes.claimsOf(state), ...scopesFromTasks(ctx, agent)];
 
 		// 一块都没认领 = 这一支还没有划定范围 = 谈不上并发，因此**不拦**。
 		// 锁的职责是别让两支写同一块地方，不是给每个新会话上枷锁。
