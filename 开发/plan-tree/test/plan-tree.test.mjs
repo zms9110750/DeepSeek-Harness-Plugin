@@ -235,6 +235,9 @@ test('锁：没有认领就不拦；划了范围才收窄到范围里', async ()
 	assert.equal(guard(exec('write', { file_path: 'X:/a/sub/ok.md' })), undefined, '范围内放行');
 	assert.match(String(guard(exec('write', { file_path: 'X:/a/out.md' }))), /不在任何子工作区/);
 	assert.match(String(guard(exec('pwsh', {}))), /看不出要写哪个目录/);
+	// 但命令文本里出现认领目录就放行——模型写文件几乎都用 pwsh。
+	assert.equal(guard(exec('pwsh', { command: 'Set-Content X:/a/sub/x.md hi' })), undefined, '命令落在范围内 → 放行');
+	assert.match(String(guard(exec('pwsh', { command: 'Set-Content X:/b/y.md hi' }))), /看不出要写哪个目录/, '命令全在范围外 → 拒');
 
 	// 完全权限：整套跳过。
 	at('danger-full-access', scoped);

@@ -70,6 +70,13 @@ export function apply(ctx) {
 		const args = exec?.args ?? exec?.input ?? {};
 		const target = String(args.file_path ?? args.path ?? args.cwd ?? '');
 		if (target === '') {
+			// 没有路径字段的工具（`pwsh` / `bash`）看命令文本：里面出现了认领目录就放行。
+			// 模型很爱用 `pwsh -Command "Set-Content ..."` 写文件，而命令文本里没有路径字段，
+			// 早先一律按"看不出要写哪儿"拒掉，等于把整条写路堵死（实测：两个子都写不进去）。
+			const command = String(args.command ?? args.cmd ?? args.script ?? '');
+			if (command !== '' && claims.some((claim) => command.toLowerCase().includes(String(claim.path).toLowerCase()))) {
+				return undefined;
+			}
 			return (
 				`${toolName} 看不出要写哪个目录，而写只允许落在子工作区里：\n` +
 				claims.map((claim) => `  ${claim.path}`).join('\n') +
