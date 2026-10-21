@@ -97,7 +97,7 @@ test('十个插件各自 mount，注册面齐全', async () => {
 		['plan-adopt', 'plan-new', 'plan-reject', 'plan-shelve', 'plan-tree', 'sub-workspace'],
 	);
 	assert.deepEqual([...ctx.sessionProjections.defs.keys()].sort(), ['nodes', 'plans', 'subWorkspaces']);
-	assert.equal(ctx.tools.guards.length, 2, '两个守卫：写锁一个，派发后停轮一个；闸门是纯函数，不注册 guard');
+	assert.equal(ctx.tools.guards.length, 1, '只有锁注册守卫；闸门是纯函数，停轮走 exec.concludeTurn()');
 });
 
 test('状态机：九态取自 A2A，扳机表与 statusOf 一致', async () => {
@@ -279,41 +279,6 @@ test('树简报：只报标题与状态，内容是 plan_show 的事', async () 
 	// 缺 plans 投影时只是不报计划段，不影响节点树。
 	const bare = renderTree(nodes, undefined, ctx.planStates);
 	assert.doesNotMatch(bare.tree, /p1/);
-});
-
-test('派发之后，父这一轮不再有工具可调（停轮守卫）', async () => {
-	const { ctx } = await mountAll();
-	const rec = (op, data) => ({ type: ctx.planEvents.type, data: { op, ...data } });
-	const session = {
-		id: 'session-p',
-		header: { cwd: 'X:/a' },
-		snapshotEvents: () => [
-			{ type: 'turn/start', data: { turn: 1 } },
-			rec('plan', { id: 'p1', title: '甲' }),
-			rec('dispatch', { id: 'n1', parentSession: 'session-p', childId: 'c1' }),
-		],
-	};
-	const refused = (name, who = session) => {
-		const exec = { agent: { session: who, id: 'a' }, tool: { name }, args: {} };
-		return ctx.tools.guards.map((guard) => guard(exec)).find((verdict) => verdict !== undefined);
-	};
-
-	assert.match(String(refused('write')), /这一轮已经派发过节点/);
-	assert.match(String(refused('pwsh')), /这一轮已经派发过节点/);
-	// 只读的树与结算入口留着，否则父连结果都报不出来。
-	assert.equal(refused('plan_tree'), undefined);
-	assert.equal(refused('plan_show'), undefined);
-	assert.equal(refused('plan_file'), undefined);
-
-	// 子会话的日志里有父那条派发记录（前缀），但 parentSession 不是它自己 —— 不该被锁死。
-	assert.equal(refused('write', { ...session, id: 'session-c' }), undefined);
-
-	// 新的一轮：派发在上一轮，这一轮没有派发 → 放行。
-	const nextTurn = {
-		...session,
-		snapshotEvents: () => [{ type: 'turn/start', data: { turn: 2 } }, rec('file', { id: 'n1', verdict: 'success' })],
-	};
-	assert.equal(refused('write', nextTurn), undefined);
 });
 
 test('导出：显式写文件，已存在则拒绝', async () => {
