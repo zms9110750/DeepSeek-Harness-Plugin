@@ -32,6 +32,17 @@ const VERDICTS = ['success', 'reject', 'shelved'];
  */
 const DEFAULT_WAIT_MS = 10 * 60 * 1000;
 
+/** 团队成员的描述是一行短文本，别把整段理由塞进去。 */
+function oneLine(text, limit = 120) {
+	const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
+	return flat.length === 0 ? 'plan node' : flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
+}
+
+/** 队友名必须是 lower-kebab-case 且在一个团队里唯一：节点 id 直接映射。 */
+function teammateName(nodeId) {
+	return `node-${String(nodeId).toLowerCase()}`;
+}
+
 /**
  * 要不要用分叉种子建子会话。
  *
@@ -138,6 +149,14 @@ export function apply(ctx) {
 				plan: { type: 'string', required: true, description: 'Adopted plan id from plan_write (for example p1).' },
 				reason: { type: 'string', required: true, description: 'One-line reason this node exists, for the tree.' },
 				workspace: { type: 'string', description: 'Writable directory this child owns. Children cannot change it.' },
+				via: {
+					type: 'string',
+					enum: ['self', 'team'],
+					description:
+						'Who executes the node. "self" (default) creates the child session through the agents service directly. ' +
+						'"team" hands it to the official agent-team plugin (spawn_teammate), which owns the roster, inbox, and ' +
+						'end-of-turn notification; the context still comes from the tree-fork provider. Requires the agent-team plugin.',
+				},
 				wait: {
 					type: 'boolean',
 					description:
@@ -188,7 +207,11 @@ export function apply(ctx) {
 				if (!verdict.ok) throw new Error(verdict.reason);
 
 				const id = `n${tree.nextId}`;
-				const childId = `session-${randomUUID()}`;
+				// 两条执行路，都由参数选；谁执行决定 childId 什么时候有着落：
+				//   self —— 我们建会话，sessionId 由我们生成；
+				//   team —— 官方团队插件建会话，它的 id 由它给，所以我们先写空、建完再补一条 link。
+				const via = args.via === 'team' ? 'team' : 'self';
+				let childId = via === 'team' ? null : `session-${randomUUID()}`;
 
 				// 1. 先认领工作区：这条事件必须在分叉边界之前，子才看得见自己的写范围。
 				const workspace = typeof args.workspace === 'string' && args.workspace.trim() !== '' ? args.workspace.trim() : undefined;
@@ -229,6 +252,7 @@ export function apply(ctx) {
 					topic: plan.topic,
 					reason: args.reason,
 					childId,
+					via,
 				});
 
 				// 3. 拼分叉种子。**这个宿主上先不用**：带种子建会话会在事件转发时抛
@@ -279,29 +303,52 @@ export function apply(ctx) {
 
 				let handle;
 				try {
-					handle = await ctx.agents.create({
-						sessionId: childId,
-						parentAgent: agent,
-						meta,
-						...(agentOptions === undefined ? {} : { agentOptions }),
-						...(presets === undefined || presetId === undefined
-							? {}
-							: {
-									setup: async (childCtx) => {
-										await presets.mount(childCtx, presetId);
-									},
-								}),
-						...(seed === undefined
-							? { inheritedEventCount: 0 }
-							: { seed, inheritedEventCount: boundary + 1 }),
-					});
+					if (via === 'team') {
+						// 官方 Agent Team 建会话：名册、收件箱、结束通知都归它；
+						// 上下文仍由我们注册的 tree-fork 供（团队工具包里把 forkProvider 指到它）。
+						const teams = ctx.get('agentTeams');
+						if (teams === undefined) {
+							throw new Error('plan_dispatch: via "team" needs the official agent-team plugin mounted (agent-team + tool-agent-team)');
+						}
+						const spawned = await teams.spawnTeammate(agent, {
+							name: teammateName(id),
+							description: oneLine(args.reason),
+							prompt: [{ type: 'text', text: prompt }],
+							context: 'fork',
+							provider: 'tree-fork',
+							...(exec.signal === undefined ? {} : { signal: exec.signal }),
+						});
+						childId = spawned.member?.id;
+						if (typeof childId !== 'string' || childId.length === 0) {
+							throw new Error('plan_dispatch: the team plugin returned no member id');
+						}
+						// 派发记录是在知道 id 之前写的，这里补一条，把节点绑到真正的子会话上。
+						append(agent.session, 'link', { id, childId });
+					} else {
+						handle = await ctx.agents.create({
+							sessionId: childId,
+							parentAgent: agent,
+							meta,
+							...(agentOptions === undefined ? {} : { agentOptions }),
+							...(presets === undefined || presetId === undefined
+								? {}
+								: {
+										setup: async (childCtx) => {
+											await presets.mount(childCtx, presetId);
+										},
+									}),
+							...(seed === undefined
+								? { inheritedEventCount: 0 }
+								: { seed, inheritedEventCount: boundary + 1 }),
+						});
+					}
 				} catch (error) {
 					// 事件已经写进日志，但子会话没建成。别留一个永远 open 的幽灵节点。
 					append(agent.session, 'file', {
 						id,
 						verdict: 'shelved',
 						conclusion: `派发失败，未建成子会话：${String(error?.message ?? error)}`,
-						evidence: 'ctx.agents.create() 抛出',
+						evidence: via === 'team' ? 'agentTeams.spawnTeammate() 抛出' : 'ctx.agents.create() 抛出',
 						artifacts: '无',
 						pitfalls: '节点已写入日志但无对应会话',
 						where: '本会话日志',
@@ -325,7 +372,7 @@ export function apply(ctx) {
 				}
 
 				// 5. 接线：工单进子的收件箱；停稳后把它最后一段话带回父。
-				const child = handle.agent ?? handle;
+				const child = via === 'team' ? ctx.agents.get(childId) : (handle.agent ?? handle);
 				if (typeof child.followup !== 'function') {
 					throw new Error('plan_dispatch: the created child does not expose followup()');
 				}

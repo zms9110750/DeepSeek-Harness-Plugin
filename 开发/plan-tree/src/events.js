@@ -32,7 +32,7 @@ const LEGACY = {
 };
 
 /** 只有这几种记录进树库：它们是树本身，不是旁注。 */
-const MIRRORED = new Set(['plan', 'adopt', 'reject', 'shelve', 'status', 'dispatch', 'file']);
+const MIRRORED = new Set(['plan', 'adopt', 'reject-draft', 'shelve-draft', 'status', 'dispatch', 'link', 'file']);
 
 export function apply(ctx) {
 	ctx.provide('planEvents', {

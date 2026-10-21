@@ -178,6 +178,13 @@ export function apply(ctx) {
 			};
 		}
 
+		if (op === 'link') {
+			// 派发记录先写、子会话 id 后到（团队插件自己生成 id），这里把两者绑起来。
+			const node = state.nodes[data.id];
+			if (!node || typeof data.childId !== 'string') return state;
+			return { ...state, nodes: { ...state.nodes, [node.id]: { ...node, childId: data.childId } } };
+		}
+
 		if (op === 'file') {
 			const node = state.nodes[data.id];
 			if (!node) return state;
