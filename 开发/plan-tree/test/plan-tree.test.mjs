@@ -90,7 +90,7 @@ test('十个插件各自 mount，注册面齐全', async () => {
 
 	assert.deepEqual(
 		ctx.tools.tools.map((tool) => tool.name).sort(),
-		['plan_dispatch', 'plan_export', 'plan_file', 'plan_show', 'plan_tree', 'plan_write'],
+		['plan_dispatch', 'plan_export', 'plan_file', 'plan_show', 'plan_tree', 'plan_write', 'sub_workspace'],
 	);
 	assert.deepEqual(
 		ctx.commands.commands.map((command) => command.name).sort(),

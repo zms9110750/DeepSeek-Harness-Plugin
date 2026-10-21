@@ -9,10 +9,11 @@
  * @module @local/plan-tree/sub-workspace
  */
 import { z } from 'zod';
+import { defineTool } from '@deepseek-ai/dsh-tools';
 
 export const name = 'sub-workspace';
 
-export const inject = ['commands', 'sessionProjections', 'planEvents'];
+export const inject = ['commands', 'sessionProjections', 'planEvents', 'tools'];
 
 const stateSchema = z.object({
 	claims: z.record(z.string(), z.any()),
@@ -133,4 +134,48 @@ export function apply(ctx) {
 			return { kind: 'error', text: '用法：/sub-workspace list | add <路径> | remove <路径>' };
 		},
 	});
+
+	ctx.tools.register(
+		defineTool({
+			name: 'sub_workspace',
+			description:
+				'Claim, release, or list the sub-workspaces this session may write. A sub-workspace is two things at once: ' +
+				'a concurrency lock (two branches must not write one directory) and the scope the user reviews before work starts. ' +
+				'Call this only for a directory the user has already allowed — for example they said to build something in a folder. ' +
+				'When the user has NOT yet allowed it, do not claim anything: write a proposal with plan_write so the user can review it, ' +
+				'and claim the directory at dispatch time through plan_dispatch(workspace).',
+			parameters: {
+				action: { type: 'string', required: true, enum: ['list', 'add'], description: 'What to do. Releasing a claim is the user\'s call, not the model\'s.' },
+				path: { type: 'string', description: 'Absolute directory to claim. Required for add.' },
+				plan: { type: 'string', description: 'Optional plan id this claim belongs to.' },
+			},
+			output: {
+				schema: {
+					type: 'object',
+					additionalProperties: false,
+					properties: { text: { type: 'string', required: true } },
+				},
+				render: (_args, value) => [{ type: 'text', text: value.text }],
+			},
+			execute(args, exec) {
+				const agent = exec.agent;
+				if (!agent) throw new Error('sub_workspace requires an owning agent session');
+				const state = stateOf(agent);
+				const claims = Object.values(state?.claims ?? {});
+
+				if (args.action === 'list') {
+					if (claims.length === 0) return { text: `还没有子工作区。会话根：${agent.session.header.cwd ?? '(未知)'}` };
+					return { text: claims.map((claim) => `${claim.path}${claim.planId ? `  ← ${claim.planId}` : ''}`).join('\n') };
+				}
+				if (args.action === 'add') {
+					const path = String(args.path ?? '').trim();
+					if (path === '') throw new Error('sub_workspace add: path is required (an absolute directory)');
+					ctx.get('subWorkspaces').claim(agent, path, args.plan);
+					return { text: `已认领 ${path}——这一支现在只能写这里面的东西。` };
+				}
+				// 释放只能由用户来：模型自己撤掉认领，等于把锁自己打开（实测发生过）。
+				throw new Error(`sub_workspace: unknown action "${args.action}"；释放认领请让用户用 /sub-workspace remove`);
+			},
+		}),
+	);
 }

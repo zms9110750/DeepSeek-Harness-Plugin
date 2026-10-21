@@ -59,22 +59,26 @@ export function apply(ctx) {
 		// （早期版本在这里直接拒绝，结果新开的会话一进来就写不了任何东西。）
 		if (claims.length === 0) return undefined;
 
+		const HOW = [
+			'',
+			'子工作区既是**并发锁**（两条分支不能写同一个目录），也是**用户过目过的写入范围**。所以别绕，按情况选一条：',
+			'  · 用户已许可这个目录 → 调 `sub_workspace(action:"add", path:"<绝对路径>")` 自己划出范围，然后继续写。',
+			'  · 用户还没许可 → 先 `plan_write` 写一份提案给用户过目；派发时在 `plan_dispatch` 里带 `workspace`，那一刻会自动认领。',
+			'  · 只想放开当前会话 → `/plan-tree off`。',
+		].join('\n');
+
 		const args = exec?.args ?? exec?.input ?? {};
 		const target = String(args.file_path ?? args.path ?? args.cwd ?? '');
 		if (target === '') {
 			return (
 				`${toolName} 看不出要写哪个目录，而写只允许落在子工作区里：\n` +
 				claims.map((claim) => `  ${claim.path}`).join('\n') +
-				'\n要放开用 /plan-tree off。'
+				HOW
 			);
 		}
 		if (scopes.owns(state, target)) return undefined;
 
-		return (
-			`${target} 不在任何子工作区里：\n` +
-			claims.map((claim) => `  ${claim.path}`).join('\n') +
-			'\n要放开用 /plan-tree off，或 /sub-workspace add <路径>。'
-		);
+		return `\`${target}\` 不在任何子工作区里：\n` + claims.map((claim) => `  ${claim.path}`).join('\n') + HOW;
 	});
 
 	ctx.commands.register({
