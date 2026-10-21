@@ -31,13 +31,29 @@ const LEGACY = {
 	'plugin:plan-tree/file': 'file',
 };
 
+/** 只有这几种记录进树库：它们是树本身，不是旁注。 */
+const MIRRORED = new Set(['plan', 'adopt', 'reject', 'shelve', 'status', 'dispatch', 'file']);
+
 export function apply(ctx) {
 	ctx.provide('planEvents', {
 		type: RECORD,
 
 		/** 唯一的写入口。 */
 		append(session, op, data) {
-			appendPluginRecord(session, RECORD, { op, ...data });
+			const record = { op, ...data };
+			appendPluginRecord(session, RECORD, record);
+
+			// 树管的是提案本身，所以提案也进树库：日志丢了库还在，界面也不必非等会话打开。
+			// 单会话视图：写入方就是这条记录的主人，读方只读自己那一串（见 15/README 第 10 条）。
+			const stores = ctx.get('treeSessions');
+			if (stores === undefined || !MIRRORED.has(op)) return;
+			try {
+				const seq = session.snapshotEvents().length - 1;
+				stores.atSession(session).appendEvent(session.id, seq, JSON.stringify(record));
+			} catch (error) {
+				// 镜像失败绝不影响日志本身：日志才是会话能继续跑的前提。
+				ctx.logger?.warn?.(`plan-events: 树库镜像失败（日志已写）：${String(error?.message ?? error)}`);
+			}
 		},
 
 		/** 一条事件属于哪个 op；不是本插件的事件返回 undefined。 */

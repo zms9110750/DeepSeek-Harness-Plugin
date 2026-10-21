@@ -90,7 +90,7 @@ test('十个插件各自 mount，注册面齐全', async () => {
 
 	assert.deepEqual(
 		ctx.tools.tools.map((tool) => tool.name).sort(),
-		['plan_dispatch', 'plan_export', 'plan_file', 'plan_tree', 'plan_write'],
+		['plan_dispatch', 'plan_export', 'plan_file', 'plan_show', 'plan_tree', 'plan_write'],
 	);
 	assert.deepEqual(
 		ctx.commands.commands.map((command) => command.name).sort(),
@@ -239,25 +239,35 @@ test('锁：没有认领就不拦；划了范围才收窄到范围里', async ()
 	assert.equal(guard(exec('write', { file_path: 'X:/anywhere.md' })), undefined);
 });
 
-test('树简报：计划带状态，卡住的把坑带出来', async () => {
+test('树简报：只报标题与状态，内容是 plan_show 的事', async () => {
 	const { ctx } = await mountAll();
 	const rec = (op, data) => ({ type: ctx.planEvents.type, data: { op, ...data } });
 	const events = [
-		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲', dir: '计划/15-计划即提案' }),
+		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲', dir: '计划/15-计划即提案', body: '# 甲\n\n正文' }),
 		rec('adopt', { id: 'p1' }),
 		rec('dispatch', { id: 'n1', planId: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '甲', reason: '试试', childId: 'c1', parentSession: 's' }),
 		rec('file', { id: 'n1', verdict: 'reject', conclusion: '不行', evidence: 'e', artifacts: 'a', pitfalls: '沙箱里 pwsh 起不来', where: 'w' }),
 	];
 	const nodes = ctx.foldInto('nodes', events);
 	const plans = ctx.foldInto('plans', events);
-	const { renderTree } = await load('src/tree.js');
+	const { renderTree, renderPlan } = await load('src/tree.js');
 
 	const out = renderTree(nodes, plans, ctx.planStates);
 	assert.match(out.tree, /p1 \[B系列-设计\] 失败计划/);
 	assert.ok(out.tree.includes('【计划/15-计划即提案】'), '计划行要带提案文件夹，结算才指得回去');
-	assert.match(out.tree, /坑：沙箱里 pwsh 起不来/, '状态之外必须能读到为什么进行不下去');
 	assert.match(out.tree, /n1 \[B系列-设计\] reject/);
 	assert.match(out.counts, /B系列-设计:1/);
+	// 树是索引：正文、派发理由、结算都不在这里。
+	assert.doesNotMatch(out.tree, /坑：/);
+	assert.doesNotMatch(out.tree, /派发：/);
+	assert.doesNotMatch(out.tree, /正文/);
+
+	// 内容在展开层：一份提案的正文 + 它每个节点的结算。
+	const open = renderPlan(plans.plans.p1, [nodes.nodes.n1], ctx.planStates);
+	assert.match(open, /正文/, '展开要能看到提案正文');
+	assert.match(open, /派发理由：试试/);
+	assert.match(open, /坑：沙箱里 pwsh 起不来/, '为什么进行不下去在展开层读');
+	assert.match(open, /判定：reject/);
 
 	// 缺 plans 投影时只是不报计划段，不影响节点树。
 	const bare = renderTree(nodes, undefined, ctx.planStates);

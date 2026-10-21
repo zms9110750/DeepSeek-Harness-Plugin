@@ -16,7 +16,7 @@
  * @module @local/plan-tree/tree-store
  */
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +33,8 @@ export const APPLICATION_ID = 0x54524545; // "TREE"
 
 const ABOUT =
 	'plan-tree 的树形上下文存储。sessions 一行一个树节点（parent + at_seq 说明从父的第几条接上）；' +
-	'events 一行一条原始 JSONL 事件。根会话的内容不在这里，由原版日志提供。';
+	'events 一行一条原始 JSONL 事件——提案的标题、状态、正文，以及每个节点的派发理由与结算都在这里。' +
+	'这棵树管的是提案本身，工具与界面只是它的两个视图。';
 
 /**
  * 一棵树一个库：`~/.dsh/plan-tree/trees/<根会话 id>.db`。
@@ -161,6 +162,8 @@ export function openTreeStore(path) {
 export function apply(ctx) {
 	/** 按路径缓存打开的库，卸载时全部关掉。 */
 	const open = new Map();
+	/** 会话 → 它所属那棵树的根。派发时登记，进程重启后靠扫库补回来。 */
+	const roots = new Map();
 	ctx.effect(() => () => {
 		for (const store of open.values()) {
 			try {
@@ -170,30 +173,78 @@ export function apply(ctx) {
 			}
 		}
 		open.clear();
+		roots.clear();
 	});
 
-	ctx.provide('treeSessions', {
+	const atPath = (path) => {
+		const key = String(path);
+		let store = open.get(key);
+		if (store === undefined) {
+			store = openTreeStore(key);
+			open.set(key, store);
+		}
+		return store;
+	};
+
+	const treeSessions = {
 		/** 拿到（或打开）某个路径的库。 */
-		at(path) {
-			const key = String(path);
-			let store = open.get(key);
-			if (store === undefined) {
-				store = openTreeStore(key);
-				open.set(key, store);
-			}
-			return store;
-		},
+		at: atPath,
 
 		/**
 		 * 一棵树一个库，按根会话 id 命名。
 		 * 根 id 由调用方给（派发时 `header.treeRoot ?? 自己的 id`），本模块不猜。
 		 */
 		atRoot(rootId) {
-			return this.at(treeStorePath(rootId));
+			return atPath(treeStorePath(rootId));
+		},
+
+		/** 记下"这个会话属于哪棵树"。派发时由派发方登记，子会话自己写记录时才知道该落哪个库。 */
+		note(sessionId, rootId) {
+			roots.set(String(sessionId), String(rootId));
+		},
+
+		/**
+		 * 这个会话属于哪棵树。
+		 *
+		 * 先查登记表；查不到就扫一遍已有的库，看哪个库把这个会话登记成了节点——
+		 * 进程重启之后内存表是空的，靠这一步还能找回自己的根。都没有就是自己独立成树。
+		 */
+		rootOf(sessionId) {
+			const id = String(sessionId);
+			const known = roots.get(id);
+			if (known !== undefined) return known;
+			try {
+				const dir = join(homedir(), '.dsh', 'plan-tree', 'trees');
+				for (const name of readdirSync(dir)) {
+					if (!name.endsWith('.db')) continue;
+					const probe = new DatabaseSync(join(dir, name), { readOnly: true });
+					try {
+						const row = probe.prepare('SELECT parent FROM sessions WHERE id = ?').get(id);
+						if (row?.parent) {
+							roots.set(id, String(row.parent));
+							return String(row.parent);
+						}
+					} finally {
+						probe.close();
+					}
+				}
+			} catch {
+				/* 目录还不存在，或者库正被别处锁着；退回自己成树 */
+			}
+			roots.set(id, id);
+			return id;
+		},
+
+		/** 这个会话该读写的库。 */
+		atSession(session) {
+			const id = typeof session === 'string' ? session : session?.id;
+			if (id === undefined || String(id).length === 0) throw new Error('tree-store: 会话没有 id');
+			return this.atRoot(this.rootOf(id));
 		},
 
 		openTreeStore,
 		FORMAT_VERSION,
 		APPLICATION_ID,
-	});
+	};
+	ctx.provide('treeSessions', treeSessions);
 }

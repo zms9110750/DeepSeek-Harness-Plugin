@@ -317,6 +317,8 @@ export function apply(ctx) {
 						atSeq: boundary + 1,
 						planId: plan.id,
 					});
+					// 子会话自己写记录时要落到同一棵树里，所以这一刻就把归属记下。
+					ctx.get('treeSessions')?.note?.(childId, treeRoot);
 				} catch (error) {
 					// 树库写失败不该让派发失败：会话已经建好了，边关系可以后补。
 					ctx.logger?.warn?.(`plan_dispatch: 树库登记失败：${String(error?.message ?? error)}`);
