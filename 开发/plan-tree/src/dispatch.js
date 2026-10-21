@@ -172,30 +172,22 @@ export function apply(ctx) {
 						id: { type: 'string', required: true },
 						childId: { type: 'string', required: true },
 						status: { type: 'string', required: true },
+						via: { type: 'string' },
 						layer: { type: 'string' },
-						verdict: { type: 'string' },
-						conclusion: { type: 'string' },
-						evidence: { type: 'string' },
-						artifacts: { type: 'string' },
-						pitfalls: { type: 'string' },
-						where: { type: 'string' },
+						topic: { type: 'string' },
 					},
 				},
-				render: (_args, value) => {
-					const lines = [`${value.id} → ${value.childId}`];
-					lines.push(`状态：${value.status}`);
-					if (value.verdict !== undefined) {
-						lines.push(`结论：${value.conclusion || '(空)'}`);
-						lines.push(`证据：${value.evidence || '(空)'}`);
-						lines.push(`产物：${value.artifacts || '(空)'}`);
-						lines.push(`坑：${value.pitfalls || '(无)'}`);
-						lines.push(`去哪查：${value.where || '(空)'}`);
-					} else {
-						lines.push('子会话还在跑；它交回六行时会作为一条新消息到达，那是新的一轮。');
-					}
-					lines.push('本轮到此结束。');
-					return [{ type: 'text', text: lines.join('\n') }];
-				},
+				render: (_args, value) => [
+					{
+						type: 'text',
+						text: [
+							`${value.id} 已启动：子会话 ${value.childId}${value.via === 'team' ? '（团队队友）' : ''}`,
+							`受派：${value.topic || '(未命名)'}${value.layer === undefined ? '（研究）' : `　层 ${value.layer}`}`,
+							'它需要更多信息会自己回来问；跑完交回六行时，那是一条新消息。',
+							'本轮到此结束。',
+						].join('\n'),
+					},
+				],
 			},
 			async execute(args, exec) {
 				const agent = exec.agent;
@@ -481,23 +473,15 @@ export function apply(ctx) {
 				// 之后要恢复，只有两条来源：用户说话，或子会话的结算（followup 开新轮）。
 				exec.concludeTurn?.();
 
-				// 返回值就是这次派发的状态报告：父拿它就能直接向用户交代，不必再问一次。
-				const report = settled?.settlement;
+				// 返回值只说明"它开跑了"：子任务可能还要回来补充信息（input-required），
+				// 也可能要跑很久。真正的结算由它自己交回来，那是另一条消息、另一轮。
 				return {
 					id,
 					childId,
-					status: report === undefined ? 'running' : report.verdict,
+					status: 'started',
+					via,
 					...(verdict.layer === null ? {} : { layer: verdict.layer }),
-					...(report === undefined
-						? {}
-						: {
-								verdict: String(report.verdict),
-								conclusion: String(report.conclusion ?? ''),
-								evidence: String(report.evidence ?? ''),
-								artifacts: String(report.artifacts ?? ''),
-								pitfalls: String(report.pitfalls ?? ''),
-								where: String(report.where ?? ''),
-							}),
+					topic: String(plan.topic ?? ''),
 				};
 			},
 		}),
