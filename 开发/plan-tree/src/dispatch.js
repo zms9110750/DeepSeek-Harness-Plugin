@@ -201,7 +201,44 @@ export function apply(ctx) {
 
 				const self = gate.selfNode(tree.nodes, agent.session.id);
 				const verdict = gate.check({ plan, self, counts: tree.counts });
-				if (!verdict.ok) throw new Error(verdict.reason);
+				if (!verdict.ok) {
+					// 同层连否三次：闸门不再放行计划，但也不该让模型干瞪眼——
+					// 顺手把它该做的那份研究计划写出来，它采纳后派它即可。
+					if (verdict.code === 'too-many-rejects') {
+						const research = `p${plans.planSeq ?? 1}`;
+						const pitfalls = Object.values(tree.nodes)
+							.filter((node) => node.layer === verdict.layer && node.pitfalls)
+							.map((node) => `- ${node.id}：${node.pitfalls}`)
+							.join('\n');
+						append(agent.session, 'plan', {
+							id: research,
+							title: `研究：${verdict.layer} 连续被否`,
+							type: 'research',
+							layer: null,
+							layerIndex: null,
+							dir: null,
+							topic: `${verdict.layer} 为什么连续被否`,
+							goal: `查清 ${verdict.layer} 这一层为什么连否 ${verdict.count} 次，给出可以继续派发的结论`,
+							done_when: '能说清坑在哪，并给出下一份计划该改什么',
+							where_to_learn: '被否节点的结算与坑',
+							author: 'host',
+							body: [
+								`# 研究：${verdict.layer} 连续被否`,
+								'',
+								'- 类型：research',
+								'- 目的：查清为什么连否，而不是继续换一份计划碰运气',
+								'',
+								'## 已知的坑',
+								'',
+								pitfalls === '' ? '- （被否的节点没有留下坑，得从头查）' : pitfalls,
+							].join('\n'),
+						});
+						throw new Error(
+							`${verdict.reason}\n已为你写好研究计划 ${research}（研究：${verdict.layer} 连续被否）。先 plan_adopt 采纳它，再 plan_dispatch ${research}。`,
+						);
+					}
+					throw new Error(verdict.reason);
+				}
 
 				const id = `n${tree.nextId}`;
 				// 两条执行路，都由参数选；谁执行决定 childId 什么时候有着落：

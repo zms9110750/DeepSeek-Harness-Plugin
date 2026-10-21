@@ -71,6 +71,9 @@ export function check({ plan, self, counts = {}, recursive = RECURSIVE }) {
 	if (used >= MAX_REJECTIONS) {
 		return {
 			ok: false,
+			code: 'too-many-rejects',
+			layer,
+			count: used,
 			reason:
 				`plan_dispatch: layer ${layer} already has ${used} consecutive rejections; ` +
 				'dispatch a research node first, and let it settle before dispatching plans here again',
