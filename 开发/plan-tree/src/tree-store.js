@@ -1,17 +1,17 @@
 /**
  * tree-store · 树形上下文的存储层。
  *
- * 一棵树一个 sqlite 文件，躺在根会话目录里，和原版的 `会话.jsonl.zst` 并排。
+ * 一棵树一个 sqlite 文件，躺在 `~/.dsh/plan-tree/trees/` 里。
  * **只写自己的文件**：原版的任何字节都不碰。
  *
  * 两张表各管一件事：
- *   sessions(id, parent, at_seq, plan_id, created_at)  一行 = 树上一个节点
- *   events(session_id, seq, line)                     一行 = 一条事件（原始 JSONL 那一行）
+ *   sessions(id, parent, at_seq, plan_id, created_at)  一行 = 树上一个节点（关系）
+ *   records(session_id, seq, line)                     一行 = 一条**提案记录**（plan/adopt/dispatch/file…）
  *
- * `at_seq` = 这一层**从父那里继承了多少条**。裁剪规则：某层自己的事件只取到
- * 它子节点的 at_seq 为止——子后来分叉出去之后，父再长出来的事件不进子的上下文。
+ * **树管提案，不管消息**。会话消息留在原版日志里，这里一条都不存；
+ * `at_seq` 只说明"这一层从父的第几条之后接上"，是个边界数字，不是消息副本。
  *
- * 库**不做拼接**：它只回答"这条链有哪几段、每段截到第几条"。拼接在运行时按清单流式做。
+ * 库**不做拼接**：要拼上下文就去原版日志按边界取，这不是树的职责。
  *
  * @module @local/plan-tree/tree-store
  */
@@ -25,16 +25,16 @@ export const name = 'tree-store';
 
 export const inject = [];
 
-/** 库的格式版本；结构变了就加一，迁移时先读它。 */
-export const FORMAT_VERSION = 1;
+/** 库的格式版本；结构变了就加一，迁移时先读它。2 = events 改名 records。 */
+export const FORMAT_VERSION = 2;
 
 /** 文件身份：任意 sqlite 工具 `PRAGMA application_id` 一敲就知道这是谁的库。 */
 export const APPLICATION_ID = 0x54524545; // "TREE"
 
 const ABOUT =
-	'plan-tree 的树形上下文存储。sessions 一行一个树节点（parent + at_seq 说明从父的第几条接上）；' +
-	'events 一行一条原始 JSONL 事件——提案的标题、状态、正文，以及每个节点的派发理由与结算都在这里。' +
-	'这棵树管的是提案本身，工具与界面只是它的两个视图。';
+	'plan-tree 的树形存储。sessions 一行一个树节点（parent + at_seq 说明从父的第几条接上）；' +
+	'records 一行一条提案记录——提案的标题、状态、正文，以及每个节点的派发理由与结算都在这里。' +
+	'树管提案，不管消息：会话消息在原版日志里，这里一条都不存。工具与界面只是这棵树的两个视图。';
 
 /**
  * 一棵树一个库：`~/.dsh/plan-tree/trees/<根会话 id>.db`。
@@ -56,7 +56,7 @@ const SCHEMA = [
 		plan_id TEXT,
 		created_at INTEGER
 	)`,
-	`CREATE TABLE IF NOT EXISTS events(
+	`CREATE TABLE IF NOT EXISTS records(
 		session_id TEXT NOT NULL,
 		seq INTEGER NOT NULL,
 		line TEXT NOT NULL,
@@ -87,8 +87,19 @@ export function openTreeStore(path) {
 		db.exec(`PRAGMA user_version = ${FORMAT_VERSION}`);
 	}
 
+	// 1 → 2：这张表以前叫 events，存的是"会话事件"，读起来像在管消息；
+	// 它其实只放提案记录，所以改名。旧库就地搬过去，行一条不丢。
+	const legacy = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='events'").get();
+	if (legacy !== undefined) {
+		db.exec('INSERT OR IGNORE INTO records(session_id, seq, line) SELECT session_id, seq, line FROM events');
+		db.exec('DROP TABLE events');
+		// 说明与版本跟着改：旧库的 about 说的还是"原始 JSONL 事件"。
+		db.prepare('UPDATE meta SET value = ? WHERE key = ?').run(ABOUT, 'about');
+		db.prepare('UPDATE meta SET value = ? WHERE key = ?').run(String(FORMAT_VERSION), 'format_version');
+	}
+
 	const insertSession = db.prepare('INSERT OR IGNORE INTO sessions(id, parent, at_seq, plan_id, created_at) VALUES (?, ?, ?, ?, ?)');
-	const insertEvent = db.prepare('INSERT OR IGNORE INTO events(session_id, seq, line) VALUES (?, ?, ?)');
+	const insertRecord = db.prepare('INSERT OR IGNORE INTO records(session_id, seq, line) VALUES (?, ?, ?)');
 	const selectChain = db.prepare(`
 		WITH RECURSIVE chain(id, at_seq, depth) AS (
 			SELECT id, at_seq, 0 FROM sessions WHERE id = ?
@@ -100,7 +111,7 @@ export function openTreeStore(path) {
 		)
 		SELECT id, at_seq, depth FROM chain ORDER BY depth DESC
 	`);
-	const selectSegment = db.prepare('SELECT seq, line FROM events WHERE session_id = ? AND seq < ? ORDER BY seq');
+	const selectAllRecords = db.prepare('SELECT session_id, seq, line FROM records ORDER BY session_id, seq');
 
 	return {
 		path,
@@ -111,13 +122,13 @@ export function openTreeStore(path) {
 			insertSession.run(String(id), parent, Number(atSeq) || 0, planId, Date.now());
 		},
 
-		/** 追加一条事件。同一 (session, seq) 重复写会被忽略，重放不会翻倍。 */
-		appendEvent(sessionId, seq, line) {
-			insertEvent.run(String(sessionId), Number(seq), String(line));
+		/** 追加一条提案记录。同一 (session, seq) 重复写会被忽略，重放不会翻倍。 */
+		appendRecord(sessionId, seq, line) {
+			insertRecord.run(String(sessionId), Number(seq), String(line));
 		},
 
 		/**
-		 * 从叶子往上取链，根在最前。
+		 * 从叶子往上取链，根在最前。这是关系，不含内容。
 		 * @returns `[{ id, at_seq, depth }]`，`depth` 0 = 叶子。
 		 */
 		chain(leafId) {
@@ -125,32 +136,17 @@ export function openTreeStore(path) {
 		},
 
 		/**
-		 * 取某一层自己的事件，按裁剪点截断。
-		 * @param id - 节点 id。
-		 * @param inherits - 这一层被继承了这么多条（= 它子节点的 at_seq）；Infinity 表示不裁。
-		 * @returns `[{ seq, line }]`。
+		 * 取几个会话的提案记录，按写入顺序。
+		 *
+		 * 视图该传什么由调用方定：一个会话的视图传它自己的祖先链（`chain()` 的 id），
+		 * 于是"往下继承、往上不聚合"这条边界由传参决定，而不是由库里存了什么决定。
+		 * @param sessionIds - 要读的会话 id。
+		 * @returns `[{ session_id, seq, line }]`。
 		 */
-		segment(id, inherits = Number.POSITIVE_INFINITY) {
-			return selectSegment.all(String(id), Number.isFinite(inherits) ? inherits : Number.MAX_SAFE_INTEGER);
-		},
-
-		/**
-		 * 把一条链拼成有序的事件行（**只给测试与人工核对用**；运行时按清单流式取，不落地成一个串）。
-		 * @param leafId - 叶子节点 id。
-		 * @param rootLines - 根会话那一段的行；由调用方从原版日志取来。
-		 * @returns `[{ id, seq, line }]`，根在最前。
-		 */
-		assemble(leafId, rootLines = []) {
-			const chain = selectChain.all(String(leafId));
-			const out = rootLines.map((line, seq) => ({ id: 'root', seq, line }));
-			for (let index = 0; index < chain.length; index += 1) {
-				// 这一层被继承了多少条 = 它子节点的 at_seq（链里下一行）。
-				const inherits = index + 1 < chain.length ? chain[index + 1].at_seq : Number.POSITIVE_INFINITY;
-				for (const row of this.segment(chain[index].id, inherits)) {
-					out.push({ id: chain[index].id, seq: row.seq, line: row.line });
-				}
-			}
-			return out;
+		records(sessionIds) {
+			const wanted = new Set((sessionIds ?? []).map(String));
+			if (wanted.size === 0) return [];
+			return selectAllRecords.all().filter((row) => wanted.has(String(row.session_id)));
 		},
 
 		close() {

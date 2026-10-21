@@ -1,6 +1,6 @@
 /**
  * 看树库里到底有什么：表、行、meta。
- * 用法：node peek-tree.cjs <rootId 或库文件名>
+ * 用法：node peek-tree.cjs [根 id 片段]
  */
 const { DatabaseSync } = require('node:sqlite');
 const { join } = require('node:path');
@@ -18,15 +18,13 @@ console.log('库：' + file + '\n');
 
 const db = new DatabaseSync(file, { readOnly: true });
 console.log('--- 表 ---');
-for (const row of db.prepare("select name, sql from sqlite_master where type='table' order by name").all()) {
-  console.log(row.name + ': ' + String(row.sql).replace(/\s+/g, ' '));
-}
+const tables = db.prepare("select name, sql from sqlite_master where type='table' order by name").all();
+for (const row of tables) console.log(row.name + ': ' + String(row.sql).replace(/\s+/g, ' '));
+
 console.log('\n--- 行 ---');
-for (const table of ['sessions', 'events']) {
+for (const { name: table } of tables) {
   const count = db.prepare('select count(*) as c from ' + table).get().c;
   console.log(table + ' = ' + count + ' 行');
   if (count > 0) console.log(JSON.stringify(db.prepare('select * from ' + table + ' limit 5').all(), null, 1));
 }
-console.log('\n--- meta ---');
-console.log(JSON.stringify(db.prepare('select * from meta').all(), null, 1));
 db.close();

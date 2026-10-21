@@ -49,7 +49,7 @@ export function apply(ctx) {
 			if (stores === undefined || !MIRRORED.has(op)) return;
 			try {
 				const seq = session.snapshotEvents().length - 1;
-				stores.atSession(session).appendEvent(session.id, seq, JSON.stringify(record));
+				stores.atSession(session).appendRecord(session.id, seq, JSON.stringify(record));
 			} catch (error) {
 				// 镜像失败绝不影响日志本身：日志才是会话能继续跑的前提。
 				ctx.logger?.warn?.(`plan-events: 树库镜像失败（日志已写）：${String(error?.message ?? error)}`);
