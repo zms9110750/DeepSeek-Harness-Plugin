@@ -16,6 +16,8 @@
  */
 import { join } from 'node:path';
 
+import { within } from './sub-workspace.js';
+
 export const name = 'plan-lock';
 
 export const inject = ['tools', 'sessionProjections', 'subWorkspaces', 'commands'];
@@ -91,7 +93,10 @@ export function apply(ctx) {
 		const state = scopes.stateOf(agent);
 		// 两处声明合并：我们自己的 claim 记录 + 官方任务板的 writeScopes。
 		// 任务板是将来唯一该用的地方；claim 留着是为了没装团队时还能用。
-		const claims = [...scopes.claimsOf(state), ...scopesFromTasks(ctx, agent)];
+		// 再按"必须在工作区里"过滤一遍：库里已存在的越界记录一律不算数（老记录不复活）。
+		const root = scopes.rootOf(agent);
+		const claims = [...scopes.claimsOf(state), ...scopesFromTasks(ctx, agent)]
+			.filter((claim) => root === undefined || within(root, claim.path));
 
 		// 一块都没认领 = 这一支还没有划定范围 = 谈不上并发，因此**不拦**。
 		// 锁的职责是别让两支写同一块地方，不是给每个新会话上枷锁。

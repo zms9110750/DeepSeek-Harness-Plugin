@@ -97,6 +97,13 @@ export function apply(ctx) {
 		claim(agent, path, planId) {
 			const target = String(path ?? '').trim();
 			if (target === '') throw new Error('sub-workspace: 空的路径');
+			// 子工作区只能是工作区里面的一块：根取宿主给这个会话的工作目录。
+			// 越界直接拒绝，而不是悄悄忽略——忽略会让人以为范围已经划好了。
+			const root = this.rootOf(agent);
+			if (root === undefined) throw new Error('sub-workspace: 这个会话没有工作区，不能认领范围');
+			if (!within(root, target)) {
+				throw new Error(`sub-workspace: ${target} 不在工作区里。子工作区只能是工作区里面的一块，当前工作区是 ${root}`);
+			}
 			append(agent.session, 'claim', { path: target, planId: planId ?? null, by: agent.session.id, at: Date.now() });
 			return target;
 		},
