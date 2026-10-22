@@ -151,9 +151,13 @@ test('状态机：九态取自 A2A，扳机表与 statusOf 一致', async () => 
 	// 搁置中的节点被父交付取消之后，计划跟着 canceled。
 	assert.equal(statusOf(adopted, node(STATUS.CANCELED)), STATUS.CANCELED);
 
-	// 节点的事实比记录里的 status 更可信；但用户拍板的状态不可推翻。
-	assert.equal(statusOf({ id: 'p1', status: STATUS.COMPLETED }, node(STATUS.WORKING)), STATUS.WORKING);
+	// 显式写下的状态优先于旧节点事实：plan_status(p1 → completed) 之后，
+	// 节点可能还停在 working（子会话没停稳），树不能把它盖回"进行中"。
+	assert.equal(statusOf({ id: 'p1', status: STATUS.COMPLETED }, node(STATUS.WORKING)), STATUS.COMPLETED);
+	assert.equal(statusOf({ id: 'p1', status: STATUS.FAILED }, node(STATUS.WORKING)), STATUS.FAILED);
 	assert.equal(statusOf({ id: 'p1', status: STATUS.REJECTED }, node(STATUS.WORKING)), STATUS.REJECTED);
+	// 采纳（submitted）不是"事实之外的拍板"：派发之后仍应由节点事实说"进行中"。
+	assert.equal(statusOf({ id: 'p1', status: STATUS.SUBMITTED }, node(STATUS.WORKING)), STATUS.WORKING);
 
 	// 旧日志（v1 投影）的节点状态仍能推：open/success/reject/shelved → 九态。
 	assert.equal(statusOf({ id: 'p1', adopted: true }, node('open')), STATUS.WORKING);
@@ -248,6 +252,42 @@ test('折叠：记录、采纳、派发、结算之后，两份投影各自正�
 	const after = ctx.foldInto('nodes', later);
 	assert.equal(after.failures['x:/t/提案格式.md'], 1, '成功不归零：模板失败是累计值');
 	assert.equal(after.nodes.n2.status, 'completed');
+});
+
+test('显式状态：plan_status 写计划 → 节点不动，但推导与树都认这个状态', async () => {
+	const { ctx } = await mountAll();
+	const rec = (op, data) => ({ type: ctx.planEvents.type, data: { op, ...data } });
+	const events = [
+		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲' }),
+		rec('adopt', { id: 'p1' }),
+		rec('dispatch', { id: 'n1', planId: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '甲', reason: 'r', childId: 'c1', parentSession: 's' }),
+		// 用户/模型显式补档：计划完成，但子会话的节点还没停稳（仍 working）。
+		rec('status', { id: 'p1', to: 'completed', scope: 'plan' }),
+	];
+	const plans = ctx.foldInto('plans', events);
+	const nodes = ctx.foldInto('nodes', events);
+
+	assert.equal(plans.plans.p1.status, 'completed', '计划记录写上九态码');
+	assert.equal(nodes.nodes.n1.status, 'working', '节点状态不被顺带改掉');
+	// 关键回归：树不能因为节点还 working 就把计划盖回"进行中"。
+	assert.equal(ctx.planStates.statusOf(plans.plans.p1, [nodes.nodes.n1]), 'completed');
+});
+
+test('显式状态：plan_status 写节点 → 节点变，计划跟着重推', async () => {
+	const { ctx } = await mountAll();
+	const rec = (op, data) => ({ type: ctx.planEvents.type, data: { op, ...data } });
+	const events = [
+		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲' }),
+		rec('adopt', { id: 'p1' }),
+		rec('dispatch', { id: 'n1', planId: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '甲', reason: 'r', childId: 'c1', parentSession: 's' }),
+		// 用户命令 /plan-status auth n1 → 待授权。
+		rec('status', { id: 'n1', to: 'auth-required', scope: 'node' }),
+	];
+	const plans = ctx.foldInto('plans', events);
+	const nodes = ctx.foldInto('nodes', events);
+
+	assert.equal(nodes.nodes.n1.status, 'auth-required');
+	assert.equal(ctx.planStates.statusOf(plans.plans.p1, [nodes.nodes.n1]), 'auth-required', '计划由节点事实推到待授权');
 });
 
 test('锁：普通模式没有认领就不拦；计划模式没有认领全拒', async () => {

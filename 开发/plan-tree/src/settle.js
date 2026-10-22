@@ -12,7 +12,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 
 export const name = 'plan-settle';
 
-export const inject = ['tools', 'sessionProjections', 'planEvents'];
+export const inject = ['tools', 'sessionProjections', 'planEvents', 'planStates'];
 
 const VERDICTS = ['success', 'reject', 'shelved'];
 

@@ -240,8 +240,13 @@ export function statusOf(plan, nodes) {
 		.map((node) => LEGACY_NODE_STATUS[node?.status] ?? node?.status)
 		.filter((status) => typeof status === 'string' && isStatus(status));
 
-	// 1. 用户决定，一锤定音。
-	if (isStatus(plan.status) && [STATUS.REJECTED, STATUS.INPUT_REQUIRED, STATUS.CANCELED, STATUS.AUTH_REQUIRED].includes(plan.status)) {
+	// 1. 明确写下的状态，一锤定音。
+	//    · 用户决定（否决/搁置/取消/待授权）当然算；
+	//    · completed / failed 也归这一类：它们可能是 plan_status 显式写的"完成/失败"，
+	//      此时树上的节点可能还是 working（比如父会话先补档、子会话还没停稳），
+	//      不能拿旧节点事实把它盖回"进行中"。节点推导出来的完成/失败只写在节点上，
+	//      计划的 status 仍为 null，所以不会误判。
+	if (isStatus(plan.status) && (TERMINAL.has(plan.status) || INTERRUPTED.has(plan.status))) {
 		return plan.status;
 	}
 	// 2. 事实优先：节点状态。

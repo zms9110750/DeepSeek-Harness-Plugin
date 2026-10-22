@@ -213,6 +213,7 @@ export function openTreeStore(path) {
 	const selectNodesOfPlan = db.prepare('SELECT * FROM nodes WHERE plan_id = ? ORDER BY id');
 	const selectNodesOfParent = db.prepare('SELECT * FROM nodes WHERE parent_session = ? ORDER BY id');
 	const selectAllNodes = db.prepare('SELECT * FROM nodes ORDER BY id');
+	const selectAllPlans = db.prepare('SELECT * FROM plans ORDER BY id');
 	const selectSuspendedChildren = db.prepare(
 		"SELECT * FROM nodes WHERE parent_session = ? AND status IN ('input-required', 'auth-required') ORDER BY id",
 	);
@@ -518,6 +519,11 @@ export function openTreeStore(path) {
 		/** 整棵树的所有节点（plan_tree 的"树库优先"读路径用）。 */
 		allNodes() {
 			return selectAllNodes.all();
+		},
+
+		/** 整棵树的所有计划（计划段也树库优先：plan_status 显式写的完成/失败立刻可见）。 */
+		allPlans() {
+			return selectAllPlans.all();
 		},
 
 		/** 父交付时要自动取消的那批：挂起中的直接子任务（input-required / auth-required）。 */

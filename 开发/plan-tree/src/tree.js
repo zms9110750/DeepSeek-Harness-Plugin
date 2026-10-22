@@ -94,6 +94,57 @@ export function mergeStoredNodes(state, rows) {
 }
 
 /**
+ * 把树库里的计划状态覆盖到 `plans` 投影上（计划段也树库优先）。
+ *
+ * 为什么计划也要覆盖：`plan_status(p1 → completed)` 这类显式状态写在库里，
+ * 而离线子会话 / 未重放投影的视图看不到；不覆盖就会出现"库里已完成、树上还进行中"。
+ * 只覆盖状态（其余标题、正文仍以投影为准），库里没有的计划补一条最小行让它可见。
+ *
+ * @param plansState - `plans` 投影（可能 undefined）。
+ * @param rows - tree-store 的 plans 行。
+ */
+export function mergeStoredPlans(plansState, rows) {
+	if (plansState === undefined || !Array.isArray(rows) || rows.length === 0) return plansState;
+	const plans = { ...(plansState.plans ?? {}) };
+	for (const row of rows) {
+		const existing = plans[row.id];
+		if (existing === undefined) {
+			plans[row.id] = {
+				id: row.id,
+				title: row.title ?? '',
+				type: row.type ?? 'plan',
+				layer: row.layer ?? null,
+				layerIndex: null,
+				dir: null,
+				templatePath: row.template ?? null,
+				adopted: row.adopted === 1,
+				rejected: row.rejected === 1,
+				shelved: row.shelved === 1,
+				status: row.status ?? null,
+				body: '',
+			};
+			continue;
+		}
+		plans[row.id] = { ...existing, status: row.status ?? existing.status ?? null };
+	}
+	return { ...plansState, plans };
+}
+
+/**
+ * 一次读齐 plan_tree / plan_show 要的东西：**树库优先、投影兜底**。
+ * 库打不开（没装 tree-store、文件坏了）时退回纯投影，两个工具照常用。
+ */
+function readView(ctx, session) {
+	const store = storeOf(ctx, session);
+	const nodeState = ctx.sessionProjections.stateOf(session, 'nodes') ?? { nodes: {}, failures: {}, nextId: 1 };
+	const planState = ctx.sessionProjections.stateOf(session, 'plans');
+	return {
+		nodes: mergeStoredNodes(nodeState, store?.allNodes?.() ?? []),
+		plans: mergeStoredPlans(planState, store?.allPlans?.() ?? []),
+	};
+}
+
+/**
  * 简报：计划（状态）→ 节点树 → 每模板失败计数。
  *
  * **只报标题和状态**：树是索引，不是内容。正文、派发理由、结算六项都归 `plan_show`。
@@ -343,10 +394,8 @@ export function apply(ctx) {
 				if (!exec.agent) throw new Error('plan_tree requires an owning agent session');
 				const raw = ctx.sessionProjections.stateOf(exec.agent.session, 'nodes');
 				if (!raw) throw new Error('plan_tree: the nodes projection is not available in this session');
-				const store = storeOf(ctx, exec.agent.session);
-				const state = mergeStoredNodes(raw, store?.allNodes?.() ?? []);
-				const plans = ctx.sessionProjections.stateOf(exec.agent.session, 'plans');
-				return renderTree(state, plans, ctx.planStates);
+				const view = readView(ctx, exec.agent.session);
+				return renderTree(view.nodes, view.plans, ctx.planStates);
 			},
 		}),
 	);
@@ -367,7 +416,8 @@ export function apply(ctx) {
 			},
 			execute(args, exec) {
 				if (!exec.agent) throw new Error('plan_show requires an owning agent session');
-				const plans = ctx.sessionProjections.stateOf(exec.agent.session, 'plans');
+				const view = readView(ctx, exec.agent.session);
+				const plans = view.plans;
 				if (!plans) throw new Error('plan_show: the plans projection is not available in this session');
 				const plan = plans.plans?.[args.plan];
 				if (plan === undefined) {
@@ -376,10 +426,7 @@ export function apply(ctx) {
 						`plan_show: no plan "${args.plan}" in this session (have ${known.length === 0 ? 'none' : known.join(', ')})`,
 					);
 				}
-				const raw = ctx.sessionProjections.stateOf(exec.agent.session, 'nodes');
-				const store = storeOf(ctx, exec.agent.session);
-				const state = mergeStoredNodes(raw ?? { nodes: {}, failures: {}, nextId: 1 }, store?.allNodes?.() ?? []);
-				const own = Object.values(state.nodes ?? {})
+				const own = Object.values(view.nodes.nodes ?? {})
 					.filter((node) => node.planId === plan.id)
 					.sort((a, b) => nodeNumber(a.id) - nodeNumber(b.id));
 				return { text: renderPlan(plan, own, ctx.planStates) };
