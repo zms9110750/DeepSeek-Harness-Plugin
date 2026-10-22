@@ -43,6 +43,13 @@ function makeCtx() {
 		get(name) {
 			return services.get(name);
 		},
+		/** 权限目录：lock 会往里注入 plan-write 这一档。 */
+		permissionPresets: { presets: {} },
+		/** catalog-changed 之类的广播，桩里只记事件名。 */
+		emitted: [],
+		emit(type) {
+			ctx.emitted.push(type);
+		},
 	};
 	const cells = new Map();
 	/** 把一条事件喂给某个投影，返回折叠后的状态。 */
@@ -81,7 +88,7 @@ test('十个插件各自 mount，注册面齐全', async () => {
 
 	// 每个插件的名字唯一，且 inject 只引用真实存在的服务名（或宿主自带的那几个）。
 	const provided = ['planEvents', 'proposalTemplate', 'planStates', 'subWorkspaces', 'planGate'];
-	const host = new Set(['tools', 'commands', 'sessionProjections', 'agents']);
+	const host = new Set(['tools', 'commands', 'sessionProjections', 'agents', 'permissionPresets']);
 	for (const { sub, inject } of mounted) {
 		for (const dep of inject) {
 			assert.ok(provided.includes(dep) || host.has(dep), `${sub} injects unknown service ${dep}`);
@@ -90,14 +97,36 @@ test('十个插件各自 mount，注册面齐全', async () => {
 
 	assert.deepEqual(
 		ctx.tools.tools.map((tool) => tool.name).sort(),
-		['plan_dispatch', 'plan_export', 'plan_file', 'plan_show', 'plan_tree', 'plan_write', 'sub_workspace'],
+		['plan_dispatch', 'plan_export', 'plan_file', 'plan_show', 'plan_status', 'plan_tree', 'plan_write', 'sub_workspace'],
 	);
 	assert.deepEqual(
 		ctx.commands.commands.map((command) => command.name).sort(),
-		['plan-adopt', 'plan-new', 'plan-reject', 'plan-shelve', 'plan-tree', 'sub-workspace'],
+		['plan-adopt', 'plan-new', 'plan-reject', 'plan-shelve', 'plan-status', 'plan-tree', 'sub-workspace'],
 	);
 	assert.deepEqual([...ctx.sessionProjections.defs.keys()].sort(), ['nodes', 'plans', 'subWorkspaces']);
 	assert.equal(ctx.tools.guards.length, 1, '只有锁注册守卫；闸门是纯函数，停轮走 exec.concludeTurn()');
+});
+
+test('计划模式预设：注入 plan-write 这一档，卸载只还原自己那条', async () => {
+	const { ctx } = await mountAll();
+	const lock = await load('src/lock.js');
+
+	const spec = ctx.permissionPresets.presets[lock.PLAN_PRESET];
+	assert.ok(spec, 'plan-write 应该出现在权限目录里');
+	assert.equal(spec.sandbox, 'workspace-write', '沙箱边界交给宿主，计划模式只在里面收窄');
+	assert.equal(spec.approval, 'never', '计划模式不自己发起提权审批');
+	assert.ok(ctx.emitted.includes('permission-presets/catalog-changed'), '注入后要重发目录，客户端才看得到');
+
+	const entry = ctx.effects.find((effect) => String(effect.label).includes('plan-write'));
+	assert.ok(entry, '注入必须挂在 ctx.effect 上（随 fiber 卸载）');
+	const before = ctx.emitted.filter((type) => type === 'permission-presets/catalog-changed').length;
+	entry.dispose();
+	assert.equal(ctx.permissionPresets.presets[lock.PLAN_PRESET], undefined, '卸载后不留档位');
+	assert.equal(
+		ctx.emitted.filter((type) => type === 'permission-presets/catalog-changed').length,
+		before + 1,
+		'卸载后也要重发目录，否则菜单里挂着已失效的档',
+	);
 });
 
 test('状态机：九态取自 A2A，扳机表与 statusOf 一致', async () => {
@@ -106,72 +135,93 @@ test('状态机：九态取自 A2A，扳机表与 statusOf 一致', async () => 
 	const draft = { id: 'p1', status: null };
 	const adopted = { id: 'p1', adopted: true };
 	const rejected = { id: 'p1', rejected: true };
-	const node = (verdict, status = verdict) => [{ planId: 'p1', status, verdict }];
+	const node = (status) => [{ planId: 'p1', status }];
 
 	// 有 status 字段就以字段为准（新记录）；没有才从布尔与节点推（老记录）。
 	assert.equal(statusOf(draft, []), null);
 	assert.equal(labelOf(null), '草案');
 	assert.equal(statusOf(rejected, []), STATUS.REJECTED);
 	assert.equal(statusOf(adopted, []), STATUS.SUBMITTED);
-	assert.equal(statusOf(adopted, node(null, 'open')), STATUS.WORKING);
-	assert.equal(statusOf(adopted, node('success')), STATUS.COMPLETED);
-	assert.equal(statusOf(adopted, node('reject')), STATUS.FAILED);
-	assert.equal(statusOf(adopted, node('shelved')), STATUS.INPUT_REQUIRED);
+	// 节点状态就是九态（v1 的 open/success… 读端会先归一，见下）。
+	assert.equal(statusOf(adopted, node(STATUS.WORKING)), STATUS.WORKING);
+	assert.equal(statusOf(adopted, node(STATUS.COMPLETED)), STATUS.COMPLETED);
+	assert.equal(statusOf(adopted, node(STATUS.FAILED)), STATUS.FAILED);
+	assert.equal(statusOf(adopted, node(STATUS.INPUT_REQUIRED)), STATUS.INPUT_REQUIRED);
+	assert.equal(statusOf(adopted, node(STATUS.AUTH_REQUIRED)), STATUS.AUTH_REQUIRED);
+	// 搁置中的节点被父交付取消之后，计划跟着 canceled。
+	assert.equal(statusOf(adopted, node(STATUS.CANCELED)), STATUS.CANCELED);
 
 	// 节点的事实比记录里的 status 更可信；但用户拍板的状态不可推翻。
-	assert.equal(statusOf({ id: 'p1', status: STATUS.COMPLETED }, node(null, 'open')), STATUS.WORKING);
-	assert.equal(statusOf({ id: 'p1', status: STATUS.REJECTED }, node(null, 'open')), STATUS.REJECTED);
+	assert.equal(statusOf({ id: 'p1', status: STATUS.COMPLETED }, node(STATUS.WORKING)), STATUS.WORKING);
+	assert.equal(statusOf({ id: 'p1', status: STATUS.REJECTED }, node(STATUS.WORKING)), STATUS.REJECTED);
+
+	// 旧日志（v1 投影）的节点状态仍能推：open/success/reject/shelved → 九态。
+	assert.equal(statusOf({ id: 'p1', adopted: true }, node('open')), STATUS.WORKING);
+	assert.equal(statusOf({ id: 'p1', adopted: true }, node('success')), STATUS.COMPLETED);
+	assert.equal(statusOf({ id: 'p1', adopted: true }, node('reject')), STATUS.FAILED);
+	assert.equal(statusOf({ id: 'p1', adopted: true }, node('shelved')), STATUS.INPUT_REQUIRED);
 
 	// 文案与终结态。
 	assert.equal(labelOf(STATUS.FAILED), '失败计划');
 	assert.equal(labelOf(STATUS.INPUT_REQUIRED), '搁置');
+	assert.equal(labelOf(STATUS.AUTH_REQUIRED), '待授权');
+	assert.equal(labelOf(STATUS.CANCELED), '已取消');
 	assert.ok(TERMINAL.has(STATUS.REJECTED));
+	assert.ok(TERMINAL.has(STATUS.CANCELED));
+	assert.ok(TERMINAL.has(STATUS.COMPLETED));
+	assert.ok(TERMINAL.has(STATUS.FAILED));
 	assert.equal(TERMINAL.has(STATUS.WORKING), false);
 
 	// 表里每一行的终态都必须是真实存在的状态之一（草案允许 null）。
 	const states = new Set([...Object.values(STATUS), null]);
 	for (const row of TRIGGERS) assert.ok(states.has(row.to), `trigger ${row.op} points at unknown state ${row.to}`);
-	assert.equal(TRIGGERS.length, 10);
+	assert.equal(TRIGGERS.length, 13, '九态 + 取消 + 复盘两类自动动作');
 });
 
-test('闸门：三项检查各自会拒，研究不受层规则约束', async () => {
-	const { check, MAX_REJECTIONS } = await load('src/gate.js');
+test('闸门：层序与类型照旧，模板累计失败只提示不拦', async () => {
+	const { check } = await load('src/gate.js');
 	const plan = (over) => ({ id: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, ...over });
 
 	const root = undefined;
-	assert.equal(check({ plan: plan(), self: root, counts: {} }).ok, true);
+	assert.equal(check({ plan: plan(), self: root }).ok, true);
 
 	// 只能往更深的层派。
 	const atB = { type: 'plan', layer: 'B系列-设计', layerIndex: 1 };
-	assert.equal(check({ plan: plan(), self: atB, counts: {} }).ok, false);
-	assert.equal(check({ plan: plan({ layer: 'A系列-问题', layerIndex: 0 }), self: atB, counts: {} }).ok, false);
-	assert.equal(check({ plan: plan({ layer: 'C系列-接口', layerIndex: 2 }), self: atB, counts: {} }).ok, true);
+	assert.equal(check({ plan: plan(), self: atB }).ok, false);
+	assert.equal(check({ plan: plan({ layer: 'A系列-问题', layerIndex: 0 }), self: atB }).ok, false);
+	assert.equal(check({ plan: plan({ layer: 'C系列-接口', layerIndex: 2 }), self: atB }).ok, true);
 
-	// 同层被否三次之后，这一层只收研究。
-	const counts = { 'C系列-接口': MAX_REJECTIONS };
-	const blocked = check({ plan: plan({ layer: 'C系列-接口', layerIndex: 2 }), self: atB, counts });
-	assert.equal(blocked.ok, false);
-	assert.match(blocked.reason, /consecutive rejections/);
+	// 同一模板累计失败三次：不拦截（用户否掉了"禁模板"），只给提示。
+	const hinted = check({ plan: plan({ layer: 'C系列-接口', layerIndex: 2 }), self: atB, failures: 3 });
+	assert.equal(hinted.ok, true, '不再按失败次数拦派发');
+	assert.match(hinted.hint, /累计 3 次失败/);
+	assert.match(hinted.hint, /复盘/);
+	// 不到阈值没有提示。
+	assert.equal(check({ plan: plan({ layer: 'C系列-接口', layerIndex: 2 }), self: atB, failures: 2 }).hint, undefined);
 
-	// 研究没有层坐标：层规则不适用，也不看计数。
-	const research = check({ plan: { id: 'p2', type: 'research' }, self: atB, counts });
+	// 研究/复盘没有层坐标：层规则不适用，也不看失败计数。
+	const research = check({ plan: { id: 'p2', type: 'research' }, self: atB, failures: 9 });
 	assert.equal(research.ok, true);
 	assert.equal(research.layer, null);
+	const review = check({ plan: { id: 'F1', type: 'review' }, self: atB, failures: 9 });
+	assert.equal(review.ok, true);
+	assert.equal(review.layer, null);
 
-	// 研究只能派研究。
+	// 研究/复盘只能派研究/复盘。
 	const fromResearch = { type: 'research', layer: null, layerIndex: null };
-	assert.equal(check({ plan: plan(), self: fromResearch, counts: {} }).ok, false);
+	assert.equal(check({ plan: plan(), self: fromResearch }).ok, false);
 });
 
 test('折叠：记录、采纳、派发、结算之后，两份投影各自正确', async () => {
 	const { ctx } = await mountAll();
 	// 直接构造日志里那几行：投影只认 { type, data:{ op, … } }。
 	const rec = (op, data) => ({ type: ctx.planEvents.type, data: { op, ...data } });
+	const TEMPLATE = 'X:/t/提案格式.md';
 
 	const events = [
-		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲' }),
+		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲', templatePath: TEMPLATE }),
 		rec('adopt', { id: 'p1' }),
-		rec('dispatch', { id: 'n1', planId: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '甲', reason: 'r', childId: 'c1', parentSession: 'session-x' }),
+		rec('dispatch', { id: 'n1', planId: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '甲', reason: 'r', childId: 'c1', parentSession: 'session-x', templatePath: TEMPLATE }),
 		rec('file', { id: 'n1', verdict: 'reject', conclusion: '不行', evidence: 'e', artifacts: 'a', pitfalls: 'p', where: 'w' }),
 	];
 
@@ -183,23 +233,24 @@ test('折叠：记录、采纳、派发、结算之后，两份投影各自正�
 	assert.equal(plans.planSeq, 2, 'id 按序发放');
 	assert.equal(nodes.nodes.n1.planId, 'p1', '节点认得出自己属于哪份计划');
 	assert.equal(nodes.nodes.n1.verdict, 'reject');
-	assert.equal(nodes.counts['B系列-设计'], 1, '否决让该层 +1');
+	assert.equal(nodes.nodes.n1.status, 'failed', '结算判定落九态');
+	assert.equal(nodes.failures['x:/t/提案格式.md'], 1, '失败按模板累计（键已归一）');
 	assert.equal(nodes.nextId, 2);
 
-	// 同一层再来一份，成功结算：计数归零。
+	// 同一模板再来一份，成功结算：失败计数**不归零**（累计，不是按层）。
 	ctx.reset();
 	const later = [
 		...events,
-		rec('plan', { id: 'p2', title: '乙', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '乙' }),
-		rec('dispatch', { id: 'n2', planId: 'p2', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '乙', reason: 'r', childId: 'c2', parentSession: 'session-x' }),
+		rec('plan', { id: 'p2', title: '乙', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '乙', templatePath: TEMPLATE }),
+		rec('dispatch', { id: 'n2', planId: 'p2', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '乙', reason: 'r', childId: 'c2', parentSession: 'session-x', templatePath: TEMPLATE }),
 		rec('file', { id: 'n2', verdict: 'success', conclusion: '成了' }),
 	];
 	const after = ctx.foldInto('nodes', later);
-	assert.equal(after.counts['B系列-设计'], 0, '成功把该层计数归零');
-	assert.equal(after.nodes.n2.status, 'success');
+	assert.equal(after.failures['x:/t/提案格式.md'], 1, '成功不归零：模板失败是累计值');
+	assert.equal(after.nodes.n2.status, 'completed');
 });
 
-test('锁：没有认领就不拦；划了范围才收窄到范围里', async () => {
+test('锁：普通模式没有认领就不拦；计划模式没有认领全拒', async () => {
 	const { ctx } = await mountAll();
 	// 守卫不止一个（派发后停轮的也算一个），所以取"第一个拒绝"，不是看第一条注册。
 	const guard = (exec) => {
@@ -213,10 +264,11 @@ test('锁：没有认领就不拦；划了范围才收窄到范围里', async ()
 	const empty = { claims: {} };
 	const scoped = { claims: { 'x:\\a\\sub': { path: 'X:/a/sub', planId: 'p1' } } };
 	const session = { id: 'session-x', header: { cwd: 'X:/a' } };
-	const exec = (tool, args) => ({ agent: { session, id: 'agent' }, tool: { name: tool }, args });
-	const at = (sandbox, state) => {
+	// 真 exec：工具名在 `name`，参数在 `arguments`（老桩的 tool/args 形状同时保留，测兜底）。
+	const exec = (tool, args) => ({ agent: { session, id: 'agent' }, name: tool, tool: { name: tool }, args, arguments: args });
+	const at = (sandbox, state, preset = null) => {
 		ctx.sessionProjections.stateOf = (_session, key) => {
-			if (key === 'permissions') return { sandbox };
+			if (key === 'permissions') return { sandbox, preset };
 			if (key === 'subWorkspaces') return state;
 			return undefined;
 		};
@@ -224,13 +276,13 @@ test('锁：没有认领就不拦；划了范围才收窄到范围里', async ()
 
 	assert.equal(guard(exec('read', { file_path: 'X:/a/x' })), undefined, '读从不拦');
 
-	// 没有认领：不拦。新会话开箱即用，锁不负责管它。
+	// 普通模式：没有认领不拦。新会话开箱即用，锁不负责管它。
 	at('workspace-write', empty);
 	assert.equal(guard(exec('write', { file_path: 'X:/a/out.md' })), undefined);
 	at('read-only', empty);
 	assert.equal(guard(exec('pwsh', {})), undefined, '没有范围时连看不出目录的工具也不拦');
 
-	// 划了范围：只许写范围内。
+	// 普通模式：划了范围只许写范围内。
 	at('workspace-write', scoped);
 	assert.equal(guard(exec('write', { file_path: 'X:/a/sub/ok.md' })), undefined, '范围内放行');
 	assert.match(String(guard(exec('write', { file_path: 'X:/a/out.md' }))), /不在任何子工作区/);
@@ -238,24 +290,62 @@ test('锁：没有认领就不拦；划了范围才收窄到范围里', async ()
 	// 但命令文本里出现认领目录就放行——模型写文件几乎都用 pwsh。
 	assert.equal(guard(exec('pwsh', { command: 'Set-Content X:/a/sub/x.md hi' })), undefined, '命令落在范围内 → 放行');
 	assert.match(String(guard(exec('pwsh', { command: 'Set-Content X:/b/y.md hi' }))), /看不出要写哪个目录/, '命令全在范围外 → 拒');
+	// 真 exec 只给 arguments 也要能读到路径（老 bug：读 args 永远读空）。
+	assert.equal(
+		guard({ agent: { session, id: 'agent' }, name: 'write', arguments: { file_path: 'X:/a/sub/ok.md' } }),
+		undefined,
+		'exec.arguments.file_path 读得到 → 范围内放行',
+	);
+	assert.match(
+		String(guard({ agent: { session, id: 'agent' }, name: 'write', arguments: { file_path: 'X:/a/out.md' } })),
+		/不在任何子工作区/,
+		'exec.arguments.file_path 也参与范围判断',
+	);
+	// 相对路径按会话工作区解析（plan_export 允许相对路径）。
+	assert.equal(guard(exec('plan_export', { plan: 'p1', path: 'sub/ok.md' })), undefined, '相对路径落在范围内 → 放行');
 
-	// 完全权限：整套跳过。
+	// 普通模式：完全权限整套跳过。
 	at('danger-full-access', scoped);
 	assert.equal(guard(exec('write', { file_path: 'X:/anywhere.md' })), undefined);
 
-	// 用户手动放开。
-	at('workspace-write', scoped);
+	// 计划模式：没有子工作区 = 写工具全拒（跟真的计划模式一样）。
+	at('workspace-write', empty, 'plan-write');
+	const denied = String(guard(exec('write', { file_path: 'X:/a/out.md' })));
+	assert.match(denied, /计划模式/);
+	assert.match(denied, /没有声明任何子工作区/);
+	assert.match(denied, /当前工作区：X:\/a/, '拒绝文案要写清当前工作区');
+	assert.match(denied, /已声明范围：（无）/, '拒绝文案要写清已声明范围');
+	assert.match(denied, /已知代价/, '拒绝文案要写清"计划模式下连只读命令也会被拒"的代价');
+	assert.match(String(guard(exec('pwsh', { command: 'Get-ChildItem' }))), /计划模式/, '计划模式下连只读 pwsh 也被拒');
+	assert.match(String(guard(exec('delete', { path: 'X:/a/x.md' }))), /计划模式/, 'delete 同样算写');
+	assert.match(String(guard(exec('plan_export', { plan: 'p1', path: 'X:/a/out.md' }))), /计划模式/, 'plan_export 也走写锁');
+	assert.equal(guard(exec('read', { file_path: 'X:/a/x' })), undefined, '计划模式不影响读工具');
+
+	// 计划模式：有范围只许范围内。
+	at('workspace-write', scoped, 'plan-write');
+	assert.equal(guard(exec('write', { file_path: 'X:/a/sub/ok.md' })), undefined, '计划模式范围内容放行');
+	assert.match(String(guard(exec('write', { file_path: 'X:/a/out.md' }))), /计划模式/);
+	assert.equal(guard(exec('pwsh', { command: 'Set-Content X:/a/sub/x.md hi' })), undefined);
+	assert.match(String(guard(exec('pwsh', { command: 'Set-Content X:/b/y.md hi' }))), /计划模式/);
+
+	// 计划模式压过 danger-full-access：用户显式选的档优先。
+	at('danger-full-access', empty, 'plan-write');
+	assert.match(String(guard(exec('write', { file_path: 'X:/anywhere.md' }))), /计划模式/, '计划模式是显式范围，不能被 sandbox 绕过');
+
+	// 逃生口 /plan-tree off：计划模式也能放开。
+	at('workspace-write', empty, 'plan-write');
 	ctx.commands.commands.find((command) => command.name === 'plan-tree').handler({ agent: { session, id: 'agent' }, rawInput: 'off' });
-	assert.equal(guard(exec('write', { file_path: 'X:/anywhere.md' })), undefined);
+	assert.equal(guard(exec('write', { file_path: 'X:/anywhere.md' })), undefined, '/plan-tree off 是逃生口，计划模式也认');
 });
 
 test('树简报：只报标题与状态，内容是 plan_show 的事', async () => {
 	const { ctx } = await mountAll();
 	const rec = (op, data) => ({ type: ctx.planEvents.type, data: { op, ...data } });
+	const TEMPLATE = 'X:/t/提案格式.md';
 	const events = [
-		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲', dir: '计划/15-计划即提案', body: '# 甲\n\n正文' }),
+		rec('plan', { id: 'p1', title: '甲', layer: 'B系列-设计', layerIndex: 1, type: 'plan', topic: '甲', dir: '计划/15-计划即提案', body: '# 甲\n\n正文', templatePath: TEMPLATE }),
 		rec('adopt', { id: 'p1' }),
-		rec('dispatch', { id: 'n1', planId: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '甲', reason: '试试', childId: 'c1', parentSession: 's' }),
+		rec('dispatch', { id: 'n1', planId: 'p1', type: 'plan', layer: 'B系列-设计', layerIndex: 1, topic: '甲', reason: '试试', childId: 'c1', parentSession: 's', templatePath: TEMPLATE }),
 		rec('file', { id: 'n1', verdict: 'reject', conclusion: '不行', evidence: 'e', artifacts: 'a', pitfalls: '沙箱里 pwsh 起不来', where: 'w' }),
 	];
 	const nodes = ctx.foldInto('nodes', events);
@@ -265,8 +355,9 @@ test('树简报：只报标题与状态，内容是 plan_show 的事', async () 
 	const out = renderTree(nodes, plans, ctx.planStates);
 	assert.match(out.tree, /p1 \[B系列-设计\] 失败计划/);
 	assert.ok(out.tree.includes('【计划/15-计划即提案】'), '计划行要带提案文件夹，结算才指得回去');
-	assert.match(out.tree, /n1 \[B系列-设计\] reject/);
-	assert.match(out.counts, /B系列-设计:1/);
+	assert.match(out.tree, /n1 \[B系列-设计\] 失败计划/, '节点状态用九态文案，不露码值');
+	assert.match(out.failures, /提案格式\.md:1/, '失败按模板计数');
+	assert.match(out.failures, /每 3 次建一份复盘/);
 	// 树是索引：正文、派发理由、结算都不在这里。
 	assert.doesNotMatch(out.tree, /坑：/);
 	assert.doesNotMatch(out.tree, /派发：/);

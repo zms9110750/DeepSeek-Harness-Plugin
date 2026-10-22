@@ -1,0 +1,3 @@
+- insert:
+    - id: append-probe
+      name: '@local/append-probe'

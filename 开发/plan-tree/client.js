@@ -24,29 +24,76 @@ window.__ModuleLoader__.load({
 		/** 投影里还没有计划时，下拉框至少给出去重后的模板层。 */
 		const CANONICAL_LAYERS = ['A系列-问题', 'B系列-设计', 'C系列-接口', 'D系列-实现'];
 
+		/**
+		 * 九态文案（与宿主侧 plan-state 的 LABEL 一一对应，别在这里改词）。
+		 * 状态码给协议与存储，界面只显示中文；两个映射不一致时面板会露出码值。
+		 */
+		const STATUS_LABEL = {
+			unspecified: '未定',
+			submitted: '计划',
+			working: '进行中',
+			'input-required': '搁置',
+			'auth-required': '待授权',
+			completed: '完成计划',
+			failed: '失败计划',
+			canceled: '已取消',
+			rejected: '否决',
+		};
+
+		/** 旧节点只有 verdict，没有九态码：显示时补一层映射。 */
+		const VERDICT_LABEL = { success: '完成计划', reject: '失败计划', shelved: '搁置' };
+
 		const STATUS_COLOR = {
 			草案: 'var(--dsw-alias-label-tertiary, #9ca3af)',
+			未定: 'var(--dsw-alias-label-tertiary, #9ca3af)',
 			计划: '#3b82f6',
 			进行中: '#f59e0b',
+			搁置: '#6b7280',
+			待授权: '#8b5cf6',
 			完成计划: '#10b981',
 			失败计划: '#ef4444',
-			搁置的计划: '#6b7280',
-			搁置草案: '#b91c1c',
+			已取消: '#64748b',
+			否决: '#b91c1c',
 		};
 
 		/**
-		 * 计划的状态从记录字段与派发节点推出来（B-03 的七态）。
-		 * 不另存一份：宿主侧的 plan-state 插件算同一个东西，这里只是复述。
+		 * 计划状态从记录字段与派发节点推出来（九态）。
+		 * 不另存一份：宿主侧 plan-state 的 statusOf 算同一个东西，这里只是复述——
+		 * 改那边就要改这里，两处必须一致，否则面板显示会跟宿主判断对不上。
 		 */
 		function statusOf(plan, nodes) {
 			const own = nodes.filter((node) => node.planId === plan.id);
+			const codes = own.map((node) => node.status).filter((status) => typeof status === 'string');
+			// 1. 用户决定，一锤定音。
+			if (['rejected', 'input-required', 'canceled', 'auth-required'].includes(plan.status)) {
+				return STATUS_LABEL[plan.status];
+			}
+			// 2. 事实优先：节点状态。
+			if (codes.includes('working')) return '进行中';
+			if (codes.includes('auth-required')) return '待授权';
+			if (codes.includes('input-required')) return '搁置';
+			if (codes.includes('failed')) return '失败计划';
+			if (codes.includes('completed')) return '完成计划';
+			if (codes.includes('canceled')) return '已取消';
+			if (codes.includes('submitted')) return '计划';
+			// 旧日志里节点状态是 open/success/reject/shelved，退回 verdict 判断。
 			if (own.some((node) => node.status === 'open')) return '进行中';
 			if (own.some((node) => node.verdict === 'success')) return '完成计划';
 			if (own.some((node) => node.verdict === 'reject')) return '失败计划';
-			if (own.some((node) => node.verdict === 'shelved')) return '搁置的计划';
-			if (plan.rejected === true || plan.shelved === true) return '搁置草案';
+			if (own.some((node) => node.verdict === 'shelved')) return '搁置';
+			// 3. 记录字段。
+			if (typeof plan.status === 'string' && STATUS_LABEL[plan.status]) return STATUS_LABEL[plan.status];
+			if (plan.rejected === true) return '否决';
+			if (plan.shelved === true) return '搁置';
 			if (plan.adopted === true) return '计划';
 			return '草案';
+		}
+
+		/** 一个节点给人看的标签：优先 verdict（结算事实），其次九态码，最后兜旧日志的 open/success… */
+		function nodeLabel(node) {
+			if (node.verdict !== null && node.verdict !== undefined && VERDICT_LABEL[node.verdict]) return VERDICT_LABEL[node.verdict];
+			const legacy = { open: '进行中', success: '完成计划', reject: '失败计划', shelved: '搁置' };
+			return STATUS_LABEL[node.status] ?? legacy[node.status] ?? String(node.status ?? '');
 		}
 
 		/** 读不到正文时给一句人话；最常见的是文件被删/改名（计划记录还在）。 */
@@ -237,7 +284,7 @@ window.__ModuleLoader__.load({
 			};
 
 			/** 树上的分组键：研究节点单独一组，其余按归一层名。 */
-			const layerOf = (plan) => (plan.type === 'research' ? '研究' : canonicalLayer(plan.layer));
+			const layerOf = (plan) => (plan.type === 'review' ? '复盘' : plan.type === 'research' ? '研究' : canonicalLayer(plan.layer));
 
 			const layerOptions = (() => {
 				const merged = [];
@@ -412,7 +459,7 @@ window.__ModuleLoader__.load({
 								},
 								node.topic ?? node.reason ?? '',
 							),
-							h('span', { style: { ...styles.muted, flex: 'none' } }, node.verdict ?? node.status),
+							h('span', { style: { ...styles.muted, flex: 'none' } }, nodeLabel(node)),
 						),
 					),
 				);
@@ -509,7 +556,7 @@ window.__ModuleLoader__.load({
 					h(
 						'div',
 						{ style: { ...styles.muted, ...styles.mono, wordBreak: 'break-all', lineHeight: 1.5 } },
-						`${selected.id} · ${selected.layer ?? '研究'} · ${home}${selected.path ? ` · ${selected.path}` : ' · 日志记录（不落盘）'}`,
+						`${selected.id} · ${selected.type === 'review' ? '复盘' : selected.type === 'research' ? '研究' : selected.layer ?? '未分层'} · ${home}${selected.path ? ` · ${selected.path}` : ' · 日志记录（不落盘）'}`,
 					),
 					h(
 						'div',

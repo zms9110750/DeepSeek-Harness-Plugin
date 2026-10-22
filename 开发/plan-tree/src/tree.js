@@ -1,10 +1,16 @@
 /**
  * plan-tree · 执行节点：`nodes` 投影与树简报。
  *
- * 只有派发过的计划才在树上（A-2）。节点状态是 open / success / reject / shelved，
- * 与计划状态是多对一：一份计划最多派发一次，所以现在是一对一，但结构上留着多对一。
+ * 只有派发过的计划才在树上（A-2）。节点状态用九态（A2A 那套，码值见 plan-state）：
+ * 派发 → working，结算 → completed / failed / input-required，父交付 → 子任务 canceled。
+ * 节点与计划是多对一：一份计划最多派发一次，所以现在是一对一，但结构上留着多对一。
  *
- * 计数在这里改，不另设服务：否决 +1、成功归零、搁置不动。计数按层分开、层是并存的。
+ * 计数在这里改，不另设服务：**按模板**累计失败（不是按层、不是全局）。
+ * 模板失败是"该复盘了"的判据；具体建不建 F 由 events.js 的宿主动作决定。
+ *
+ * **读路径：树库优先、投影兜底。** 投影来自本会话日志的前缀，子会话看不到派发之后
+ * 父日志里发生的事（比如"父交付把我取消了"）；树库是整棵树的最新事实。所以 `plan_tree`
+ * / `plan_show` 先把 treeSessions 里的 nodes 覆盖到投影上，再渲染。
  *
  * 简报里**计划与节点都报**，而且结算要带出"为什么进行不下去"——
  * 状态只是标签，坑才是下次不踩的东西。
@@ -13,6 +19,7 @@
  */
 import { z } from 'zod';
 import { defineTool } from '@deepseek-ai/dsh-tools';
+import { REVIEW_TYPE, STATUS } from './state.js';
 
 export const name = 'plan-tree';
 
@@ -20,33 +27,85 @@ export const inject = ['tools', 'sessionProjections', 'planEvents', 'planStates'
 
 const stateSchema = z.object({
 	nodes: z.record(z.string(), z.any()),
-	counts: z.record(z.string(), z.number()),
+	// 模板键 → 累计失败数。单位是模板，不是层。
+	failures: z.record(z.string(), z.number()),
 	nextId: z.number(),
 });
 
 function planNumber(id) {
-	const match = /^p(\d+)$/.exec(String(id ?? ''));
+	const match = /^p(\d+)$/u.exec(String(id ?? ''));
 	return match === null ? Number.MAX_SAFE_INTEGER : Number(match[1]);
 }
 
 /** 节点 id 也是 n<数字>，排序要按数值而不是字典序（否则 n10 排在 n2 前面）。 */
 function nodeNumber(id) {
-	const match = /^n(\d+)$/.exec(String(id ?? ''));
+	const match = /^n(\d+)$/u.exec(String(id ?? ''));
 	return match === null ? Number.MAX_SAFE_INTEGER : Number(match[1]);
 }
 
+/** 拿这个会话所属那棵树的库；没装 tree-store 或打不开就返回 undefined（退回纯投影）。 */
+function storeOf(ctx, session) {
+	try {
+		return ctx.get('treeSessions')?.atSession(session);
+	} catch {
+		return undefined;
+	}
+}
+
 /**
- * 简报：计划（状态）→ 节点树 → 每层计数。
+ * 把树库里的节点状态覆盖到投影上（树库优先、投影兜底）。
+ *
+ * 只覆盖状态与该有的关系字段；结算六项这类"内容"仍以投影为准（库只存状态与关系）。
+ * @param state - `nodes` 投影。
+ * @param rows - tree-store 的 nodes 行（不存在就跳过）。
+ */
+export function mergeStoredNodes(state, rows) {
+	if (!Array.isArray(rows) || rows.length === 0) return state;
+	const nodes = { ...state.nodes };
+	for (const row of rows) {
+		const existing = nodes[row.id];
+		const base = existing ?? {
+			id: row.id,
+			parentSession: row.parent_session,
+			planId: row.plan_id,
+			dir: null,
+			type: row.type,
+			layer: row.layer,
+			layerIndex: null,
+			topic: row.topic,
+			reason: null,
+			childId: row.child_id,
+			verdict: null,
+			summary: null,
+			conclusion: null,
+			evidence: null,
+			artifacts: null,
+			pitfalls: null,
+			where: null,
+		};
+		nodes[row.id] = {
+			...base,
+			childId: row.child_id ?? base.childId,
+			planId: row.plan_id ?? base.planId,
+			status: row.status ?? base.status,
+		};
+	}
+	return { ...state, nodes };
+}
+
+/**
+ * 简报：计划（状态）→ 节点树 → 每模板失败计数。
  *
  * **只报标题和状态**：树是索引，不是内容。正文、派发理由、结算六项都归 `plan_show`。
  * 一眼要能看出"哪一支卡住了"，靠的是状态；"为什么卡住"要展开那一条才需要。
- * @param state - `nodes` 投影。
+ * @param state - `nodes` 投影（可已被树库覆盖）。
  * @param plansState - `plans` 投影；缺了只是不报计划段（比如 record 被单独关掉）。
  * @param planStates - 状态机服务；缺了退化成一句话判断。
  */
 export function renderTree(state, plansState, planStates) {
 	const lines = [];
 	const nodes = Object.values(state.nodes ?? {});
+	const label = (status) => planStates?.labelOf?.(status) ?? String(status ?? '');
 
 	// ---- 计划：树的主干。 ----
 	const plans = plansState === undefined ? [] : Object.values(plansState.plans ?? {});
@@ -57,9 +116,8 @@ export function renderTree(state, plansState, planStates) {
 			const raw = planStates === undefined
 				? (plan.adopted === true ? 'submitted' : null)
 				: planStates.statusOf(plan, own);
-			// 存储与协议用码值，树给人看，所以打文案。
-			const status = planStates?.labelOf?.(raw) ?? (raw ?? '草案');
-			const layer = plan.type === 'research' ? '研究' : plan.layer ?? '未分层';
+			const status = label(raw);
+			const layer = plan.type === REVIEW_TYPE ? '复盘' : plan.type === 'research' ? '研究' : plan.layer ?? '未分层';
 			// 提案文件夹显示在标题前：一眼看出这条出自哪份提案。
 			const home = plan.dir ? `【${plan.dir}】` : '';
 			lines.push(`  ${plan.id} [${layer}] ${status}  ${home}${plan.title}`);
@@ -82,9 +140,9 @@ export function renderTree(state, plansState, planStates) {
 
 	const walk = (key, depth) => {
 		for (const node of children.get(key) ?? []) {
-			const layer = node.layer === null ? '研究' : node.layer;
+			const layer = node.type === REVIEW_TYPE ? '复盘' : node.layer === null || node.layer === undefined ? '研究' : node.layer;
 			const pad = '  '.repeat(depth);
-			lines.push(`${pad}${node.id} [${layer}] ${node.status}  ${node.topic}`);
+			lines.push(`${pad}${node.id} [${layer}] ${label(node.status)}  ${node.topic}`);
 			walk(node.id, depth + 1);
 		}
 	};
@@ -92,11 +150,15 @@ export function renderTree(state, plansState, planStates) {
 
 	if (nodes.length === 0) lines.push('(树是空的：还没有派发过任何节点)');
 
-	const counts = Object.entries(state.counts ?? {})
-		.map(([layer, used]) => `${layer}:${used}`)
+	const failures = Object.entries(state.failures ?? {})
+		.map(([template, used]) => `${template.replace(/^.*\//u, '')}:${used}`)
 		.join(' ');
+	const every = planStates?.REVIEW_EVERY ?? 3;
 
-	return { tree: lines.join('\n').trimEnd(), counts: counts === '' ? '（还没有计数）' : counts };
+	return {
+		tree: lines.join('\n').trimEnd(),
+		failures: failures === '' ? '（还没有模板失败计数）' : `模板失败（每 ${every} 次建一份复盘）：${failures}`,
+	};
 }
 
 /**
@@ -113,15 +175,18 @@ export function renderPlan(plan, nodes, planStates) {
 		? (plan.adopted === true ? 'submitted' : null)
 		: planStates.statusOf(plan, nodes);
 	const status = planStates?.labelOf?.(raw) ?? (raw ?? '草案');
+	const kind = plan.type === REVIEW_TYPE ? '复盘' : plan.type === 'research' ? '研究' : plan.layer ?? '未分层';
 	const lines = [];
-	lines.push(`${plan.id} [${plan.type === 'research' ? '研究' : plan.layer ?? '未分层'}] ${status}  ${plan.title}`);
+	lines.push(`${plan.id} [${kind}] ${status}  ${plan.title}`);
 	if (plan.dir) lines.push(`提案：${plan.dir}`);
+	if (plan.templatePath) lines.push(`模板：${plan.templatePath}`);
 	lines.push('');
 	lines.push(String(plan.body ?? '(没有正文)').trimEnd());
 
 	for (const node of nodes) {
+		const nodeStatus = planStates?.labelOf?.(node.status) ?? node.status;
 		lines.push('');
-		lines.push(`—— 节点 ${node.id} · ${node.status} ——`);
+		lines.push(`—— 节点 ${node.id} · ${nodeStatus} ——`);
 		if (node.reason) lines.push(`派发理由：${node.reason}`);
 		if (node.verdict === null || node.verdict === undefined) {
 			lines.push('（还没有结算）');
@@ -140,8 +205,14 @@ export function renderPlan(plan, nodes, planStates) {
 
 export function apply(ctx) {
 	const { opOf } = ctx.planEvents;
+	const status = ctx.planStates?.STATUS ?? STATUS;
 
-	const init = () => ({ nodes: {}, counts: {}, nextId: 1 });
+	const init = () => ({ nodes: {}, failures: {}, nextId: 1 });
+
+	/** 结算判定 → 节点状态。研究/复盘节点也一样落三态。 */
+	const verdictStatus = (verdict) =>
+		ctx.planStates?.VERDICT_STATUS?.[verdict] ??
+		({ success: 'completed', reject: 'failed', shelved: 'input-required' }[verdict] ?? 'working');
 
 	const fold = (state, event) => {
 		const op = opOf(event);
@@ -163,7 +234,9 @@ export function apply(ctx) {
 						layerIndex: data.layerIndex,
 						topic: data.topic,
 						reason: data.reason,
-						status: 'open',
+						// 模板身份随派发一起记下来：失败计数要按模板，不按层。
+						template: ctx.planStates?.templateKey?.({ templatePath: data.templatePath }) ?? null,
+						status: status.WORKING,
 						childId: data.childId,
 						verdict: null,
 						summary: null,
@@ -188,17 +261,19 @@ export function apply(ctx) {
 		if (op === 'file') {
 			const node = state.nodes[data.id];
 			if (!node) return state;
-			const counts = { ...state.counts };
-			if (data.verdict === 'success' && node.layer) counts[node.layer] = 0;
-			if (data.verdict === 'reject' && node.layer) counts[node.layer] = (counts[node.layer] ?? 0) + 1;
+			const failures = { ...state.failures };
+			// 只有模板造出来的计划节点才进计数；研究与复盘没有模板位。
+			if (data.verdict === 'reject' && node.type === 'plan' && node.template) {
+				failures[node.template] = (failures[node.template] ?? 0) + 1;
+			}
 			return {
 				...state,
-				counts,
+				failures,
 				nodes: {
 					...state.nodes,
 					[node.id]: {
 						...node,
-						status: data.verdict,
+						status: verdictStatus(data.verdict),
 						verdict: data.verdict,
 						summary: data.conclusion ?? null,
 						conclusion: data.conclusion ?? null,
@@ -211,12 +286,34 @@ export function apply(ctx) {
 			};
 		}
 
+		if (op === 'status') {
+			// 用户命令写的状态（授权 / 判死 / 恢复 / 否决）。不认识的码值原样不认。
+			const node = state.nodes[data.id];
+			if (!node) return state;
+			const to = ctx.planStates?.isStatus?.(data.to) === true ? data.to : node.status;
+			return { ...state, nodes: { ...state.nodes, [node.id]: { ...node, status: to } } };
+		}
+
+		if (op === 'cancel-dependents') {
+			// 父交付时宿主自动把挂起的子任务置 canceled。已终结的节点不再改（单向门）。
+			const canceled = new Set((Array.isArray(data.canceled) ? data.canceled : []).map(String));
+			if (canceled.size === 0) return state;
+			const nodes = { ...state.nodes };
+			for (const id of canceled) {
+				const node = nodes[id];
+				if (!node) continue;
+				if (ctx.planStates?.isTerminal?.(node.status) === true) continue;
+				nodes[id] = { ...node, status: status.CANCELED };
+			}
+			return { ...state, nodes };
+		}
+
 		return state;
 	};
 
 	ctx.sessionProjections.register({
 		key: 'nodes',
-		stateVersion: 1,
+		stateVersion: 2,
 		stateSchema,
 		init,
 		apply: fold,
@@ -227,23 +324,27 @@ export function apply(ctx) {
 		defineTool({
 			name: 'plan_tree',
 			description:
-				'Report the plan tree: every plan and every dispatched node, each as one line of title and status ' +
-				'(草案 / 计划 / 进行中 / 完成 / 失败 / 搁置), plus the per-layer rejection counts. ' +
+				'Report the plan tree: every plan and every dispatched node, each as one line of title and nine-state status ' +
+				'(草案 / 计划 / 进行中 / 搁置 / 待授权 / 完成计划 / 失败计划 / 已取消 / 否决), plus per-template failure counts ' +
+				'(three failures on one template create a review task F1, F2…). ' +
 				'This is the index, not the content: bodies, dispatch reasons, and settlements are behind plan_show. ' +
-				'A discouraged or failed node shows its status here; read that line with plan_show to learn why it stalled.',
+				'Node statuses are read from the tree database first and fall back to this session projection, ' +
+				'so a node canceled by its parent after this session was dispatched still shows as canceled.',
 			parameters: {},
 			output: {
 				schema: {
 					type: 'object',
 					additionalProperties: false,
-					properties: { tree: { type: 'string', required: true }, counts: { type: 'string', required: true } },
+					properties: { tree: { type: 'string', required: true }, failures: { type: 'string', required: true } },
 				},
-				render: (_args, value) => [{ type: 'text', text: `${value.tree}\n\n${value.counts}` }],
+				render: (_args, value) => [{ type: 'text', text: `${value.tree}\n\n${value.failures}` }],
 			},
 			execute(_args, exec) {
 				if (!exec.agent) throw new Error('plan_tree requires an owning agent session');
-				const state = ctx.sessionProjections.stateOf(exec.agent.session, 'nodes');
-				if (!state) throw new Error('plan_tree: the nodes projection is not available in this session');
+				const raw = ctx.sessionProjections.stateOf(exec.agent.session, 'nodes');
+				if (!raw) throw new Error('plan_tree: the nodes projection is not available in this session');
+				const store = storeOf(ctx, exec.agent.session);
+				const state = mergeStoredNodes(raw, store?.allNodes?.() ?? []);
 				const plans = ctx.sessionProjections.stateOf(exec.agent.session, 'plans');
 				return renderTree(state, plans, ctx.planStates);
 			},
@@ -258,7 +359,7 @@ export function apply(ctx) {
 				'the six-line settlement that came back (verdict, conclusion, evidence, artifacts, pitfalls, where). ' +
 				'Use plan_tree first to pick the id; this reads one proposal at a time so the tree stays an index.',
 			parameters: {
-				plan: { type: 'string', required: true, description: 'Plan id from plan_tree (for example p3).' },
+				plan: { type: 'string', required: true, description: 'Plan id from plan_tree (for example p3 or F1).' },
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
@@ -275,8 +376,10 @@ export function apply(ctx) {
 						`plan_show: no plan "${args.plan}" in this session (have ${known.length === 0 ? 'none' : known.join(', ')})`,
 					);
 				}
-				const state = ctx.sessionProjections.stateOf(exec.agent.session, 'nodes');
-				const own = Object.values(state?.nodes ?? {})
+				const raw = ctx.sessionProjections.stateOf(exec.agent.session, 'nodes');
+				const store = storeOf(ctx, exec.agent.session);
+				const state = mergeStoredNodes(raw ?? { nodes: {}, failures: {}, nextId: 1 }, store?.allNodes?.() ?? []);
+				const own = Object.values(state.nodes ?? {})
 					.filter((node) => node.planId === plan.id)
 					.sort((a, b) => nodeNumber(a.id) - nodeNumber(b.id));
 				return { text: renderPlan(plan, own, ctx.planStates) };

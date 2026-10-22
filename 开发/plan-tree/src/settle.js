@@ -24,7 +24,8 @@ export function apply(ctx) {
 			name: 'plan_file',
 			description:
 				'File the settlement of one dispatched node into the plan tree. Call it once, after the child returned its six lines. ' +
-				'verdict is what the node amounts to: success (it holds), reject (it does not — this counts toward the layer), ' +
+				'verdict is what the node amounts to: success (it holds), reject (it does not — it counts toward the template\'s ' +
+				'failure total, and three failures on one template create a review task), ' +
 				'shelved (set aside; it counts toward nothing). The five fields are what later readers get.',
 			parameters: {
 				node: { type: 'string', required: true, description: 'Node id, for example n3.' },
@@ -42,10 +43,23 @@ export function apply(ctx) {
 					properties: {
 						filed: { type: 'string', required: true },
 						verdict: { type: 'string', required: true },
-						count: { type: 'integer' },
+						status: { type: 'string' },
+						templateFailures: { type: 'integer' },
+						review: { type: 'string' },
+						reviewHeld: { type: 'string' },
+						canceled: { type: 'array', items: { type: 'string' } },
 					},
 				},
-				render: (_args, value) => [{ type: 'text', text: `filed ${value.filed} as ${value.verdict}` }],
+				render: (_args, value) => {
+					const extra = [
+						value.status === undefined ? '' : `→ ${value.status}`,
+						value.templateFailures === undefined ? '' : `模板失败 ${value.templateFailures} 次`,
+						value.review === undefined ? '' : `已建复盘 ${value.review}`,
+						value.reviewHeld === undefined ? '' : `已有未交付复盘 ${value.reviewHeld}，本次不再新建`,
+						(value.canceled ?? []).length === 0 ? '' : `已取消挂起子任务 ${value.canceled.join(', ')}`,
+					].filter((part) => part !== '');
+					return [{ type: 'text', text: `filed ${value.filed} as ${value.verdict}${extra.length === 0 ? '' : `（${extra.join('；')}）`}` }];
+				},
 			},
 			execute(args, exec) {
 				const agent = exec.agent;
@@ -55,9 +69,13 @@ export function apply(ctx) {
 				if (!state) throw new Error('plan_file: the nodes projection is not available in this session');
 				const node = state.nodes[args.node];
 				if (!node) throw new Error(`plan_file: no node "${args.node}" in this tree`);
-				if (node.status !== 'open') throw new Error(`plan_file: node "${args.node}" is already ${node.status}`);
+				// 九态：只有终结态不能再结算；挂起中的节点可以被结算（判死/完成/再搁置）。
+				if (ctx.planStates?.isTerminal?.(node.status) === true) {
+					throw new Error(`plan_file: node "${args.node}" is already ${ctx.planStates?.labelOf?.(node.status) ?? node.status}`);
+				}
 
-				append(agent.session, 'file', {
+				// 写入口顺带做宿主动作：失败累计到阈值会建复盘任务，成功会取消挂起的子任务。
+				const info = append(agent.session, 'file', {
 					id: args.node,
 					verdict: args.verdict,
 					conclusion: args.conclusion,
@@ -67,9 +85,15 @@ export function apply(ctx) {
 					where: args.where,
 				});
 
-				const next = ctx.sessionProjections.stateOf(agent.session, 'nodes');
-				const count = node.layer ? (next.counts[node.layer] ?? 0) : undefined;
-				return { filed: args.node, verdict: args.verdict, ...(count === undefined ? {} : { count }) };
+				return {
+					filed: args.node,
+					verdict: args.verdict,
+					status: ctx.planStates?.VERDICT_STATUS?.[args.verdict] ?? undefined,
+					...(info?.failure === undefined ? {} : { templateFailures: info.failure.failed }),
+					...(info?.reviewId === undefined ? {} : { review: info.reviewId }),
+					...(info?.reviewSuppressed === undefined ? {} : { reviewHeld: info.reviewSuppressed }),
+					...(Array.isArray(info?.canceled) && info.canceled.length > 0 ? { canceled: info.canceled } : {}),
+				};
 			},
 		}),
 	);

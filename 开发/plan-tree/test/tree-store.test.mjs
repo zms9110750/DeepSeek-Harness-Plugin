@@ -40,7 +40,7 @@ test('建库：表、身份、版本都写进去，说明里写明树管提案�
 			.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
 			.all()
 			.map((row) => row.name);
-		assert.deepEqual(tables, ['meta', 'records', 'sessions']);
+		assert.deepEqual(tables, ['meta', 'nodes', 'plans', 'records', 'sessions', 'template_failures']);
 
 		const meta = Object.fromEntries(store.db.prepare('SELECT key, value FROM meta').all().map((row) => [row.key, row.value]));
 		assert.equal(meta.format_version, String(FORMAT_VERSION));
@@ -106,7 +106,11 @@ test('迁移：旧库的 events 就地搬到 records，行一条不丢', async (
 				.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
 				.all()
 				.map((row) => row.name);
-			assert.deepEqual(tables, ['meta', 'records', 'sessions'], 'events 表应当已经消失');
+			assert.deepEqual(
+				tables,
+				['meta', 'nodes', 'plans', 'records', 'sessions', 'template_failures'],
+				'events 表应当已经消失；v3 的物化表要建出来',
+			);
 			assert.deepEqual(store.records(['A']).map((row) => JSON.parse(row.line).tag), ['旧记录']);
 			const meta = Object.fromEntries(store.db.prepare('SELECT key, value FROM meta').all().map((row) => [row.key, row.value]));
 			assert.equal(meta.format_version, String(FORMAT_VERSION), '版本要跟着搬过来');

@@ -44,30 +44,25 @@ export function apply(ctx) {
 	const fold = (state, event) => {
 		const op = opOf(event);
 		const data = event.data;
-		const statuses = ctx.planStates?.STATUS;
 
 		if (op === 'plan') {
 			return {
 				...state,
 				planSeq: state.planSeq + 1,
 				// 草案还不是一个 task，所以 status 为空；采纳之后才变成 submitted。
+				// 复盘任务（F 系列）也走这条路：它先是草案，用户采纳后才派。
 				plans: { ...state.plans, [data.id]: { ...data, adopted: false, status: null } },
 			};
 		}
 
 		if (op === 'adopt' || op === 'reject-draft' || op === 'shelve-draft' || op === 'status') {
+			// status op 也可能指向节点（n1），那不是计划的状态，别在这里改。
+			if (op === 'status' && /^n\d+$/u.test(String(data.id ?? ''))) return state;
 			const plan = state.plans[data.id];
 			if (plan === undefined) return state;
-			let patch;
-			if (op === 'adopt') patch = { adopted: true, status: statuses?.SUBMITTED ?? 'submitted' };
-			else if (op === 'reject-draft') patch = { rejected: true, status: statuses?.REJECTED ?? 'rejected' };
-			else if (op === 'shelve-draft') {
-				const shelved = data.shelved !== false;
-				patch = { shelved, status: shelved ? statuses?.INPUT_REQUIRED ?? 'input-required' : null };
-			} else {
-				// status:fail / status:resume —— 对搁置的计划判死或恢复。
-				patch = { status: data.to ?? plan.status };
-			}
+			// 状态词汇与转移只在 plan-state 一处定义；这里不自己写 if/else。
+			const patch = ctx.planStates?.planPatchAfter?.(op, data);
+			if (patch === undefined) return state;
 			return { ...state, plans: { ...state.plans, [plan.id]: { ...plan, ...patch } } };
 		}
 
@@ -76,7 +71,7 @@ export function apply(ctx) {
 
 	ctx.sessionProjections.register({
 		key: 'plans',
-		stateVersion: 1,
+		stateVersion: 2,
 		stateSchema,
 		init,
 		apply: fold,
@@ -330,6 +325,99 @@ export function apply(ctx) {
 					author: 'user',
 				});
 				return { kind: 'success', text: `已登记 ${id}：${title}（${layer}）` };
+			} catch (error) {
+				return { kind: 'error', text: String(error?.message ?? error) };
+			}
+		},
+	});
+
+	// ---- 状态的写入口 ----
+	// 状态是九态，但**不是谁都能写**：白名单在 plan-state（MODEL_WRITABLE / assertStatusWriter）。
+	// 模型侧只开放"由执行事实推导"的那几个；auth-required 与 rejected 只能由用户命令写；
+	// canceled 只由宿主在父交付时自动写——这里没有工具能让模型把节点标成"待授权/已取消"。
+
+	const STATUS_ALIAS = {
+		working: 'working', 进行中: 'working', resume: 'working', 恢复: 'working',
+		completed: 'completed', 完成: 'completed',
+		failed: 'failed', 失败: 'failed', fail: 'failed',
+		'input-required': 'input-required', 搁置: 'input-required', hold: 'input-required',
+		'auth-required': 'auth-required', 授权: 'auth-required', auth: 'auth-required',
+		rejected: 'rejected', 否决: 'rejected', reject: 'rejected',
+	};
+
+	ctx.tools.register(
+		defineTool({
+			name: 'plan_status',
+			description:
+				'Set the nine-state status of one dispatched node or plan. Model-writable subset only: working, completed, ' +
+				'failed, input-required. auth-required is the user\'s call, rejected is the user\'s call, and canceled happens ' +
+				'automatically when a parent delivers — those are refused here, see the error for who may write them.',
+			parameters: {
+				target: { type: 'string', required: true, description: 'Node id (n3) or plan id (p2 / F1).' },
+				status: {
+					type: 'string',
+					required: true,
+					enum: ['working', 'completed', 'failed', 'input-required'],
+					description: 'Next status. Only the model-writable subset is exposed.',
+				},
+				reason: { type: 'string', description: 'One line: why this status now (kept in the record).' },
+			},
+			output: {
+				schema: {
+					type: 'object',
+					additionalProperties: false,
+					properties: { target: { type: 'string', required: true }, status: { type: 'string', required: true } },
+				},
+				render: (_args, value) => [{ type: 'text', text: `${value.target} → ${ctx.planStates?.labelOf?.(value.status) ?? value.status}` }],
+			},
+			execute(args, exec) {
+				if (!exec.agent) throw new Error('plan_status requires an owning agent session');
+				// 守卫：模型只允许写白名单里的状态；越界直接抛错并说明该找谁。
+				ctx.planStates?.assertStatusWriter?.('model', args.status);
+				const id = String(args.target ?? '').trim();
+				if (id === '') throw new Error('plan_status: target 不能为空');
+				append(exec.agent.session, 'status', {
+					id,
+					to: args.status,
+					scope: /^n\d+$/u.test(id) ? 'node' : 'plan',
+					reason: String(args.reason ?? '').trim() || null,
+					by: 'model',
+				});
+				return { target: id, status: args.status };
+			},
+		}),
+	);
+
+	// 用户命令：auth-required 与 rejected 的唯一写法（没有对应工具，模型调不到）。
+	// 用法：/plan-status auth n3  或  /plan-status n3 auth
+	ctx.commands.register({
+		name: 'plan-status',
+		description: '用户设置状态（auth / reject / hold / resume / fail / complete），模型无权',
+		input: { hint: '<状态> <节点或计划 id>' },
+		recordInput: false,
+		handler({ agent, rawInput }) {
+			const tokens = String(rawInput ?? '').trim().split(/\s+/u).filter((token) => token !== '');
+			if (tokens.length < 2) return { kind: 'error', text: '用法：/plan-status auth <id>（或 /plan-status <id> auth）' };
+			const asStatus = (token) => STATUS_ALIAS[token] ?? STATUS_ALIAS[token.replace(/^-/u, '')] ?? undefined;
+			const declared = asStatus(tokens[0]);
+			const declaredSecond = asStatus(tokens[1]);
+			const to = declared ?? declaredSecond;
+			const id = declared === undefined ? tokens[0] : tokens[1];
+			if (to === undefined) {
+				return { kind: 'error', text: `不认识的状态「${tokens[0]}」；可用：${Object.keys(STATUS_ALIAS).join(' / ')}` };
+			}
+			if (id === undefined || id === '') return { kind: 'error', text: '缺少节点或计划 id' };
+			try {
+				// 用户也不能写 canceled / unspecified：那两个归属宿主动作。
+				ctx.planStates?.assertStatusWriter?.('user', to);
+				append(agent.session, 'status', {
+					id,
+					to,
+					scope: /^n\d+$/u.test(id) ? 'node' : 'plan',
+					reason: null,
+					by: 'user',
+				});
+				return { kind: 'success', text: `已把 ${id} 置为 ${ctx.planStates?.labelOf?.(to) ?? to}` };
 			} catch (error) {
 				return { kind: 'error', text: String(error?.message ?? error) };
 			}

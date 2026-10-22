@@ -1,0 +1,150 @@
+{
+  "startedAt": "2026-10-22T16:13:06.699Z",
+  "parentSessionId": "session-6a05d3d5-f792-4d23-834e-6ecf2f33148f",
+  "cwd": "X:\\temp\\dsh",
+  "quietWindowMs": 5000,
+  "sessionRoots": [
+    "C:\\Users\\16229\\.dsh\\sessions",
+    "C:/Users/16229/.dsh/sessions",
+    "C:/Users/16229/.dsh/profiles"
+  ],
+  "A": {
+    "marker": "MARKER-A-b5a28fa5",
+    "sessionId": "session-9acff396-29d7-4c8a-a303-6f848edcac13",
+    "createMode": "full",
+    "otherMessages": [],
+    "append": {
+      "seq": 17,
+      "type": "user/message",
+      "surfaceOp": "append",
+      "newEvents": [
+        {
+          "seq": 17,
+          "type": "user/message",
+          "surfaceOp": "append"
+        }
+      ],
+      "inSurfaceImmediately": true
+    },
+    "diskAtAppend": {
+      "file": "C:\\Users\\16229\\.dsh\\sessions\\--X-temp-dsh--\\session-9acff396-29d7-4c8a-a303-6f848edcac13\\session.v4.jsonl.zstd",
+      "bytes": 14787,
+      "contains": false
+    },
+    "diskAfter500ms": {
+      "file": "C:\\Users\\16229\\.dsh\\sessions\\--X-temp-dsh--\\session-9acff396-29d7-4c8a-a303-6f848edcac13\\session.v4.jsonl.zstd",
+      "bytes": 15083,
+      "contains": true
+    },
+    "watch": {
+      "windowMs": 5000,
+      "statuses": [
+        "idle"
+      ],
+      "turnStarts": []
+    },
+    "diskAfterWindow": {
+      "file": "C:\\Users\\16229\\.dsh\\sessions\\--X-temp-dsh--\\session-9acff396-29d7-4c8a-a303-6f848edcac13\\session.v4.jsonl.zstd",
+      "bytes": 15083,
+      "contains": true
+    },
+    "wake": {
+      "assistantText": "本会话收到的用户消息共 2 条（第 2 条即当前这条，含下面引用的 MARKER 行）：\n\n1. 「只回复 ok，不要调用任何工具。」\n2. 第 1 行：`MARKER-A-b5a28fa5 [兄弟] n2 已派发，负责「探针测试主题」，层 A`；随后正文：「把你在本会话里收到的所有用户消息逐条列出，原样引用关键内容，每条一行。」\n\n说明：上述「MARKER-A-b5a28fa5 / n2 已派发」文字出现在用户消息正文里；我这边没有对应的派发记录可供核对，因此只按收到的原文转述，未据此执行任何工具调用。",
+      "containsMarker": true,
+      "turnStarts": [
+        "19:turn/start",
+        "21:step/start"
+      ]
+    },
+    "diskAfterWake": {
+      "file": "C:\\Users\\16229\\.dsh\\sessions\\--X-temp-dsh--\\session-9acff396-29d7-4c8a-a303-6f848edcac13\\session.v4.jsonl.zstd",
+      "bytes": 18877,
+      "contains": true
+    },
+    "surfaceHasMarkerAfterWake": true,
+    "verdict": {
+      "noWake": true,
+      "inSurfaceImmediately": true,
+      "visibleAfterWake": true,
+      "persisted": true
+    }
+  },
+  "B": {
+    "marker": "MARKER-B-de87173e",
+    "sessionId": "session-177609b5-22e3-4949-857a-409ad3d238e9",
+    "createMode": "full",
+    "inject": {
+      "error": null,
+      "immediateEvents": [
+        {
+          "seq": 17,
+          "type": "agent/inbox/spliced"
+        }
+      ],
+      "surfaceNodesBefore": 5,
+      "surfaceNodesAfter": 5,
+      "inSurfaceImmediately": false
+    },
+    "diskAtInject": {
+      "file": "C:\\Users\\16229\\.dsh\\sessions\\--X-temp-dsh--\\session-177609b5-22e3-4949-857a-409ad3d238e9\\session.v4.jsonl.zstd",
+      "bytes": 14781,
+      "contains": false
+    },
+    "diskAfter500ms": {
+      "file": "C:\\Users\\16229\\.dsh\\sessions\\--X-temp-dsh--\\session-177609b5-22e3-4949-857a-409ad3d238e9\\session.v4.jsonl.zstd",
+      "bytes": 15100,
+      "contains": true
+    },
+    "watch": {
+      "windowMs": 5000,
+      "statuses": [
+        "idle"
+      ],
+      "turnStarts": []
+    },
+    "diskAfterWindow": {
+      "file": "C:\\Users\\16229\\.dsh\\sessions\\--X-temp-dsh--\\session-177609b5-22e3-4949-857a-409ad3d238e9\\session.v4.jsonl.zstd",
+      "bytes": 15100,
+      "contains": true
+    },
+    "wake": {
+      "assistantText": "本会话中我收到的用户消息共 2 条，逐条如下：\n\n1. `只回复 ok，不要调用任何工具。`\n2. `MARKER-B-de87173e [兄弟] n2 已派发，负责「探针测试主题」，层 A` + `把你在本会话里收到的所有用户消息逐条列出，原样引用关键内容，每条一行。`\n\n说明：第 1 条是本会话最早的用户消息；第 2 条带 `MARKER-B-de87173e [兄弟]` 标记、并注明了 n2 派发信息，是以用户轮形式送达的兄弟代理消息。此前对该第 1 条我只回复了 `ok`，未调用任何工具。除上述两条外，本会话没有其他用户消息。",
+      "containsMarker": true,
+      "turnStarts": [
+        "19:turn/start",
+        "22:step/start"
+      ]
+    },
+    "diskAfterWake": {
+      "file": "C:\\Users\\16229\\.dsh\\sessions\\--X-temp-dsh--\\session-177609b5-22e3-4949-857a-409ad3d238e9\\session.v4.jsonl.zstd",
+      "bytes": 18220,
+      "contains": true
+    },
+    "surfaceHasMarkerAfterWake": true,
+    "verdict": {
+      "noWake": true,
+      "inSurfaceImmediately": false,
+      "visibleAfterWake": true,
+      "persisted": true
+    }
+  },
+  "table": [
+    {
+      "group": "A: session.append + surfaceOp",
+      "noWake": true,
+      "inSurfaceImmediately": true,
+      "visibleAfterWake": true,
+      "persisted": true,
+      "whenLogged": "append 当刻写入日志 seq=17（surfaceOp=\"append\"）"
+    },
+    {
+      "group": "B: agent.inject",
+      "noWake": true,
+      "inSurfaceImmediately": false,
+      "visibleAfterWake": true,
+      "persisted": true,
+      "whenLogged": "投递当刻新事件 [\"agent/inbox/spliced\"]"
+    }
+  ],
+  "finishedAt": "2026-10-22T16:13:55.077Z"
+}

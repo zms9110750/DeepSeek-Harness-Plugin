@@ -53,6 +53,70 @@ function teammateName(nodeId) {
 const USE_FORK_SEED = true;
 
 /**
+ * 运行时上下文快照的 `source.kind`。
+ *
+ * 它描述的是「哪个会话、当前目录在哪、当前文件策略」——是写它的那个会话的事实，
+ * 不是可以继承的对话。跟着分叉种子进到子会话后，子的上下文里会同时存在
+ * 父的 cwd 和子自己渲染的那份，且旧的那份在前：模型先读到的就是错的那份。
+ */
+const RUNTIME_CONTEXT_SOURCE = 'runtime-context';
+
+/** 这条事件是不是一条运行时上下文快照（user/message + `source.kind === 'runtime-context'`）。 */
+export function isRuntimeContextEvent(event) {
+	return event.type === 'user/message' && event.data?.source?.kind === RUNTIME_CONTEXT_SOURCE;
+}
+
+/**
+ * 从父日志前缀里剔除运行时上下文快照，并让结果仍是一个可重放的种子。
+ *
+ * 种子要求 seq 从 0 连续（dsh-session 的 Session 构造器校验 `event.seq === index`），
+ * 所以删掉事件之后必须重编号，并把 surface 元数据里指向旧 seq 的引用
+ * （替换区间的 `startSeq`/`endSeq`、`sourceEventSeqs`）一起重映射。
+ *
+ * 只删 runtime-context：`system/message`（系统提示词）、`working-directory` 的变更通知、
+ * `tool/result`、`assistant/message` 全部原样保留。
+ *
+ * @param events - 父会话按 seq 连续排列的事件前缀。
+ * @returns 剔除快照并重编号后的新数组；没有快照时原样返回入参。
+ */
+export function stripInheritedRuntimeContext(events) {
+	const drop = new Set();
+	for (const event of events) if (isRuntimeContextEvent(event)) drop.add(event.seq);
+	if (drop.size === 0) return events;
+	// 替换事件的区间端点是快照本身时，这条替换过滤后已无目标：一并丢弃（级联到不动为止）。
+	for (let changed = true; changed;) {
+		changed = false;
+		for (const event of events) {
+			if (drop.has(event.seq)) continue;
+			const op = event.surfaceOp;
+			if (op === undefined || typeof op === 'string') continue;
+			if (drop.has(op.startSeq) || drop.has(op.endSeq)) {
+				drop.add(event.seq);
+				changed = true;
+			}
+		}
+	}
+	const kept = events.filter((event) => !drop.has(event.seq));
+	const remap = new Map(kept.map((event, index) => [event.seq, index]));
+	return kept.map((event, index) => {
+		const next = { ...event, seq: index };
+		if (Array.isArray(event.sourceEventSeqs)) {
+			const mapped = event.sourceEventSeqs.map((seq) => remap.get(seq)).filter((seq) => seq !== undefined);
+			if (mapped.length === 0) delete next.sourceEventSeqs;
+			else next.sourceEventSeqs = mapped;
+		}
+		if (event.surfaceOp !== undefined && typeof event.surfaceOp === 'object') {
+			next.surfaceOp = {
+				...event.surfaceOp,
+				startSeq: remap.get(event.surfaceOp.startSeq),
+				endSeq: remap.get(event.surfaceOp.endSeq),
+			};
+		}
+		return next;
+	});
+}
+
+/**
  * 「人工分叉」：宿主的分叉通道不可用时，把父会话最近的 surface 事件（用户与助手
  * 的纯文本）压成一段前缀注入子会话。
  *
@@ -68,6 +132,8 @@ export function contextDigest(events, limit = 24, budget = 12000) {
 	const lines = [];
 	for (const event of events) {
 		if (event.type !== 'user/message' && event.type !== 'assistant/message') continue;
+		// 运行时快照是「那个会话」的事实，抄进人工分叉前缀只会变成第二处真相。
+		if (isRuntimeContextEvent(event)) continue;
 		const blocks = event.data?.message?.content ?? [];
 		const text = blocks
 			.filter((block) => block?.type === 'text')
@@ -176,11 +242,16 @@ export function apply(ctx) {
 						label: { type: 'string', required: true },
 						topic: { type: 'string' },
 						layer: { type: 'string' },
+						// 闸门的提示（不拦本次派发）：失败累计到阈值时让模型先派复盘。
+						hint: { type: 'string' },
 					},
 				},
 				// 与状态通知同形：一份计划 + 它的新状态 + 标题。一句话说完。
 				render: (_args, value) => [
-					{ type: 'text', text: `${value.plan} ${value.label}${value.layer === undefined ? '（研究）' : `［${value.layer}］`}：${value.topic || '(未命名)'} → ${value.id}` },
+					{
+						type: 'text',
+						text: `${value.plan} ${value.label}${value.layer === undefined ? '（研究）' : `［${value.layer}］`}：${value.topic || '(未命名)'} → ${value.id}${value.hint === undefined ? '' : `\n提示：${value.hint}`}`,
+					},
 				],
 			},
 			async execute(args, exec) {
@@ -200,45 +271,17 @@ export function apply(ctx) {
 				}
 
 				const self = gate.selfNode(tree.nodes, agent.session.id);
-				const verdict = gate.check({ plan, self, counts: tree.counts });
-				if (!verdict.ok) {
-					// 同层连否三次：闸门不再放行计划，但也不该让模型干瞪眼——
-					// 顺手把它该做的那份研究计划写出来，它采纳后派它即可。
-					if (verdict.code === 'too-many-rejects') {
-						const research = `p${plans.planSeq ?? 1}`;
-						const pitfalls = Object.values(tree.nodes)
-							.filter((node) => node.layer === verdict.layer && node.pitfalls)
-							.map((node) => `- ${node.id}：${node.pitfalls}`)
-							.join('\n');
-						append(agent.session, 'plan', {
-							id: research,
-							title: `研究：${verdict.layer} 连续被否`,
-							type: 'research',
-							layer: null,
-							layerIndex: null,
-							dir: null,
-							topic: `${verdict.layer} 为什么连续被否`,
-							goal: `查清 ${verdict.layer} 这一层为什么连否 ${verdict.count} 次，给出可以继续派发的结论`,
-							done_when: '能说清坑在哪，并给出下一份计划该改什么',
-							where_to_learn: '被否节点的结算与坑',
-							author: 'host',
-							body: [
-								`# 研究：${verdict.layer} 连续被否`,
-								'',
-								'- 类型：research',
-								'- 目的：查清为什么连否，而不是继续换一份计划碰运气',
-								'',
-								'## 已知的坑',
-								'',
-								pitfalls === '' ? '- （被否的节点没有留下坑，得从头查）' : pitfalls,
-							].join('\n'),
-						});
-						throw new Error(
-							`${verdict.reason}\n已为你写好研究计划 ${research}（研究：${verdict.layer} 连续被否）。先 plan_adopt 采纳它，再 plan_dispatch ${research}。`,
-						);
-					}
-					throw new Error(verdict.reason);
+				// 模板失败计数：单位是模板，不是层、不是全局；取不到就当 0。
+				const templateId = ctx.planStates?.templateKey?.(plan) ?? '(default)';
+				let templateFailures = 0;
+				try {
+					const store = ctx.get('treeSessions')?.atSession(agent.session);
+					templateFailures = Number(store?.failures?.(templateId)?.failed ?? 0) || 0;
+				} catch {
+					/* 没有树库时退化为 0：提示只是提示，不该挡住派发 */
 				}
+				const verdict = gate.check({ plan, self, failures: templateFailures });
+				if (!verdict.ok) throw new Error(verdict.reason);
 
 				const id = `n${tree.nextId}`;
 				// 两条执行路，都由参数选；谁执行决定 childId 什么时候有着落：
@@ -256,7 +299,7 @@ export function apply(ctx) {
 				}
 
 				const prompt = [
-					`You are executing plan node ${id}${verdict.layer === null ? ' (research)' : ` (layer ${verdict.layer})`}.`,
+					`You are executing plan node ${id}${verdict.type === 'review' ? ' (review — why a template keeps failing)' : verdict.layer === null ? ' (research)' : ` (layer ${verdict.layer})`}.`,
 					'',
 					`Topic: ${plan.topic}`,
 					`Goal: ${plan.goal}`,
@@ -280,6 +323,8 @@ export function apply(ctx) {
 					planId: plan.id,
 					// 提案文件夹跟着节点走：结算因此能指回它出自哪份提案。
 					dir: plan.dir ?? null,
+					// 模板身份跟着节点走：失败要按模板累计（不是按层、不是全局）。
+					templatePath: plan.templatePath ?? null,
 					type: verdict.type,
 					layer: verdict.layer,
 					layerIndex: verdict.layerIndex,
@@ -296,8 +341,13 @@ export function apply(ctx) {
 				//    那个半建的会话，报 `unseeded session inherited event count must be 0`。
 				//    因此这里一次性决定，只调一次 create。宿主修好后把开关改回 true 即可。
 				const events = agent.session.snapshotEvents();
-				const boundary = events.length - 1;
-				const seed = USE_FORK_SEED ? JSON.parse(JSON.stringify(buildForkSeed(events, boundary))) : undefined;
+				// 父的运行时上下文快照是父会话的事实：整体继承过去，子的上下文里会同时
+				// 出现「父的 cwd」和子自己渲染的那份，旧的在前面，模型先读到错的那份。
+				// 滤掉之后子的 RuntimeContextProjection 没有 retained 快照，首轮必然用
+				// 子自己的 header（= workspace）渲染并追加一份完整快照。
+				const seedEvents = USE_FORK_SEED ? stripInheritedRuntimeContext(events) : events;
+				const boundary = seedEvents.length - 1;
+				const seed = USE_FORK_SEED ? JSON.parse(JSON.stringify(buildForkSeed(seedEvents, boundary))) : undefined;
 
 				// 4. 建子会话。
 				//    **不覆盖预设、也不指定模型**：子会话走宿主默认那条路（和内置 `subagent` 一样）。
@@ -395,7 +445,9 @@ export function apply(ctx) {
 				try {
 					ctx.get('treeSessions')?.atRoot(treeRoot)?.registerSession(childId, {
 						parent: agent.session.id,
-						atSeq: boundary + 1,
+						// 分支点用**父日志原始条数**（不是过滤后的种子条数）：快照被滤掉后
+						// 种子条数不再是父日志的连续前缀，而 atSeq 记的是"父到第几条为止"。
+						atSeq: events.length,
 						planId: plan.id,
 					});
 					// 子会话自己写记录时要落到同一棵树里，所以这一刻就把归属记下。
@@ -530,6 +582,8 @@ export function apply(ctx) {
 					label: ctx.planStates?.labelOf?.('working') ?? '进行中',
 					topic: String(plan.topic ?? ''),
 					...(verdict.layer === null ? {} : { layer: verdict.layer }),
+					// 闸门的提示随返回值回到模型：不拦本次派发，只说明"该先复盘"。
+					...(verdict.hint ? { hint: verdict.hint } : {}),
 				};
 			},
 		}),
