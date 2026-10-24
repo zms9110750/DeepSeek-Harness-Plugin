@@ -18,3 +18,9 @@ screenshots/
 shot.png
 smoke-test.html
 sandbox-write-probe.txt
+
+# 二进制产物（可重新生成，不该进仓库）
+*.db
+*.db-shm
+*.db-wal
+*.zstd

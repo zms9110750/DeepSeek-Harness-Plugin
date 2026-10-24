@@ -1,0 +1,3 @@
+- insert:
+    - id: composer-drawer
+      name: '@local/composer-drawer'

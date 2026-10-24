@@ -1,0 +1,40 @@
+name: H1 · 需要授权 · 代价过大
+description: 方案能走，但代价超出预期（钱 / 时间 / 风险），要用户拍板
+labels: ["H", "需要授权"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这一份只回答"为什么停在这里"，不写方案细节。
+        用 `task_state ... 需要授权` + `note` 把它落成搁置态。
+  - type: textarea
+    id: cost
+    attributes:
+      label: 代价是什么
+      description: 具体到可比较的量：多少钱、多少天、影响多大范围、坏了怎么恢复
+      placeholder: 要动生产库 / 要买 X（约 N 元）/ 要停机 N 小时
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: 有哪几个选项
+      description: 至少两个：省事的、省钱的、不全做的；各自代价和收益
+      placeholder: |
+        A：全做，代价…
+        B：只做一半，代价…
+        C：不做，后果…
+    validations:
+      required: true
+  - type: textarea
+    id: recommend
+    attributes:
+      label: 我推荐哪个
+      description: 一句结论 + 一句理由。没有推荐就写"三个都不可接受，需要新方向"
+    validations:
+      required: true
+  - type: textarea
+    id: deadline
+    attributes:
+      label: 什么时候要答复
+      description: 超过这个时间会怎样（是否还值得做、会不会过期）

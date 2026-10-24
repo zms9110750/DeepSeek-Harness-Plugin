@@ -1,0 +1,40 @@
+name: B · 设计
+description: 怎么理解这个问题：真正的问题、要考虑的、不做的、约束、可用工具
+labels: ["B"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        一份设计 = 对父计划（通常是 A）的一种理解。兄弟设计要能并肩存在。
+  - type: textarea
+    id: real-problem
+    attributes:
+      label: 实际问题
+      description: 用户说的那个问题，背后真正的痛点是什么
+    validations:
+      required: true
+  - type: textarea
+    id: considerations
+    attributes:
+      label: 需要考虑的问题
+      description: 用户不懂技术但我们得考虑的：性能、安全、持久化、成本
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: 非目标
+      description: 哪些不归这次管（外部负责、或别的计划负责）
+  - type: textarea
+    id: secondary-goals
+    attributes:
+      label: 次要目标
+      description: 顺着这个方案可以顺带交付什么
+  - type: textarea
+    id: constraints
+    attributes:
+      label: 约束
+      description: 什么情况下不该这样实现；不能触碰的底线
+  - type: textarea
+    id: tools
+    attributes:
+      label: 工具
+      description: 有哪些现成的东西可以用

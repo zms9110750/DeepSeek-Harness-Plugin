@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>tree-chain.db</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.55 system-ui, "Segoe UI", sans-serif; margin: 0; padding: 24px 32px 80px; background: #fafafa; color: #1b1b1b; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 32px 0 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .hint { color: #666; margin: 4px 0 12px; }
+  .count { font-weight: normal; color: #888; font-size: 13px; margin-left: 6px; }
+  .card { border: 1px solid #ddd; background: #fff; border-radius: 8px; padding: 12px 14px; margin: 10px 0; }
+  .title { font-weight: 600; font-size: 15px; }
+  .meta { color: #666; font-size: 13px; margin-top: 2px; }
+  .badge { display: inline-block; background: #eef3ff; color: #2b5bd7; border-radius: 10px; padding: 1px 8px; font-size: 12px; margin-left: 6px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  .grid th, .grid td, .rows th, .rows td { border: 1px solid #e2e2e2; padding: 4px 8px; vertical-align: top; text-align: left; }
+  .grid th { background: #f1f3f5; font-size: 12px; }
+  .type { display: block; font-weight: normal; color: #999; font-size: 11px; }
+  .seq { width: 64px; color: #888; font-variant-numeric: tabular-nums; }
+  code, pre { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  pre.schema { background: #f5f5f5; padding: 10px; border-radius: 6px; overflow: auto; }
+  details > summary { cursor: pointer; color: #2b5bd7; }
+  .node { margin-top: 6px; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16181c; color: #e6e6e6; }
+    .card, table { background: #1e2126; border-color: #333; }
+    .grid th, .rows th { background: #252932; }
+    .grid th, .grid td, .rows th, .rows td { border-color: #333; }
+    pre.schema { background: #20242b; }
+    .hint, .meta { color: #9aa0a6; }
+    h2 { border-color: #333; }
+    .badge { background: #1c2b4d; color: #9ec0ff; }
+  }
+</style></head>
+<body>
+  <h1>tree-chain.db</h1>
+  <p class="hint">X:\temp\dsh\探针\tree-chain.db · 2 张表 · 生成于 2026/10/23 17:30:07</p>
+  
+  <section><h2>会话链</h2><p class="hint">at_seq = 从父会话的第几条接上。</p>
+	<table class="grid"><thead><tr><th>会话</th><th>父</th><th>at_seq</th><th>计划</th><th>事件数</th><th>seq 范围</th></tr></thead><tbody>
+	<tr><td>A</td><td>—</td><td>4821</td><td>p13</td><td>4</td><td>0..3</td></tr><tr><td>A-1</td><td>A</td><td>2</td><td>p14</td><td>2</td><td>0..1</td></tr>
+	</tbody></table>
+	<details><summary>A 的前 4 条</summary><table class="rows"><thead><tr><th>seq</th><th>行内容</th></tr></thead><tbody><tr><td class="seq">0</td><td><code>{&quot;t&quot;:&quot;A.0&quot;}</code></td></tr><tr><td class="seq">1</td><td><code>{&quot;t&quot;:&quot;A.1&quot;}</code></td></tr><tr><td class="seq">2</td><td><code>{&quot;t&quot;:&quot;A.2 分叉之后才产生的&quot;}</code></td></tr><tr><td class="seq">3</td><td><code>{&quot;t&quot;:&quot;A.3 同上&quot;}</code></td></tr></tbody></table></details><details><summary>A-1 的前 2 条</summary><table class="rows"><thead><tr><th>seq</th><th>行内容</th></tr></thead><tbody><tr><td class="seq">0</td><td><code>{&quot;t&quot;:&quot;A-1.0&quot;}</code></td></tr><tr><td class="seq">1</td><td><code>{&quot;t&quot;:&quot;A-1.1&quot;}</code></td></tr></tbody></table></details>
+	</section>
+  <section><h2>events <span class="count">6 行</span></h2>
+			<pre class="schema">CREATE TABLE events(session_id TEXT, seq INTEGER, line TEXT, PRIMARY KEY(session_id,seq))</pre>
+			<table class="grid"><thead><tr><th>session_id<span class="type">TEXT</span></th><th>seq<span class="type">INTEGER</span></th><th>line<span class="type">TEXT</span></th></tr></thead><tbody><tr><td>A</td><td>0</td><td>{&quot;t&quot;:&quot;A.0&quot;}</td></tr><tr><td>A</td><td>1</td><td>{&quot;t&quot;:&quot;A.1&quot;}</td></tr><tr><td>A</td><td>2</td><td>{&quot;t&quot;:&quot;A.2 分叉之后才产生的&quot;}</td></tr><tr><td>A</td><td>3</td><td>{&quot;t&quot;:&quot;A.3 同上&quot;}</td></tr><tr><td>A-1</td><td>0</td><td>{&quot;t&quot;:&quot;A-1.0&quot;}</td></tr><tr><td>A-1</td><td>1</td><td>{&quot;t&quot;:&quot;A-1.1&quot;}</td></tr></tbody></table>
+			
+		</section><section><h2>sessions <span class="count">2 行</span></h2>
+			<pre class="schema">CREATE TABLE sessions(id TEXT PRIMARY KEY, parent TEXT, at_seq INTEGER, plan_id TEXT)</pre>
+			<table class="grid"><thead><tr><th>id<span class="type">TEXT</span></th><th>parent<span class="type">TEXT</span></th><th>at_seq<span class="type">INTEGER</span></th><th>plan_id<span class="type">TEXT</span></th></tr></thead><tbody><tr><td>A</td><td></td><td>4821</td><td>p13</td></tr><tr><td>A-1</td><td>A</td><td>2</td><td>p14</td></tr></tbody></table>
+			
+		</section>
+</body></html>

@@ -1,0 +1,37 @@
+name: H6 · 需要授权 · 资源被占用
+description: 不能并发继续，要等另一个任务让出资源（同一文件 / 同一会话 / 同一服务）
+labels: ["H", "需要授权"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        一个会话同一时刻只能做一个任务。这一份记录"被谁挡着、等它到什么状态"。
+        注意：不要用它来绕过"一次一个"——那是硬规则，这里只是把等待说清楚。
+  - type: textarea
+    id: holder
+    attributes:
+      label: 被谁占着
+      description: 计划 id + 它的状态；如果是会话/文件/端口，写清是哪一个
+      placeholder: "T-012（处理中）正在改同一个文件"
+    validations:
+      required: true
+  - type: textarea
+    id: waiting-for
+    attributes:
+      label: 等它做什么
+      description: 具体到"等它完成"还是"等它释放某个东西"
+      placeholder: 等它把 index.js 写完并提交
+    validations:
+      required: true
+  - type: textarea
+    id: can-continue
+    attributes:
+      label: 它做到什么状态我就能继续
+      description: 完成 / 失败 / 取消 都算放开；还是必须"完成"才行
+    validations:
+      required: true
+  - type: textarea
+    id: meanwhile
+    attributes:
+      label: 等的时候我干什么
+      description: 有没有可以并行推进的部分；没有就写"停下等"

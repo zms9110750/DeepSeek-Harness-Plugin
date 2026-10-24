@@ -1,0 +1,1447 @@
+/**
+ * taskboard 宿主插件的单元测试（JSONL 存储版）：不开 DSH、不碰真实任务库。
+ *
+ * 做法：
+ *   · 桩 ctx 只收集 tools / commands / guard / effect / provide 注册项，然后直接调用
+ *     注册出来的 execute / handler —— 插件本身不依赖宿主的调度；
+ *   · 存储是单个 JSONL（index.js 里 `STORE_FILE = process.env.TASKBOARD_STORE || …`，
+ *     默认 `%USERPROFILE%\.dsh\taskboard\plans.jsonl`）。测试把 `TASKBOARD_STORE` 指到
+ *     `node:os` 临时目录，老格式（`任务\*.md`）迁移源 `TASKBOARD_ROOT` 也一起指过去，
+ *     所以真实存储与真实 `任务\` 一个字节都不会被写；跑完还会复查真实 plans.jsonl 没变。
+ *   · `@deepseek-ai/dsh-tools` 从当前 DSH profile 里解析（插件是 link 进 profile 的，
+ *     从 `开发\taskboard` 直接 import 时 Node 往上找不到 node_modules，这里用
+ *     `module.registerHooks` 把裸导入接到 profile 里的真包）。
+ *
+ * 跑法（在 `开发/taskboard` 下）：
+ *   C:\Users\16229\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe --test test/taskboard.test.mjs
+ */
+import { after, beforeEach, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire, registerHooks } from 'node:module';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const PLUGIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+const INDEX = join(PLUGIN_DIR, 'index.js');
+
+/* ── 1. 先把 dsh-tools 的裸导入接到 profile 里的真包 ─────────────────────── */
+
+function locateDshTools() {
+	const home = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+	const profile = process.env.DSH_PROFILE ?? 'desktop';
+	const candidates = [
+		process.env.DSH_PROFILE_DIR,
+		process.env.DSH_PROFILE_DIR === undefined
+			? undefined
+			: join(process.env.DSH_PROFILE_DIR, '..', profile),
+		join(home, 'profiles', profile),
+		join(home, 'profiles', 'desktop'),
+	].filter((entry) => entry !== undefined);
+	for (const dir of candidates) {
+		try {
+			return createRequire(join(dir, 'package.json')).resolve('@deepseek-ai/dsh-tools');
+		} catch {
+			/* 换下一个候选 */
+		}
+	}
+	throw new Error(
+		'找不到 @deepseek-ai/dsh-tools：需要设 DSH_HOME / DSH_PROFILE_DIR 指向已安装 DSH 的 profile',
+	);
+}
+
+const DSH_TOOLS = locateDshTools();
+registerHooks({
+	resolve(specifier, context, nextResolve) {
+		if (specifier === '@deepseek-ai/dsh-tools') {
+			return { url: pathToFileURL(DSH_TOOLS).href, shortCircuit: true };
+		}
+		return nextResolve(specifier, context);
+	},
+});
+
+/* ── 2. 把存储与老格式迁移源都指到临时目录，再 import 插件 ──────────────── */
+
+/* 安全闸：两个环境变量必须还被 index.js 认，否则测试会写真实存储/真实任务目录。 */
+const pluginSource = readFileSync(INDEX, 'utf8');
+assert.match(
+	pluginSource,
+	/process\.env\.TASKBOARD_STORE/u,
+	'index.js 的存储路径必须可被 TASKBOARD_STORE 覆盖，测试不碰真实 plans.jsonl',
+);
+assert.match(
+	pluginSource,
+	/process\.env\.TASKBOARD_ROOT/u,
+	'index.js 的迁移源必须可被 TASKBOARD_ROOT 覆盖，测试不碰真实 任务\\ 目录',
+);
+
+const TMP_ROOT = mkdtempSync(join(tmpdir(), 'taskboard-test-'));
+process.env.TASKBOARD_ROOT = TMP_ROOT;
+process.env.TASKBOARD_STORE = join(TMP_ROOT, 'plans.jsonl');
+
+const STORE_PATH = process.env.TASKBOARD_STORE;
+assert.ok(process.env.TASKBOARD_STORE.startsWith(TMP_ROOT), '存储必须在临时目录里');
+
+/** 真实存储与真实老目录：跑完复查，证明测试没写它们。 */
+const REAL_STORE = join(homedir(), '.dsh', 'taskboard', 'plans.jsonl');
+const REAL_LEGACY = 'X:\\temp\\dsh\\任务';
+
+const plugin = await import(pathToFileURL(INDEX).href);
+/* apply() 里有一次不 await 的 refreshClaims()，等它落定再开始用例，避免首条用例被插队。 */
+await new Promise((resolve) => setTimeout(resolve, 50));
+
+/* ── 3. 桩 ctx ─────────────────────────────────────────────────────────── */
+
+/** 只做注册、不做调度的桩 ctx；把注册面暴露出来给断言/直接调用。 */
+function makeCtx() {
+	const tools = new Map();
+	const commands = new Map();
+	const guards = [];
+	const effects = [];
+	const emitted = [];
+	const services = new Map();
+	const ctx = {
+		tools: {
+			register(definition) {
+				tools.set(definition.name, definition);
+			},
+			guard(fn) {
+				guards.push(fn);
+			},
+		},
+		commands: {
+			register(definition) {
+				commands.set(definition.name, definition);
+			},
+		},
+		permissionPresets: { presets: {} },
+		sessionProjections: {
+			stateOf() {
+				return undefined;
+			},
+		},
+		effect(callback, label) {
+			const dispose = callback();
+			effects.push({ label, dispose });
+			return () => {};
+		},
+		emit(type) {
+			emitted.push(type);
+		},
+		provide(name, value) {
+			services.set(name, value);
+			ctx[name] = value;
+		},
+		get(name) {
+			return services.get(name);
+		},
+	};
+	plugin.apply(ctx);
+	return { ctx, tools, commands, guards, effects, emitted };
+}
+
+const { ctx, tools, commands, guards, effects, emitted } = makeCtx();
+
+/** 取注册出来的模型工具。 */
+function tool(name) {
+	const definition = tools.get(name);
+	assert.ok(definition, `没有注册工具 ${name}`);
+	return definition;
+}
+
+/** 取注册出来的斜杠命令。 */
+function command(name) {
+	const definition = commands.get(name);
+	assert.ok(definition, `没有注册命令 /${name}`);
+	return definition;
+}
+
+/* ── 4. 存储（JSONL）小工具 ────────────────────────────────────────────── */
+
+/** 读全部事件行；文件不存在 = 没有事件。顺带断言每行都是合法 JSON。 */
+function events() {
+	let raw = '';
+	try {
+		raw = readFileSync(STORE_PATH, 'utf8');
+	} catch (error) {
+		if (error?.code === 'ENOENT') return [];
+		throw error;
+	}
+	return raw
+		.split(/\r?\n/u)
+		.filter((line) => line.trim() !== '')
+		.map((line, index) => {
+			try {
+				return JSON.parse(line);
+			} catch {
+				assert.fail(`第 ${index + 1} 行不是合法 JSON：${line}`);
+			}
+		});
+}
+
+/** 按 index.js 的折叠规则（upsert 覆盖，patch 合并）取一份计划的当前值。 */
+function taskOf(id) {
+	const wanted = String(id);
+	let task;
+	for (const event of events()) {
+		if (event.op === 'upsert' && event.task?.id) {
+			if (String(event.task.id) === wanted) task = event.task;
+		} else if (event.op === 'patch' && String(event.id) === wanted && task !== undefined) {
+			task = Object.assign({}, task, event.patch);
+		}
+	}
+	return task;
+}
+
+/** 临时目录里当前有哪些文件。 */
+function tmpFiles() {
+	return readdirSync(TMP_ROOT).sort();
+}
+
+let sessionSeq = 0;
+/** 每个用例用独立的会话 id，避免模块内 CLAIMS 缓存跨用例串味。 */
+function newSession() {
+	sessionSeq += 1;
+	return `session-${sessionSeq}`;
+}
+
+/* ── 5. 操作小工具 ─────────────────────────────────────────────────────── */
+
+/** 跑一次 task_submit，返回新计划 id。 */
+async function submit(overrides = {}) {
+	const result = await tool('task_submit').execute({
+		title: '测试计划',
+		type: 'A',
+		body: '## 正文\n一句话正文。',
+		...overrides,
+	});
+	const id = /已提交 (T-\d+)/u.exec(result.text)?.[1];
+	assert.ok(id, `task_submit 没返回计划 id：${result.text}`);
+	return id;
+}
+
+/** 用户采纳（/task-approve）。 */
+async function approve(id) {
+	const result = await command('task-approve').handler({ rawInput: id });
+	assert.equal(result.kind, 'success', `采纳 ${id} 失败：${result.text}`);
+	return result;
+}
+
+/** 模型领取（task_claim），带会话 id。 */
+async function claim(id, sessionId) {
+	return tool('task_claim').execute({ id }, { agent: { id: sessionId } });
+}
+
+/** 模型改状态（task_state，byUser=false）。 */
+async function changeState(id, status) {
+	return tool('task_state').execute({ id, status });
+}
+
+function escapeRegExp(value) {
+	return String(value).replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&');
+}
+
+/* ── 6. 每个用例前清空临时存储（id 从 T-001 重新开始，断言稳定） ────────── */
+
+beforeEach(() => {
+	for (const entry of readdirSync(TMP_ROOT)) rmSync(join(TMP_ROOT, entry), { recursive: true, force: true });
+});
+
+/* 跑完删临时目录，并复查真实存储 / 真实老目录没被碰过。 */
+function fileSnapshot(path) {
+	try {
+		const info = statSync(path);
+		return `${info.size}:${info.mtimeMs}`;
+	} catch {
+		return 'missing';
+	}
+}
+
+function dirSnapshot(path) {
+	try {
+		return readdirSync(path)
+			.sort()
+			.map((name) => {
+				try {
+					const info = statSync(join(path, name));
+					return `${name}:${info.size}:${info.mtimeMs}`;
+				} catch {
+					return name;
+				}
+			})
+			.join('|');
+	} catch {
+		return 'missing';
+	}
+}
+
+const REAL_STORE_BEFORE = fileSnapshot(REAL_STORE);
+const REAL_LEGACY_BEFORE = dirSnapshot(REAL_LEGACY);
+
+after(() => {
+	for (const effect of effects) {
+		try {
+			effect.dispose?.();
+		} catch {
+			/* 卸载失败不影响结论 */
+		}
+	}
+	rmSync(TMP_ROOT, { recursive: true, force: true });
+	/* 注意：如果同时还有别的 DSH 会话在写真实库，这里也会失败——那说明有并发写，重跑即可；
+	   测试自身只写 TMP_ROOT。 */
+	assert.equal(fileSnapshot(REAL_STORE), REAL_STORE_BEFORE, `测试写了真实存储：${REAL_STORE}`);
+	assert.equal(dirSnapshot(REAL_LEGACY), REAL_LEGACY_BEFORE, '测试动了真实任务目录 任务\\');
+});
+
+/* ── 7. 用例 ───────────────────────────────────────────────────────────── */
+
+test('apply 注册八个工具、十条面板命令、「按计划」预设、守卫和 planClaims', () => {
+	assert.deepEqual([...tools.keys()].sort(), [
+		'task_claim',
+		'task_get',
+		'task_list',
+		'task_note',
+		'task_state',
+		'task_submit',
+		'task_template',
+		'task_update',
+	]);
+	assert.deepEqual([...commands.keys()].sort(), [
+		'task-approve',
+		'task-create',
+		'task-get',
+		'task-groups',
+		'task-note',
+		'task-reject',
+		'task-state',
+		'task-templates',
+		'task-update',
+		'tasks',
+	]);
+	assert.equal(ctx.permissionPresets.presets.plan?.name, '按计划');
+	assert.equal(guards.length, 1, '按计划守卫应注册一次');
+	assert.ok(emitted.includes('permission-presets/catalog-changed'));
+	for (const method of ['claim', 'current', 'release', 'list']) {
+		assert.equal(typeof ctx.planClaims?.[method], 'function', `planClaims.${method} 没注册`);
+	}
+});
+
+test('备注：可写可清空，不受「只有未指定可改」限制，task_state 可顺带写理由', async () => {
+	const id = await submit({ title: '需要授权的计划' });
+	await approve(id);
+
+	/* 采纳之后（不是「未指定」）仍然能写备注——这正是这个功能的要点 */
+	const wrote = await tool('task_note').execute({ id, note: '要花钱买 X，得你点头。' });
+	assert.match(wrote.text, /已更新/u);
+	assert.equal(taskOf(id).note, '要花钱买 X，得你点头。');
+
+	/* 列表里能看到备注摘要 */
+	const listed = await tool('task_list').execute({});
+	assert.match(listed.text, /要花钱买 X/u);
+
+	/* task_state 一次写完状态 + 理由 */
+	await tool('task_state').execute({
+		id,
+		status: '需要授权',
+		note: '方案 A 要动生产库，代价太大。',
+	});
+	const stored = taskOf(id);
+	assert.equal(stored.status, '需要授权');
+	assert.equal(stored.note, '方案 A 要动生产库，代价太大。');
+
+	/* 命令路径：备注含空格也要整段保留 */
+	const viaCommand = await command('task-note').handler({
+		rawInput: `${id} 用户去吃饭了，等他回来确认预算`,
+	});
+	assert.equal(viaCommand.kind, 'success');
+	assert.equal(taskOf(id).note, '用户去吃饭了，等他回来确认预算');
+
+	/* /task-state 的第三个参数起也是备注（含空格） */
+	const stateWithNote = await command('task-state').handler({
+		rawInput: `${id} 需要补充 缺三样东西：预算 / 期限 / 验收人`,
+	});
+	assert.equal(stateWithNote.kind, 'success');
+	assert.equal(taskOf(id).status, '需要补充');
+	assert.equal(taskOf(id).note, '缺三样东西：预算 / 期限 / 验收人');
+
+	/* 空串清空 */
+	await tool('task_note').execute({ id, note: '' });
+	assert.equal(taskOf(id).note, '');
+
+	/* 超长拒绝 */
+	await assert.rejects(
+		() => tool('task_note').execute({ id, note: 'x'.repeat(4001) }),
+		/备注太长/u,
+	);
+});
+
+test('九态分组：一个状态可属于多个组，三分类由分组派生', async () => {
+	const c = command('task-groups');
+	const raw = (await c.handler({})).text;
+	const model = JSON.parse(raw);
+
+	const of = (status) => model.status.find((row) => row.status === status).groups;
+	assert.deepEqual(of('未指定'), [], '草稿不属于任何组');
+	assert.deepEqual(of('提交'), ['进行']);
+	assert.deepEqual(of('处理中'), ['进行']);
+	assert.deepEqual(of('完成'), ['完成']);
+	assert.deepEqual(of('失败'), ['完成']);
+	assert.deepEqual(of('取消'), ['完成']);
+	assert.deepEqual(of('拒绝'), ['完成']);
+	/* 关键：搁置的两种同时属于「进行」和「搁置」 */
+	assert.deepEqual(of('需要补充'), ['进行', '搁置']);
+	assert.deepEqual(of('需要授权'), ['进行', '搁置']);
+
+	assert.deepEqual(
+		model.groups.map((g) => g.id),
+		['进行', '搁置', '完成'],
+	);
+
+	/* /tasks 的每一行带上 groups，面板据此着色 */
+	const id = await submit({ title: '带分组的计划' });
+	const rows = JSON.parse((await command('tasks').handler({})).text);
+	const row = rows.find((item) => item.id === id);
+	assert.deepEqual(row.groups, [], '未指定是草稿');
+	await approve(id);
+	const rows2 = JSON.parse((await command('tasks').handler({})).text);
+	assert.deepEqual(rows2.find((item) => item.id === id).groups, ['进行']);
+});
+
+test('task_submit 落「未指定」：JSONL 一行 upsert，正文/关联/附属权限原样保存', async () => {
+	const workspace = 'X:\\temp\\dsh\\探针\\claim';
+	const id = await submit({
+		title: '面板里放任务卡',
+		type: 'R',
+		body: '## 问题\n痛点在这里。',
+		links: '依赖:T-999, 依赖:t-999, 派生:T-004',
+		workspace,
+		permission: '工作区内修改',
+	});
+	assert.match(id, /^T-\d{3}$/u);
+	assert.equal(id, 'T-001', '清空存储后第一份计划应是 T-001');
+
+	/* 文件是 JSONL：一行一个事件，字段都在事件里 */
+	const lines = readFileSync(STORE_PATH, 'utf8')
+		.split(/\r?\n/u)
+		.filter((line) => line !== '');
+	assert.equal(lines.length, 1, '一次提交只追加一行事件');
+	const event = JSON.parse(lines[0]);
+	assert.equal(event.op, 'upsert');
+	assert.equal(event.task.id, id);
+	assert.equal(event.task.status, '未指定');
+	assert.equal(event.task.title, '面板里放任务卡');
+	assert.equal(event.task.type, 'R');
+	assert.equal(event.task.body, '## 问题\n痛点在这里。');
+	assert.equal(event.task.links, '依赖:T-999, 派生:T-004', 'links 应去重（大小写不敏感）');
+	assert.equal(event.task.workspace, workspace);
+	assert.equal(event.task.permission, '工作区内修改');
+	assert.equal(event.task.claimed_by, '');
+
+	/* 老格式（一计划一 md）不再产生 */
+	assert.deepEqual(
+		tmpFiles().filter((name) => name.endsWith('.md')),
+		[],
+		'JSONL 存储不应再写 .md 计划文件',
+	);
+	assert.ok(tmpFiles().includes('plans.jsonl'), '应写入临时 JSONL 存储');
+});
+
+test('task_submit 校验类型与标题，失败不落事件；type 留空 = 空模板', async () => {
+	await assert.rejects(
+		() => tool('task_submit').execute({ title: 'x', type: 'Z', body: '' }),
+		/type 必须留空或取 A\/B\/C\/D\/R\/F/u,
+	);
+	await assert.rejects(
+		() => tool('task_submit').execute({ title: '  ', type: 'A', body: '' }),
+		/标题不能为空/u,
+	);
+	assert.deepEqual(events(), []);
+
+	/* 空模板：type 留空也能提交（用来记录待定事项，不套模板小节） */
+	const blank = await submit({ title: '空模板记录', type: '', body: '随手记一句。' });
+	const stored = taskOf(blank);
+	assert.equal(stored.type, '');
+	assert.equal(stored.status, '未指定');
+	assert.equal(stored.body, '随手记一句。');
+});
+
+test('未指定不可领；工具路径不能采纳；命令路径采纳后才能领', async () => {
+	const workspace = 'X:\\temp\\dsh\\探针\\claim';
+	const id = await submit({ title: '可领取的计划', workspace, permission: '完全权限' });
+	const mine = newSession();
+
+	/* 未指定：不能领取（现在的文案直接说明「草稿必须先被采纳」） */
+	await assert.rejects(() => claim(id, mine), /草稿（未指定）必须先由用户.*采纳/u);
+	/* 工具路径（byUser=false）不能把计划改成「提交」 */
+	await assert.rejects(() => changeState(id, '提交'), /采纳（→提交）只能由用户执行/u);
+	assert.equal(taskOf(id).status, '未指定');
+
+	/* 命令路径（byUser=true）可以采纳 */
+	const approved = await approve(id);
+	assert.match(approved.text, /已采纳/u);
+	assert.equal(taskOf(id).status, '提交');
+	/* 重复采纳幂等，不追加事件 */
+	const before = events().length;
+	const again = await approve(id);
+	assert.match(again.text, /已经是「提交」/u);
+	assert.equal(events().length, before, '已经是「提交」时不应再写事件');
+
+	/* 采纳后领取：提交 → 处理中，交回工作空间与权限，并记下会话 */
+	const claimed = await claim(id, mine);
+	assert.match(claimed.text, /已领取/u);
+	assert.match(claimed.text, new RegExp(escapeRegExp(workspace), 'u'));
+	assert.match(claimed.text, /完全权限/u);
+	const stored = taskOf(id);
+	assert.equal(stored.status, '处理中');
+	assert.equal(stored.claimed_by, mine);
+	assert.equal(events().length, 3, 'submit + approve + claim 各追加一行');
+	assert.equal(events().at(-1).task.status, '处理中', '折叠取最后一条 upsert');
+
+	/* /task-state 命令路径（byUser=true）也能采纳 */
+	const viaCommand = await submit({ title: '命令采纳的计划' });
+	const accepted = await command('task-state').handler({
+		agent: { id: newSession() },
+		rawInput: `${viaCommand} 提交`,
+	});
+	assert.equal(accepted.kind, 'success', accepted.text);
+	assert.equal(taskOf(viaCommand).status, '提交');
+
+	/* 拒绝的计划不能领取（终态，只有用户能重开） */
+	const rejected = await submit({ title: '会被拒绝的计划' });
+	await approve(rejected);
+	assert.equal((await command('task-reject').handler({ rawInput: rejected })).kind, 'success');
+	await assert.rejects(() => claim(rejected, newSession()), /拒绝.*只有用户能重开|只有用户能重开/u);
+});
+
+test('依赖未完成不能领取；依赖不存在不能领取；依赖完成后可以领取', async () => {
+	const dep = await submit({ title: '前置依赖' });
+	const id = await submit({ title: '依赖它的计划', links: `依赖:${dep}` });
+	await approve(dep);
+	await approve(id);
+
+	await assert.rejects(
+		() => claim(id, newSession()),
+		new RegExp(`依赖 ${dep} 还没完成`, 'u'),
+	);
+
+	const missing = await submit({ title: '缺依赖的计划', links: '依赖:T-999' });
+	await approve(missing);
+	await assert.rejects(() => claim(missing, newSession()), /依赖 T-999 不存在/u);
+
+	/* 依赖完成后放行 */
+	await changeState(dep, '完成');
+	assert.equal(taskOf(dep).status, '完成');
+	const claimed = await claim(id, newSession());
+	assert.match(claimed.text, /已领取/u);
+	assert.equal(taskOf(id).status, '处理中');
+});
+
+test('依赖失败 / 取消 / 拒绝时拒领，且报错带出当前状态；多个依赖报第一个未满足的', async () => {
+	for (const [status, hint] of [
+		['失败', '失败'],
+		['取消', '取消'],
+		['拒绝', '拒绝'],
+	]) {
+		const dep = await submit({ title: `会被${status}的前置` });
+		await approve(dep);
+		await changeState(dep, status);
+		/* 前置已经死了，之后才建的依赖计划（避免被前者的级联取消带走），单独验领取判定 */
+		const id = await submit({ title: '依赖它的计划', links: `依赖:${dep}` });
+		await approve(id);
+		await assert.rejects(
+			() => claim(id, newSession()),
+			new RegExp(`依赖 ${dep} 还没完成（当前「${hint}」）`, 'u'),
+		);
+	}
+
+	/* 多个依赖：报第一个没满足的 */
+	const okDep = await submit({ title: '已完成的前置' });
+	await changeState(okDep, '完成');
+	const badDep = await submit({ title: '没完成的前置' });
+	const multi = await submit({ title: '两个依赖', links: `依赖:${okDep}, 依赖:${badDep}` });
+	await approve(multi);
+	await assert.rejects(
+		() => claim(multi, newSession()),
+		new RegExp(`依赖 ${badDep} 还没完成`, 'u'),
+	);
+});
+
+test('派生源不在「处理中」时，被派生的计划不能领取', async () => {
+	const child = await submit({ title: '被派生出来的计划' });
+	const source = await submit({ title: '派生源', links: `派生:${child}` });
+	await approve(child);
+	await approve(source);
+
+	const a = newSession();
+	await assert.rejects(
+		() => claim(child, a),
+		new RegExp(`派生源 ${source} 不在「处理中」`, 'u'),
+	);
+
+	/* 派生源先进入处理中，下游才放行 */
+	await claim(source, a);
+	const b = newSession();
+	const claimed = await claim(child, b);
+	assert.match(claimed.text, /已领取/u);
+	assert.equal(taskOf(child).status, '处理中');
+	assert.equal(taskOf(source).claimed_by, a);
+	assert.equal(taskOf(child).claimed_by, b);
+});
+
+test('同一会话一次只能有一个「处理中」；换会话可以并行', async () => {
+	const first = await submit({ title: '第一张' });
+	const second = await submit({ title: '第二张' });
+	await approve(first);
+	await approve(second);
+
+	const a = newSession();
+	await claim(first, a);
+	await assert.rejects(() => claim(second, a), /一次只能做一个/u);
+	/* /task-state 命令路径同样受「一次一个」约束 */
+	const blocked = await command('task-state').handler({
+		agent: { id: a },
+		rawInput: `${second} 处理中`,
+	});
+	assert.equal(blocked.kind, 'error');
+	assert.match(blocked.text, /一次只能做一个/u);
+
+	/* 限制是「同一个会话」：换个会话可以做第二张 */
+	const b = newSession();
+	await claim(second, b);
+	assert.equal(taskOf(first).claimed_by, a);
+	assert.equal(taskOf(second).claimed_by, b);
+});
+
+test('终态（完成 / 失败 / 取消 / 拒绝）清空 claimed_by', async () => {
+	for (const status of ['完成', '失败', '取消', '拒绝']) {
+		const id = await submit({ title: `要进入终态的 ${status}` });
+		await approve(id);
+		const mine = newSession();
+		await claim(id, mine);
+		assert.equal(taskOf(id).claimed_by, mine);
+		await changeState(id, status);
+		const stored = taskOf(id);
+		assert.equal(stored.status, status);
+		assert.equal(stored.claimed_by, '', `「${status}」应清空 claimed_by`);
+	}
+});
+
+test('采纳「取代」：旧计划转拒绝、依赖转移到新计划、派生下游递归取消（防环）', async () => {
+	/* 旧计划（已采纳） */
+	const old = await submit({ title: '旧计划' });
+	await approve(old);
+
+	/* 一条依赖旧计划的计划 */
+	const dependent = await submit({ title: '依赖旧计划的计划', links: `依赖:${old}, 来源:T-000` });
+
+	/* 旧计划的派生下游：x → y → x（刻意造环，证明会终止）。
+	   两张都先采纳成「提交」——按三分类，「提交」是进行态，才会被级联取消；
+	   「未指定」是草稿，不作数。 */
+	const x = await submit({ title: '派生一' });
+	const y = await submit({ title: '派生二', links: `派生:${x}` });
+	await tool('task_update').execute({ id: x, links: `派生:${old}, 派生:${y}` });
+	await approve(x);
+	await approve(y);
+
+	/* 无关计划 */
+	const unrelated = await submit({ title: '无关计划' });
+
+	/* 新计划采纳时写入「取代:旧」 */
+	const next = await submit({ title: '新计划', links: `取代:${old}` });
+	await approve(next);
+
+	assert.equal(taskOf(old).status, '拒绝', '旧计划应转「拒绝」');
+	assert.equal(taskOf(dependent).links, `依赖:${next}, 来源:T-000`, '依赖应转移到新计划');
+	assert.equal(taskOf(x).status, '取消', '直接从旧计划派生的下游应取消');
+	assert.equal(taskOf(y).status, '取消', '派生链应递归取消，且遇环终止');
+	assert.equal(taskOf(next).status, '提交');
+	assert.equal(taskOf(unrelated).status, '未指定', '无关计划不该动');
+	assert.equal(
+		taskOf(dependent).status,
+		'未指定',
+		'依赖已经转移到新计划的，不该被旧计划的拒绝级联带走',
+	);
+
+	/* 再次采纳同一份新计划是幂等的，不会把旧计划改回去 */
+	await approve(next);
+	assert.equal(taskOf(old).status, '拒绝');
+});
+
+test('task_update 只允许「未指定」的计划改内容，且不改状态', async () => {
+	const id = await submit({
+		title: '原始标题',
+		type: 'A',
+		body: '旧正文',
+		links: '依赖:T-003, 依赖:t-003',
+	});
+	const result = await tool('task_update').execute({
+		id,
+		title: '新标题',
+		body: '新正文',
+		links: '依赖:T-003, 派生:T-004',
+		workspace: 'X:\\temp\\dsh\\探针\\upd',
+	});
+	assert.match(result.text, /已更新/u);
+
+	const stored = taskOf(id);
+	assert.equal(stored.title, '新标题');
+	assert.equal(stored.body, '新正文');
+	assert.equal(stored.links, '依赖:T-003, 派生:T-004', 'links 应去重');
+	assert.equal(stored.workspace, 'X:\\temp\\dsh\\探针\\upd');
+	assert.equal(stored.type, 'A', '未提供的字段保持原值');
+	assert.equal(stored.status, '未指定');
+	assert.equal(stored.claimed_by, '');
+
+	/* 非法类型拒绝 */
+	await assert.rejects(() => tool('task_update').execute({ id, type: 'Z' }), /type 必须是/u);
+
+	/* 已采纳的计划不能直接改（工具与命令两条路都拒） */
+	await approve(id);
+	await assert.rejects(
+		() => tool('task_update').execute({ id, title: '再改' }),
+		/已采纳的计划不能直接改/u,
+	);
+	const cmdBlocked = await command('task-update').handler({
+		rawInput: JSON.stringify({ id, title: '再改' }),
+	});
+	assert.equal(cmdBlocked.kind, 'error');
+	assert.match(cmdBlocked.text, /已采纳的计划不能直接改/u);
+
+	/* 命令路径改「未指定」的计划 */
+	const draft = await submit({ title: '命令改的计划' });
+	const cmdOk = await command('task-update').handler({
+		rawInput: JSON.stringify({ id: draft, title: '命令改后' }),
+	});
+	assert.equal(cmdOk.kind, 'success', cmdOk.text);
+	assert.equal(taskOf(draft).title, '命令改后');
+	assert.equal(taskOf(draft).status, '未指定');
+
+	/* 缺 id */
+	assert.equal((await command('task-update').handler({ rawInput: '{}' })).kind, 'error');
+});
+
+test('/task-create 默认「未指定」，参数校验失败不落事件', async () => {
+	const workspace = 'X:\\temp\\dsh\\探针\\new';
+	const created = await command('task-create').handler({
+		rawInput: JSON.stringify({
+			title: '面板新建的计划',
+			type: 'C',
+			body: '## 接口\n新增一个命令。',
+			workspace,
+			permission: '仅可查看',
+		}),
+	});
+	assert.equal(created.kind, 'success', created.text);
+	const { id, status } = JSON.parse(created.text);
+	assert.match(id, /^T-\d{3}$/u);
+	assert.equal(status, '未指定', '面板新建默认应是「未指定」，等用户采纳');
+
+	const stored = taskOf(id);
+	assert.equal(stored.status, '未指定');
+	assert.equal(stored.title, '面板新建的计划');
+	assert.equal(stored.type, 'C');
+	assert.equal(stored.workspace, workspace);
+	assert.equal(stored.permission, '仅可查看');
+	assert.equal(stored.body, '## 接口\n新增一个命令。');
+
+	/* 显式 status=提交 才直接采纳 */
+	const direct = await command('task-create').handler({
+		rawInput: JSON.stringify({ title: '直接提交的计划', type: 'D', status: '提交' }),
+	});
+	assert.equal(direct.kind, 'success');
+	assert.equal(JSON.parse(direct.text).status, '提交');
+	assert.equal(taskOf(JSON.parse(direct.text).id).status, '提交');
+
+	/* type 可留空（空模板） */
+	const empty = await command('task-create').handler({
+		rawInput: JSON.stringify({ title: '空模板计划' }),
+	});
+	assert.equal(empty.kind, 'success');
+	assert.equal(taskOf(JSON.parse(empty.text).id).type, '');
+
+	/* 非法类型 / 空标题：返回 error 且不落事件 */
+	const before = events().length;
+	const badType = await command('task-create').handler({
+		rawInput: JSON.stringify({ title: 'x', type: 'Z' }),
+	});
+	assert.equal(badType.kind, 'error');
+	const badTitle = await command('task-create').handler({ rawInput: JSON.stringify({ title: ' ' }) });
+	assert.equal(badTitle.kind, 'error');
+	assert.equal(events().length, before, '校验失败不应追加事件');
+});
+
+test('task_template 与 /task-templates 能读到 A..F 六份 + H1..H8 八份搁置模板', async () => {
+	const all = ['A', 'B', 'C', 'D', 'R', 'F', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8'];
+	for (const type of all) {
+		const result = await tool('task_template').execute({ type });
+		assert.match(result.text, /^name: /mu, `${type}.yml 缺 name`);
+		assert.match(result.text, /^body:/mu, `${type}.yml 缺 body`);
+	}
+	await assert.rejects(() => tool('task_template').execute({ type: 'Z' }), /模板类型必须是/u);
+
+	const batch = await command('task-templates').handler({});
+	assert.equal(batch.kind, 'success');
+	const list = JSON.parse(batch.text);
+	assert.deepEqual(
+		list.map((item) => item.type),
+		all,
+	);
+	for (const item of list) {
+		assert.ok(item.yaml.includes('name:'), `${item.type} 模板缺 name`);
+		assert.ok(item.yaml.includes('body:'), `${item.type} 模板缺 body`);
+	}
+});
+
+test('搁置模板 H1..H8：每个都写明「为什么停下」，且能直接用 task_submit 建计划', async () => {
+	/* 每个搁置模板都要有一个必填小节——否则等于没问 */
+	for (const type of ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8']) {
+		const yaml = (await tool('task_template').execute({ type })).text;
+		assert.match(yaml, /required: true/u, `${type}.yml 至少要有一个必填小节`);
+	}
+
+	/* 用 H1 建一张，type 原样存下来 */
+	const id = await submit({
+		title: '买 X 的授权',
+		type: 'H1',
+		body: '## 代价是什么\n约 300 元。\n\n## 我推荐哪个\n先不买。',
+	});
+	const stored = taskOf(id);
+	assert.equal(stored.type, 'H1');
+	assert.equal(stored.status, '未指定');
+	assert.match(stored.body, /代价是什么/u);
+
+	/* 搁置模板不改变任何一个状态/分类的语义：H* 只是正文骨架 */
+	await approve(id);
+	await tool('task_state').execute({ id, status: '需要授权', note: '等用户拍板预算' });
+	const shelved = taskOf(id);
+	assert.equal(shelved.status, '需要授权');
+	assert.equal(shelved.note, '等用户拍板预算');
+	/* 需要授权属于「进行 + 搁置」两组 */
+	const groups = JSON.parse((await command('tasks').handler({})).text).find((row) => row.id === id).groups;
+	assert.deepEqual(groups, ['进行', '搁置']);
+});
+
+test('/tasks 只给计划头、/task-get 给全文、/task-state 命令路径改状态并记 claim', async () => {
+	const id = await submit({ title: '命令读写的计划', type: 'F', body: '## 复盘\n一条。' });
+	const mine = newSession();
+
+	/* 命令路径采纳 + 领取（byUser=true），领取后 claimed_by 记到会话 */
+	assert.equal(
+		(
+			await command('task-state').handler({
+				agent: { id: mine },
+				rawInput: `${id} 提交`,
+			})
+		).kind,
+		'success',
+	);
+	assert.equal(taskOf(id).status, '提交');
+	assert.equal(
+		(
+			await command('task-state').handler({
+				agent: { id: mine },
+				rawInput: `${id} 处理中`,
+			})
+		).kind,
+		'success',
+	);
+	assert.equal(taskOf(id).status, '处理中');
+	assert.equal(taskOf(id).claimed_by, mine);
+
+	/* /tasks：只给头，不带正文 */
+	const listed = await command('tasks').handler({});
+	assert.equal(listed.kind, 'success');
+	const heads = JSON.parse(listed.text);
+	assert.equal(heads.length, 1);
+	const found = heads[0];
+	assert.equal(found.id, id);
+	assert.equal(found.status, '处理中');
+	assert.equal(found.title, '命令读写的计划');
+	assert.equal(found.claimed_by, mine);
+	assert.equal('body' in found, false, '/tasks 只给头，不带正文');
+	assert.equal('file' in found, false, '/tasks 只给头，不带文件名');
+	assert.equal(found.summary, '复盘', 'summary 取正文第一行去标记后的文字');
+
+	/* /task-get：全文 */
+	const full = await command('task-get').handler({ rawInput: id });
+	assert.equal(full.kind, 'success');
+	const detail = JSON.parse(full.text);
+	assert.equal(detail.id, id);
+	assert.match(detail.body, /一条。/u);
+	assert.equal((await command('task-get').handler({ rawInput: 'T-999' })).kind, 'error');
+
+	/* 用法错误 / 状态错误：返回 error 而不是抛 */
+	assert.equal((await command('task-state').handler({ rawInput: id })).kind, 'error');
+	assert.equal((await command('task-state').handler({ rawInput: `${id} 草稿` })).kind, 'error');
+});
+
+test('上行：子计划还有进行态时不许完成父计划；草稿与完成态不阻挡', async () => {
+	const parent = await submit({ title: '父计划', type: 'B', body: '父正文' });
+	const pending = await submit({ title: '缺信息的子计划', type: 'C', parent });
+	await changeState(pending, '需要补充');
+
+	await assert.rejects(
+		() => changeState(parent, '完成'),
+		/子计划还在进行中/u,
+		'子计划处于「需要补充」时父计划不能完成',
+	);
+	assert.equal(taskOf(parent).status, '未指定', '被拒后父计划状态不变');
+
+	/* 进行态里的四种都挡：提交 / 处理中 / 需要补充 / 需要授权 */
+	const submitted = await submit({ title: '还没领取的子计划', type: 'C', parent });
+	await approve(submitted);
+	await assert.rejects(() => changeState(parent, '完成'), /子计划还在进行中/u);
+
+	/* 草稿（未指定）不作数、完成态（取消）不阻挡 → 可以完成 */
+	const draft = await submit({ title: '草稿子计划', type: 'C', parent });
+	await changeState(pending, '取消');
+	await changeState(submitted, '取消');
+	await changeState(parent, '完成');
+	assert.equal(taskOf(parent).status, '完成');
+	assert.equal(taskOf(draft).status, '未指定', '草稿子计划不该被父计划的完成改写');
+});
+
+test('下行：父计划终止（完成/失败/取消/拒绝）时，进行态的子计划全部取消（递归），草稿与完成态不动', async () => {
+	/* 失败这条最典型：父计划走不下去，还活着的派生任务不该继续挂着 */
+	const parent = await submit({ title: '父计划', type: 'B', body: '父正文' });
+	const active = await submit({ title: '待领取的子计划', type: 'C', parent });
+	await approve(active);
+	const shelved = await submit({ title: '搁置的子计划', type: 'C', parent });
+	await changeState(shelved, '需要授权');
+	const grandchild = await submit({ title: '孙计划', type: 'D', parent: active });
+	await approve(grandchild);
+	const draft = await submit({ title: '草稿子计划', type: 'C', parent });
+	const delivered = await submit({ title: '已交付的子计划', type: 'C', parent });
+	await changeState(delivered, '完成');
+
+	await changeState(parent, '失败');
+
+	assert.equal(taskOf(parent).status, '失败');
+	assert.equal(taskOf(active).status, '取消', '「提交」也是进行态，应被取消');
+	assert.equal(taskOf(shelved).status, '取消', '需要授权是进行态，应被取消');
+	assert.equal(taskOf(grandchild).status, '取消', '级联应递归到孙计划');
+	assert.equal(taskOf(draft).status, '未指定', '草稿不作数，不该被动');
+	assert.equal(taskOf(delivered).status, '完成', '完成态是已交付记录，不该被改写');
+	assert.equal(taskOf(active).claimed_by, '');
+});
+
+test('下行：父计划「完成」时派生下游同样是空操作（子计划本来就都终结了）', async () => {
+	const parent = await submit({ title: '父计划', type: 'B' });
+	const done = await submit({ title: '做完的子计划', type: 'C', parent });
+	await changeState(done, '完成');
+	await changeState(parent, '完成');
+	assert.equal(taskOf(parent).status, '完成');
+	assert.equal(taskOf(done).status, '完成', '已完成的子计划保持完成');
+});
+
+test('依赖链单向终结：前者失败/取消/拒绝，进行态的下游全部取消（递归），完成则放行', async () => {
+	/* 前者完成 → 不级联 */
+	const good = await submit({ title: '做得成的前者' });
+	const after = await submit({ title: '依赖它的后者', links: `依赖:${good}` });
+	await approve(good);
+	await approve(after);
+	await changeState(good, '完成');
+	assert.equal(taskOf(after).status, '提交', '前者完成，后者照常待领');
+
+	/* 前者失败 → 后者取消；再沿着链递归 */
+	const bad = await submit({ title: '做不成的前者' });
+	const mid = await submit({ title: '中间那个', links: `依赖:${bad}` });
+	const tail = await submit({ title: '链尾那个', links: `依赖:${mid}` });
+	const tailDraft = await submit({ title: '链尾的草稿', links: `依赖:${mid}` });
+	await approve(mid);
+	await approve(tail);
+	await changeState(bad, '失败');
+	assert.equal(taskOf(mid).status, '取消', '直接依赖失败者的应取消');
+	assert.equal(taskOf(tail).status, '取消', '级联应顺着依赖链递归');
+	assert.equal(taskOf(tailDraft).status, '未指定', '草稿不作数，不该被动');
+
+	/* 前者被取消或拒绝，同样级联 */
+	const dropped = await submit({ title: '被取消的前者' });
+	const waiter = await submit({ title: '等它的人', links: `依赖:${dropped}` });
+	await approve(waiter);
+	await changeState(dropped, '取消');
+	assert.equal(taskOf(waiter).status, '取消', '前者取消，后者也取消');
+
+	const rejected = await submit({ title: '被拒绝的前者' });
+	const waiter2 = await submit({ title: '另一个等它的人', links: `依赖:${rejected}` });
+	await approve(waiter2);
+	await changeState(rejected, '拒绝');
+	assert.equal(taskOf(waiter2).status, '取消', '前者拒绝，后者也取消');
+
+	/* 无关的计划不受影响 */
+	const unrelated = await submit({ title: '无关计划' });
+	assert.equal(taskOf(unrelated).status, '未指定');
+});
+
+test('老格式一次性迁移：`任务\\*.md` 导入 JSONL 后写 .migrated 标记，不重复导入', async () => {
+	/* beforeEach 刚清空临时目录，此时存储文件不存在，正好触发 migrateLegacy() */
+	writeFileSync(
+		join(TMP_ROOT, 'T-009.md'),
+		[
+			'---',
+			'id: T-009',
+			'title: 老格式的计划',
+			'type: A',
+			'status: 处理中',
+			'parent:',
+			'links:',
+			'workspace:',
+			'permission:',
+			'claimed_by: session-old',
+			'---',
+			'',
+			'## 正文',
+			'从 md 迁过来的。',
+		].join('\n'),
+		'utf8',
+	);
+
+	const listed = await tool('task_list').execute({});
+	assert.match(listed.text, /T-009/u, '迁移后列表里应能看到老计划');
+
+	const migrated = taskOf('T-009');
+	assert.equal(migrated.status, '处理中');
+	assert.equal(migrated.title, '老格式的计划');
+	assert.match(migrated.body, /从 md 迁过来的。/u);
+	assert.ok(tmpFiles().includes('plans.jsonl.migrated'), '迁移成功应写标记文件');
+
+	/* 再读一次不会重复导入（存储已存在且标记在） */
+	const before = events().length;
+	const again = await tool('task_list').execute({});
+	assert.match(again.text, /T-009/u);
+	assert.equal(events().length, before, '重复读取不应再追加事件');
+});
+
+test('级联穿过整片下游：父计划失败后，子计划既取消也带走它自己的依赖方', async () => {
+	/* 结构：parent(失败) → child(进行态) ← dependent(依赖 child)
+	   以及 parent → child2 → grandchild，验证派生链递归 */
+	const parent = await submit({ title: '父计划', type: 'B' });
+	const child = await submit({ title: '子计划', type: 'C', parent });
+	await approve(child);
+	const dependent = await submit({ title: '依赖子计划的人', links: `依赖:${child}` });
+	await approve(dependent);
+	const child2 = await submit({ title: '另一个子计划', type: 'C', parent });
+	await approve(child2);
+	const grandchild = await submit({ title: '孙计划', type: 'D', parent: child2 });
+	await approve(grandchild);
+
+	await changeState(parent, '失败');
+
+	assert.equal(taskOf(child).status, '取消');
+	assert.equal(
+		taskOf(dependent).status,
+		'取消',
+		'子计划被级联取消后，它自己的依赖方也要跟着取消',
+	);
+	assert.equal(taskOf(grandchild).status, '取消', '派生链要递归到底');
+});
+
+test('完成不级联依赖方：父计划成功，等它的人照常可领', async () => {
+	const upstream = await submit({ title: '做得成的前置' });
+	const waiter = await submit({ title: '等它的人', links: `依赖:${upstream}` });
+	await approve(waiter);
+	await changeState(upstream, '完成');
+	assert.equal(taskOf(waiter).status, '提交', '前者成功，后者保持待领');
+	const claimed = await claim(waiter, newSession());
+	assert.match(claimed.text, /已领取/u);
+});
+
+test('取代：先转移依赖再判死刑，等旧计划的依赖方不会被误伤', async () => {
+	const old = await submit({ title: '会被替代的计划' });
+	await approve(old);
+	/* 依赖方是进行态：如果先转「拒绝」，它就会被级联取消——那是不对的 */
+	const dependent = await submit({ title: '依赖旧计划的人', links: `依赖:${old}` });
+	await approve(dependent);
+	const oldChild = await submit({ title: '旧计划的子计划', parent: old });
+	await approve(oldChild);
+
+	const next = await submit({ title: '新计划', links: `取代:${old}` });
+	await approve(next);
+
+	assert.equal(taskOf(old).status, '拒绝');
+	assert.equal(taskOf(dependent).status, '提交', '依赖已转移到新计划，应活着');
+	assert.equal(taskOf(dependent).links, `依赖:${next}`);
+	assert.equal(taskOf(oldChild).status, '取消', '旧计划自己的子计划仍要收掉');
+});
+
+test('/task-reject 与 planClaims.release 走同一个改状态入口，终止态照样触发级联', async () => {
+	/* 面板「拒绝」按钮：绕过 setState 就会漏掉级联 */
+	const parent = await submit({ title: '会被拒绝的父计划' });
+	const child = await submit({ title: '进行态的子计划', parent });
+	await approve(child);
+	assert.equal((await command('task-reject').handler({ rawInput: parent })).kind, 'success');
+	assert.equal(taskOf(parent).status, '拒绝');
+	assert.equal(taskOf(child).status, '取消', '/task-reject 也必须触发派生级联');
+
+	const dep = await submit({ title: '会被拒绝的前置' });
+	const waiter = await submit({ title: '依赖它的人', links: `依赖:${dep}` });
+	await approve(waiter);
+	assert.equal((await command('task-reject').handler({ rawInput: dep })).kind, 'success');
+	assert.equal(taskOf(waiter).status, '取消', '/task-reject 也必须触发依赖级联');
+
+	/* planClaims.release 释放到终止态时同样要级联 */
+	const core = await submit({ title: '被 release 的父计划', type: 'B' });
+	const kid = await submit({ title: '它的子计划', parent: core });
+	await approve(kid);
+	await approve(core);
+	const claims = ctx.planClaims;
+	const session = newSession();
+	await tool('task_state').execute({ id: core, status: '处理中' }, { agent: { id: session } });
+	const released = await claims.release(session, '失败');
+	assert.equal(released.status, '失败');
+	assert.equal(taskOf(kid).status, '取消', 'release 到终止态也要级联');
+});
+
+test('按计划档不死锁：计划管理工具在「工具全关 / 仅可查看」下也永远放行', async () => {
+	/* 直接拿守卫函数，构造一个「按计划」档的 exec。 */
+	const guard = guards[0];
+	const makeExec = (toolName, args) => ({
+		agent: { id: 'session-guard', session: { id: 'session-guard', header: { cwd: 'X:\\temp\\dsh' } } },
+		tool: { name: toolName },
+		arguments: args || {},
+	});
+	/* 让 sessionProjections 报「按计划」档 */
+	ctx.sessionProjections.stateOf = () => ({ preset: 'plan' });
+
+	/* 没有领取任务时：计划管理工具放行，其它工具被拒 */
+	for (const name of [
+		'task_list',
+		'task_get',
+		'task_claim',
+		'task_state',
+		'task_submit',
+		'task_update',
+		'task_template',
+		'task_note',
+	]) {
+		assert.equal(guard(makeExec(name)), undefined, `${name} 在没领取任务时也应放行`);
+	}
+	assert.match(String(guard(makeExec('write', { file_path: 'X:\\temp\\dsh\\a.txt' }))), /没有可用的领取/u);
+
+	/* 领取一张「工具全关」的计划：切任务的工具仍然放行 */
+	const locked = await submit({ title: '工具全关的计划', permission: '工具全关' });
+	await approve(locked);
+	await tool('task_state').execute(
+		{ id: locked, status: '处理中' },
+		{ agent: { id: 'session-guard' } },
+	);
+	assert.equal(guard(makeExec('task_state')), undefined, '工具全关也必须能改状态（否则锁死）');
+	assert.equal(guard(makeExec('task_claim')), undefined, '工具全关也必须能领下一张');
+	assert.equal(guard(makeExec('task_note')), undefined, '工具全关也必须能写备注');
+	assert.match(String(guard(makeExec('write', { file_path: 'X:\\temp\\dsh\\a.txt' }))), /工具全关/u);
+	/* 报错文案要指出路 */
+	assert.match(String(guard(makeExec('write', { file_path: 'X:\\temp\\dsh\\a.txt' }))), /切任务不受限/u);
+
+	/* 仅可查看：写工具被拒，但切任务放行 */
+	const readOnly = await submit({ title: '仅可查看的计划', permission: '仅可查看' });
+	await approve(readOnly);
+	await tool('task_state').execute(
+		{ id: locked, status: '完成' },
+		{ agent: { id: 'session-guard' } },
+	);
+	await tool('task_state').execute(
+		{ id: readOnly, status: '处理中' },
+		{ agent: { id: 'session-guard' } },
+	);
+	assert.equal(guard(makeExec('task_state')), undefined);
+	assert.match(String(guard(makeExec('pwsh', { command: 'echo hi' }))), /仅可查看/u);
+	assert.match(String(guard(makeExec('pwsh', { command: 'echo hi' }))), /切任务不受限/u);
+});
+
+test('会话隔离：一个会话只执行一个任务；两个会话并发领取互不影响、权限不并集', async () => {
+	const a = await submit({ title: '会话 A 的计划', workspace: 'X:\\temp\\dsh\\探针\\a', permission: '完全权限' });
+	const b = await submit({ title: '会话 B 的计划', workspace: 'X:\\temp\\dsh\\探针\\b', permission: '仅可查看' });
+	await approve(a);
+	await approve(b);
+
+	const claims = ctx.planClaims;
+	const sessionA = 'subai-alpha';
+	const sessionB = 'subai-beta';
+
+	/* 两个会话并发各领一张：互不影响 */
+	const [gotA, gotB] = await Promise.all([claims.claim(sessionA, a), claims.claim(sessionB, b)]);
+	assert.equal(gotA.id, a);
+	assert.equal(gotB.id, b);
+	assert.equal(taskOf(a).claimed_by, sessionA);
+	assert.equal(taskOf(b).claimed_by, sessionB);
+
+	/* 每个会话只解析出自己那一份，绝不并集 */
+	const effA = await claims.effective(sessionA);
+	const effB = await claims.effective(sessionB);
+	assert.equal(effA.id, a);
+	assert.equal(effA.permission, '完全权限');
+	assert.equal(effA.workspace, 'X:\\temp\\dsh\\探针\\a');
+	assert.equal(effB.id, b);
+	assert.equal(effB.permission, '仅可查看');
+	assert.equal(effB.workspace, 'X:\\temp\\dsh\\探针\\b');
+
+	/* 一个会话仍然只能有一个：A 想再领一张会被拒 */
+	const third = await submit({ title: '第三张' });
+	await approve(third);
+	await assert.rejects(() => claims.claim(sessionA, third), /一次只能做一个/u);
+
+	/* 释放后快取同步清掉：effective 立刻返回 undefined，不会残留旧权限 */
+	await claims.release(sessionA, '完成');
+	assert.equal(await claims.effective(sessionA), undefined);
+	assert.equal(taskOf(a).status, '完成');
+	/* B 不受影响 */
+	assert.equal((await claims.effective(sessionB)).id, b);
+});
+
+test('claimed_by 为空的无主处理中计划，不会被任何会话顺手拿走（防权限并集）', async () => {
+	const id = await submit({ title: '无主计划' });
+	/* 手工造一条「处理中但没有 claimed_by」的记录（老数据或人工改库会出现） */
+	const stored = taskOf(id);
+	writeFileSync(
+		STORE_PATH,
+		JSON.stringify({ op: 'upsert', task: Object.assign({}, stored, { status: '处理中', claimed_by: '' }) }) + '\n',
+		'utf8',
+	);
+
+	const guard = guards[0];
+	const exec = (toolName) => ({
+		agent: { id: 'anyone', session: { id: 'anyone', header: { cwd: 'X:\\temp\\dsh' } } },
+		tool: { name: toolName },
+		arguments: {},
+	});
+	ctx.sessionProjections.stateOf = () => ({ preset: 'plan' });
+
+	assert.match(
+		String(guard(exec('write'))),
+		/没有可用的领取/u,
+		'无主处理中计划不能被任何会话认领，必须走 task_claim',
+	);
+});
+
+test('额外工作区 workspaces：可多个、校验绝对路径、并入「工作区内修改」的允许范围', async () => {
+	const main = 'X:\\temp\\dsh\\探针\\main';
+	const id = await submit({
+		title: '要动两个地方的活',
+		workspace: main,
+		workspaces: 'X:\\temp\\dsh\\探针\\ref, X:\\temp\\dsh\\探针\\out',
+		permission: '工作区内修改',
+	});
+	const stored = taskOf(id);
+	assert.equal(stored.workspace, main);
+	assert.equal(stored.workspaces, 'X:\\temp\\dsh\\探针\\ref, X:\\temp\\dsh\\探针\\out');
+
+	/* 相对路径直接拒，不落盘 */
+	await assert.rejects(
+		() => tool('task_submit').execute({
+			title: '相对路径',
+			type: 'A',
+			body: 'x',
+			workspaces: 'some/rel/path',
+		}),
+		/额外工作区必须是绝对路径/u,
+	);
+
+	/* 领起来之后：三个目录都能写，其它目录不能 */
+	await approve(id);
+	await tool('task_claim').execute({ id }, { agent: { id: 'session-ws' } });
+
+	const guard = guards[0];
+	const exec = (filePath) => ({
+		agent: { id: 'session-ws', session: { id: 'session-ws', header: { cwd: 'X:\\temp\\dsh' } } },
+		tool: { name: 'write' },
+		arguments: { file_path: filePath },
+	});
+	ctx.sessionProjections.stateOf = () => ({ preset: 'plan' });
+
+	assert.equal(guard(exec('X:\\temp\\dsh\\探针\\main\\a.txt')), undefined, '主工作区可写');
+	assert.equal(guard(exec('X:\\temp\\dsh\\探针\\ref\\b.txt')), undefined, '额外工作区 1 可写');
+	assert.equal(guard(exec('X:\\temp\\dsh\\探针\\out\\c.txt')), undefined, '额外工作区 2 可写');
+	const denied = String(guard(exec('X:\\temp\\dsh\\探针\\elsewhere\\d.txt')));
+	assert.match(denied, /不在允许的目录内/u);
+	/* 错误文案要列出全部允许目录 */
+	assert.match(denied, /探针\\ref/u);
+	assert.match(denied, /探针\\out/u);
+
+	/* planClaims 也带回 workspaces（数组形式，给外部调度器） */
+	const eff = await ctx.planClaims.effective('session-ws');
+	assert.deepEqual(eff.workspaces, ['X:\\temp\\dsh\\探针\\ref', 'X:\\temp\\dsh\\探针\\out']);
+
+	/* 面板/命令路径同样支持 */
+	const viaCommand = await command('task-create').handler({
+		rawInput: JSON.stringify({
+			title: '命令建的多工作区',
+			type: 'C',
+			body: 'x',
+			workspace: main,
+			workspaces: 'X:\\temp\\dsh\\探针\\ref',
+		}),
+	});
+	assert.equal(viaCommand.kind, 'success');
+	const createdId = JSON.parse(viaCommand.text).id;
+	assert.equal(taskOf(createdId).workspaces, 'X:\\temp\\dsh\\探针\\ref');
+});
+
+test('安全：草稿不能直接进「处理中」（堵自助提权），但草稿的其它出路保留', async () => {
+	/* 这是 T-016 的核心：草稿是模型自己能写的，如果它能直接进「处理中」，
+	     模型就能绕过「采纳只能由用户做」，给自己发一张「完全权限」的计划。 */
+	const evil = await submit({ title: '恶意计划', permission: '完全权限', workspace: 'C:\\' });
+
+	await assert.rejects(
+		() => tool('task_state').execute({ id: evil, status: '处理中' }, { agent: { id: 'attacker' } }),
+		/草稿（未指定）必须先由用户.*采纳/u,
+	);
+	assert.equal(taskOf(evil).status, '未指定', '被拒后草稿状态不变');
+
+	/* 命令路径（byUser=true）同样不能把草稿直接推到处理中——
+	   面板上的「领取」应该走 /task-state <id> 处理中，但草稿必须先被采纳。 */
+	const viaCommand = await command('task-state').handler({
+		agent: { id: 'attacker' },
+		rawInput: `${evil} 处理中`,
+	});
+	assert.equal(viaCommand.kind, 'error');
+	assert.match(viaCommand.text, /必须先由用户/u);
+
+	/* 草稿的合法出路仍然保留：H1..H8 搁置模板就是这么用的 */
+	const shelved = await submit({ title: '搁置模板草稿' });
+	await tool('task_state').execute({ id: shelved, status: '需要授权', note: '等预算' });
+	assert.equal(taskOf(shelved).status, '需要授权');
+	assert.equal(taskOf(shelved).note, '等预算');
+
+	/* 草稿也能被用户拒绝 */
+	const dropped = await submit({ title: '被拒的草稿' });
+	assert.equal((await command('task-reject').handler({ rawInput: dropped })).kind, 'success');
+	assert.equal(taskOf(dropped).status, '拒绝');
+});
+
+test('重开（T-030）：终态可以被用户重开回「提交」，模型不能；且只能回「提交」', async () => {
+	const id = await submit({ title: '会失败的计划' });
+	await approve(id);
+	await claim(id, newSession());
+	await tool('task_state').execute({ id, status: '失败' });
+	assert.equal(taskOf(id).status, '失败');
+
+	/* 模型不能自己复活一张终态计划 */
+	await assert.rejects(
+		() => tool('task_state').execute({ id, status: '提交' }),
+		/只有用户能重开/u,
+	);
+
+	/* 用户重开 → 回到「提交」（不是「处理中」，要重新领） */
+	const reopened = await command('task-state').handler({ rawInput: `${id} 提交` });
+	assert.equal(reopened.kind, 'success', reopened.text);
+	assert.equal(taskOf(id).status, '提交');
+	assert.equal(taskOf(id).claimed_by, '', '重开后不应残留领取');
+
+	/* 终态不能直接跳到别的状态，只能回「提交」 */
+	await claim(id, newSession());
+	await tool('task_state').execute({ id, status: '完成' });
+	assert.equal(taskOf(id).status, '完成');
+	const jumped = await command('task-state').handler({ rawInput: `${id} 处理中` });
+	assert.equal(jumped.kind, 'error');
+	assert.match(jumped.text, /重开只能从「完成」回到「提交」/u);
+
+	/* 重开可以真的继续干活：重开后重新领取 */
+	await command('task-state').handler({ rawInput: `${id} 提交` });
+	const reclaimed = await claim(id, newSession());
+	assert.match(reclaimed.text, /已领取/u);
+});
+
+test('状态转移：采纳后可以直接拒绝 / 取消（T-037 第 1 条）', async () => {
+	const a = await submit({ title: '采纳后直接拒绝' });
+	await approve(a);
+	assert.equal((await command('task-reject').handler({ rawInput: a })).kind, 'success');
+	assert.equal(taskOf(a).status, '拒绝');
+
+	const b = await submit({ title: '采纳后直接取消' });
+	await approve(b);
+	await tool('task_state').execute({ id: b, status: '取消' });
+	assert.equal(taskOf(b).status, '取消');
+
+	/* 处理中也能直接取消（T-038 第 2 条） */
+	const c = await submit({ title: '做到一半取消' });
+	await approve(c);
+	await claim(c, newSession());
+	await tool('task_state').execute({ id: c, status: '取消' });
+	assert.equal(taskOf(c).status, '取消');
+	assert.equal(taskOf(c).claimed_by, '');
+});
+
+test('CLAIMS 不会陈旧：用工具切任务后，旧 claim 立即失效（T-018）', async () => {
+	/* 这条链以前是洞：task_claim 写入 CLAIMS，但用 task_state 工具完成时不清除，
+	   于是完成之后同会话仍然持有那张计划的权限（已实测复现）。 */
+	const id = await submit({ title: '会做完的计划', permission: '完全权限', workspace: 'C:\\' });
+	await approve(id);
+
+	const guard = guards[0];
+	const exec = (toolName, args) => ({
+		agent: { id: 'stale-session', session: { id: 'stale-session', header: { cwd: 'X:\\temp\\dsh' } } },
+		tool: { name: toolName },
+		arguments: args || {},
+	});
+	ctx.sessionProjections.stateOf = () => ({ preset: 'plan' });
+
+	/* 领取后：有权限 */
+	await tool('task_claim').execute({ id }, { agent: { id: 'stale-session' } });
+	assert.equal(
+		guard(exec('write', { file_path: 'C:\\Windows\\a.dll' })),
+		undefined,
+		'完全权限计划应当放行',
+	);
+
+	/* 用工具完成：CLAIMS 必须同步清掉 */
+	await tool('task_state').execute({ id, status: '完成' }, { agent: { id: 'stale-session' } });
+	assert.match(
+		String(guard(exec('write', { file_path: 'C:\\Windows\\b.dll' }))),
+		/没有可用的领取/u,
+		'完成之后不能还持有旧计划的权限',
+	);
+
+	/* 重开 + 重新领取，权限回来；再搁置，权限再次消失 */
+	await command('task-state').handler({ rawInput: `${id} 提交` });
+	await tool('task_claim').execute({ id }, { agent: { id: 'stale-session' } });
+	assert.equal(guard(exec('write', { file_path: 'C:\\Windows\\c.dll' })), undefined);
+	await tool('task_state').execute({ id, status: '需要授权' }, { agent: { id: 'stale-session' } });
+	assert.match(
+		String(guard(exec('write', { file_path: 'C:\\Windows\\d.dll' }))),
+		/没有可用的领取/u,
+		'搁置之后也不能持有权限',
+	);
+});
+
+test('并发领取被串行化：同一张计划只有一个会话能领到（T-018）', async () => {
+	const id = await submit({ title: '被抢的计划' });
+	await approve(id);
+
+	/* 两个会话同时领同一张：必须恰好一个成功 */
+	const results = await Promise.allSettled([
+		ctx.planClaims.claim('racer-a', id),
+		ctx.planClaims.claim('racer-b', id),
+	]);
+	const ok = results.filter((r) => r.status === 'fulfilled');
+	assert.equal(ok.length, 1, '同一张计划只能被一个会话领到');
+	assert.equal(taskOf(id).status, '处理中');
+
+	const winner = ok[0].value;
+	assert.equal(winner.id, id);
+	const owner = taskOf(id).claimed_by;
+	assert.ok(['racer-a', 'racer-b'].includes(owner), `claimed_by 应是某个竞争者，实际 ${owner}`);
+});
+
+test('并发领取：同一会话不能同时领到两张（一次一个）', async () => {
+	const a = await submit({ title: '第一张' });
+	const b = await submit({ title: '第二张' });
+	await approve(a);
+	await approve(b);
+
+	const results = await Promise.allSettled([
+		ctx.planClaims.claim('greedy', a),
+		ctx.planClaims.claim('greedy', b),
+	]);
+	const ok = results.filter((r) => r.status === 'fulfilled');
+	assert.equal(ok.length, 1, '同一会话并发领两张时，只能成功一张');
+	const mine = [...[a, b]].filter((id) => taskOf(id).status === '处理中');
+	assert.equal(mine.length, 1, '库里只能有一张处于处理中');
+});
+
+test('task_state 校验九态名与计划 id，非法值不改状态', async () => {
+	const id = await submit({ title: '状态校验' });
+	await assert.rejects(() => changeState(id, '草稿'), /状态必须是九态之一/u);
+	await assert.rejects(() => changeState('T-999', '完成'), /没有这份计划：T-999/u);
+	assert.equal(taskOf(id).status, '未指定');
+});

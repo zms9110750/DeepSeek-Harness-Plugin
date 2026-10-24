@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Self-managed sub-AI",
+    "description": "Dispatch sub-AI agents on the official loop while this plugin owns their session logs, stored in SQLite under your user directory. Adds fork-at-seq."
+  }
+}

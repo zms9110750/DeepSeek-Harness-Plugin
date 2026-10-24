@@ -1,0 +1,37 @@
+name: H2 · 需要授权 · 用户转移话题
+description: 用户主动要求搁置，先去做别的；不是方案有问题，是优先级变了
+labels: ["H", "需要授权"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        用户要求搁置 ≠ 用户否决。这一份记录"为什么先停下"，不要写成"为什么这方案不行"。
+  - type: textarea
+    id: words
+    attributes:
+      label: 用户原话
+      description: 怎么说的就怎么记，不要转述成结论
+      placeholder: "先放着吧，我要先弄 X"
+    validations:
+      required: true
+  - type: textarea
+    id: parked-at
+    attributes:
+      label: 停在哪一步
+      description: 已经做到什么程度、下一步原本要做什么、有没有半成品要保留
+      placeholder: 代码写到一半，在 X 分支；下一步是补测试
+    validations:
+      required: true
+  - type: textarea
+    id: resume
+    attributes:
+      label: 什么条件恢复
+      description: 是等用户回来、等某个前置完成、还是等一个时间点
+      placeholder: 等 X 交付后 / 等用户下次提到 / 无期限
+    validations:
+      required: true
+  - type: textarea
+    id: decay
+    attributes:
+      label: 放久了会怎样
+      description: 会不会失效（依赖的版本变了、用户需求变了、代码被别人改了）

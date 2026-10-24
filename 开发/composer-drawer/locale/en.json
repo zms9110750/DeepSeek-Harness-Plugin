@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Composer Drawer",
+    "description": "Adds an up-arrow button above the composer that expands a panel upward; only the button closes it."
+  }
+}
