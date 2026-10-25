@@ -3,6 +3,7 @@ default_kind: record
 behavior: write
 description: 一件事结束后的回顾：根因、教训、下次怎么避
 domain: general
+framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |

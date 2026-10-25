@@ -2,6 +2,7 @@ name: RS · 设定集
 default_kind: record
 behavior: write
 domain: writing
+framed: true
 description: 人物、场景、故事写成定本；起草时照着写，正文和它冲突以它为准
 dispatch: [goal, design, record, work]
 hints:

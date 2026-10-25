@@ -3,6 +3,7 @@ default_kind: design
 behavior: propose
 description: 一个痛点或需求：为什么需要、什么算满意、有没有先例
 domain: general
+framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |

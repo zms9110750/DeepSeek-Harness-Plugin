@@ -3,6 +3,7 @@ default_kind: record
 behavior: write
 description: 只读的结论汇报；写完即完，不占位
 domain: general
+framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |

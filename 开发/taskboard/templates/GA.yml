@@ -2,6 +2,7 @@ name: GA · 画作
 default_kind: goal
 behavior: answer
 domain: art
+framed: true
 description: 一张（或一组）画的立项：画什么、什么算画完、哪一步最可能翻车；完成权不归任何人
 dispatch: [goal, design, work]
 hints:

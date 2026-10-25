@@ -2,6 +2,7 @@ name: RE · 功能请求
 default_kind: record
 behavior: write
 domain: general
+framed: true
 description: 想要一个现在还没有的东西：是新能力还是改进，缺了怎么办；只登记，不实现
 dispatch: [goal, design, record, work]
 hints:

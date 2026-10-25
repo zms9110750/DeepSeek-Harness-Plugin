@@ -3,6 +3,7 @@ default_kind: work
 behavior: execute
 description: 真正改代码；做完给出改动清单
 domain: code
+framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |

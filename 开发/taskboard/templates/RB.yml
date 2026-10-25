@@ -3,6 +3,7 @@ default_kind: record
 behavior: block
 description: 卡住了；父工作会被踢出「处理中」，转入「需要补充」
 domain: general
+framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |

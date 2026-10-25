@@ -2,6 +2,7 @@ name: WE · 修改
 default_kind: work
 behavior: execute
 domain: writing
+framed: true
 description: 拿写好的稿子改；一轮只改一种毛病，改完留对照
 dispatch: [goal, design, record, work]
 hints:

@@ -3516,7 +3516,7 @@
       function isFramed(yaml) {
         const match = /^framed:\s*(\w+)$/mu.exec(String(yaml || ""));
         if (match) return match[1] !== "false";
-        return true;
+        return false;
       }
       function skeletonOf(yaml) {
         const parsed = parseTemplateYaml(String(yaml || ""));

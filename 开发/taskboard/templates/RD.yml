@@ -2,6 +2,7 @@ name: RD · 缺陷报告
 default_kind: record
 behavior: write
 domain: code
+framed: true
 description: 把一处坏掉的东西登记在案：怎么重现、期望什么、实际什么；只记录，不修
 dispatch: [goal, design, record, work]
 hints:

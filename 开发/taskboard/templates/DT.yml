@@ -2,6 +2,7 @@ name: DT · 定调
 default_kind: design
 behavior: propose
 domain: art
+framed: true
 description: 视角与调子一次定死：视平线、灭点、画风、主色、光源；两样分开定必返工
 dispatch: [design, record, work]
 hints:

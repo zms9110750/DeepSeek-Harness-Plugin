@@ -3,6 +3,7 @@ default_kind: design
 behavior: decide
 description: 要用户拍板；给 2-4 个互斥选项，每个写清代价
 domain: general
+framed: true
 dispatch: [goal, design, record, work]
 produces: []
 hints:

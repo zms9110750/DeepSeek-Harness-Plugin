@@ -2,6 +2,7 @@ name: WP · 性能
 default_kind: work
 behavior: execute
 domain: code
+framed: true
 description: 把一处慢的实测出来再改：先有基线，改完再测一次对得上；没有数字的优化不算完成
 dispatch: [goal, design, record, work]
 hints:

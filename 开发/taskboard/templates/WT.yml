@@ -3,6 +3,7 @@ default_kind: work
 behavior: execute
 description: 实现里的一个独立可交付项；小到能一次做完
 domain: code
+framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |

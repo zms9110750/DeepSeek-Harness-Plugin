@@ -2,6 +2,7 @@ name: WC · 上色
 default_kind: work
 behavior: execute
 domain: art
+framed: true
 description: 在线稿上铺色：先明度后颜色，光源先定再动笔
 dispatch: [goal, design, record, work]
 hints:

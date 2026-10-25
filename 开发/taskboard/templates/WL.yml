@@ -2,6 +2,7 @@ name: WL · 线稿
 default_kind: work
 behavior: execute
 domain: art
+framed: true
 description: 把定调落实成线；先大形后细节，翻过来看一眼再交
 dispatch: [goal, design, record, work]
 hints:

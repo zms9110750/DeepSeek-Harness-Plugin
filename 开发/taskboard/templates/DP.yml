@@ -3,6 +3,7 @@ default_kind: design
 behavior: propose
 description: 开放问题上的方案；给出做法、代价、替代方案，等用户采纳
 domain: general
+framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |

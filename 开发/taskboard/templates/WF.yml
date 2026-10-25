@@ -2,6 +2,7 @@ name: WF · 缺陷
 default_kind: work
 behavior: execute
 domain: code
+framed: true
 description: 冒烟没过 / 工具不行；有复现路径，要修掉
 dispatch: [goal, design, record, work]
 hints:

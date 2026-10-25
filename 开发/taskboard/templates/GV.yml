@@ -2,6 +2,7 @@ name: GV · 小说
 default_kind: goal
 behavior: answer
 domain: writing
+framed: true
 description: 一本（或一个系列）小说的立项：给谁看、多少字、有没有结局；完成权不归任何人
 dispatch: [goal, design, record, work]
 hints:

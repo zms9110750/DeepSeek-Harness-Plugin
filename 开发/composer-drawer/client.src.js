@@ -1890,18 +1890,29 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 这个模板要不要预填章节骨架。
+     * 这个模板要不要分槽位（每个章节一个输入框）。
      *
-     * `framed: false` 的是**用户自己写的那种**（例如 MG 用户任务）——
+     * `framed: false` 的是**用户自己写的那种**（`GU 用户任务`）——
      * 用户想到什么写什么，加框架等于逼他先学我们的分类法。
      *
-     * 其余 `framed: true`：那些多半是 AI 写的，需要条条框框才写得稳，
-     * 而且每节的 description 就是**教 LLM 怎么分析的提示词**。
+     * 其余 `framed: true`：多半是 AI 写的，需要条条框框才写得稳，
+     * 每节的 description 就是**教 LLM 怎么分析的提示词**。
+     *
+     * ⚠️ **字段缺失时按 false 处理**（不分槽位，退回单个正文框）。
+     *
+     * 这是刻意选的方向，不是随便定的：
+     *   · 缺失默认 true → 一个本想"空白框"的模板会被渲染成十几个槽位，
+     *     语义**静默反转**，而且不报错（这个坑真踩过：27 个模板全部缺 framed，
+     *     于是 `GU 用户任务` 差点被拆成十几个框）。
+     *   · 缺失默认 false → 最多是"该分槽位的模板没分"，用户看到一个大框，
+     *     内容不会丢，也不会误导。
+     *
+     * 宁可少分，不可错分。
      */
     function isFramed(yaml) {
       const match = /^framed:\s*(\w+)$/mu.exec(String(yaml || ''));
       if (match) return match[1] !== 'false';
-      return true;
+      return false;
     }
 
     /**

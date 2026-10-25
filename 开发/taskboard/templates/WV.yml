@@ -2,6 +2,7 @@ name: WV · 校验
 default_kind: work
 behavior: execute
 domain: general
+framed: true
 description: 做完的东西要验；跑一遍看结果对不对
 dispatch: [goal, design, record, work]
 hints:
