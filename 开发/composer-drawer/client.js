@@ -4947,17 +4947,39 @@
                       },
                       group.name + "\uFF08" + count + "\uFF09"
                     ),
-                    /* 「设为当前组」——**显式操作，跟查看分开**。
+                    /* 同一个位置，两种模式的按钮（用户要求）：
                      *
-                     * 用户原话：「切换当前组是另一个操作。」
+                     *   普通模式 → 「设为当前」（只在"正在看但不是当前"时出现，★ 表示已是当前）
+                     *   归档模式（点了「显示已归档」）→ 「归档」开关，黑底=已归档，白底=未归档
                      *
-                     * 为什么必须分开：点分组只是"我想看看这组有什么"，
-                     * 不该顺手改变 AI 的工作范围。工具默认查哪一组是个有后果的决定，
-                     * 得用户明确点一下。
+                     * 用户原话：「在归档模式下，"设为当前"变成"归档"按钮。
+                     * 如果是归档的，这个按钮就是选中的样子（黑底白字），
+                     * 没归档就是没选中的样子，就跟那个"显示已归档"一样，可切换的按钮。」
                      *
-                     * 只在**正在看这一组、但它还不是当前组时**显示，
-                     * 避免一排按钮满天飞。 */
-                    active && !isCurrent ? h(
+                     * 为什么放同一个位置：它们都是"对这一组做点什么"，
+                     * 但两种模式下只可能用一个，并排摆着只是噪声。 */
+                    showArchived ? h(
+                      "button",
+                      {
+                        type: "button",
+                        title: group.archived ? "\u5DF2\u5F52\u6863\uFF08\u70B9\u4E00\u4E0B\u53D6\u56DE\uFF09" : "\u70B9\u4E00\u4E0B\u5F52\u6863\uFF08\u4E8B\u9879\u6570\u636E\u4E0D\u52A8\uFF09",
+                        onClick: function() {
+                          runCommand(
+                            "/task-group-archive " + JSON.stringify({ group: group.id, archived: !group.archived }),
+                            sessionId
+                          ).then(function() {
+                            load();
+                          }).catch(function() {
+                          });
+                        },
+                        style: Object.assign({}, buttonBase(group.archived), {
+                          padding: "0 8px",
+                          fontSize: 11,
+                          lineHeight: "18px"
+                        })
+                      },
+                      group.archived ? "\u5DF2\u5F52\u6863" : "\u5F52\u6863"
+                    ) : active && !isCurrent ? h(
                       "button",
                       {
                         type: "button",
@@ -4989,32 +5011,7 @@
                       "\u8BBE\u4E3A\u5F53\u524D"
                     ) : null,
                     /* 已标成当前组的，给一个小星号，不用按。 */
-                    active && isCurrent ? h("span", { style: { fontSize: 11, color: "var(--dsw-alias-brand-primary)" } }, "\u2605") : null,
-                    /* 归档 / 取回：**只在「显示已归档」打开时出现**。
-                     * 用户原话：「在点开显示已归档后，要有按钮把分组进行归档。」
-                     * 平时不显示，是为了让分组条保持干净——归档不是高频动作。 */
-                    showArchived ? h(
-                      "button",
-                      {
-                        type: "button",
-                        title: group.archived ? "\u628A\u8FD9\u4E2A\u5206\u7EC4\u53D6\u56DE\u6765\uFF08\u4E8B\u9879\u6570\u636E\u4E0D\u52A8\uFF09" : "\u5F52\u6863\u8FD9\u4E2A\u5206\u7EC4\uFF08\u4E8B\u9879\u6570\u636E\u4E0D\u52A8\uFF09",
-                        onClick: function() {
-                          runCommand(
-                            "/task-group-archive " + JSON.stringify({ group: group.id, archived: !group.archived }),
-                            sessionId
-                          ).then(function() {
-                            load();
-                          }).catch(function() {
-                          });
-                        },
-                        style: Object.assign({}, buttonBase(false), {
-                          padding: "0 6px",
-                          fontSize: 11,
-                          lineHeight: "18px"
-                        })
-                      },
-                      group.archived ? "\u27F2" : "\u{1F4E6}"
-                    ) : null
+                    !showArchived && active && isCurrent ? h("span", { style: { fontSize: 11, color: "var(--dsw-alias-brand-primary)" } }, "\u2605") : null
                   )
                 );
               });
