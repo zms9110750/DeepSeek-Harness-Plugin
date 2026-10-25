@@ -2808,7 +2808,11 @@
           "\u53D6\u6D88": [{ to: "\u63D0\u4EA4", label: "\u91CD\u5F00", primary: true }],
           "\u62D2\u7EDD": [{ to: "\u63D0\u4EA4", label: "\u91CD\u5F00", primary: true }]
         };
-        const actions = TRANSITIONS[node.status] || [];
+        const goalActions = [
+          { to: "\u53D6\u6D88", label: "\u53D6\u6D88" },
+          { to: "\u62D2\u7EDD", label: "\u653E\u5F03\u76EE\u6807" }
+        ];
+        const actions = node.kind === "goal" && node.status !== "\u672A\u6307\u5B9A" ? goalActions : TRANSITIONS[node.status] || [];
         const chip = function(label, target) {
           return h(
             "button",
@@ -3013,6 +3017,67 @@
               })
             )
           ),
+          /* 开放问题：设计类事项正文里「要定的点 / 待定」小标题下编号的那些。
+           *
+           * 用户原话：「你的设计，里面有几个开放问题。而现在完全在备注里面打字。
+           * 没法一一直接回答。」
+           *
+           * 所以每条问题一个卡片 + 一个输入框，答完一条存一条。
+           * 不与备注混在一起：备注是自由结论，这里是逐条应答。 */
+          (props.questions || []).length > 0 ? section(
+            "\u5F00\u653E\u95EE\u9898\uFF08\u5DF2\u7B54 " + Object.keys(node.answers || {}).filter(function(key) {
+              return String(node.answers[key] || "").trim() !== "";
+            }).length + " / " + props.questions.length + "\uFF09",
+            h(
+              "div",
+              { style: { display: "flex", flexDirection: "column", gap: 10 } },
+              props.questions.map(function(item) {
+                const key = String(item.index);
+                const value = node.answers && node.answers[key] || "";
+                const draft = props.answerDraft && props.answerDraft.id === node.id && props.answerDraft.question === key ? props.answerDraft.value : value;
+                const dirty = draft !== value;
+                return h(
+                  "div",
+                  { key: "q-" + key, style: { display: "flex", flexDirection: "column", gap: 4 } },
+                  h(
+                    "div",
+                    { style: { fontSize: 12, lineHeight: 1.6, color: "var(--dsw-alias-label-primary)" } },
+                    h("span", { style: { opacity: 0.55, marginRight: 5 } }, key + "."),
+                    item.text,
+                    value !== "" ? h("span", { style: { marginLeft: 6, fontSize: 11, color: "var(--dsw-alias-state-success-primary)" } }, "\u5DF2\u7B54") : null
+                  ),
+                  h("textarea", {
+                    value: draft,
+                    rows: 2,
+                    placeholder: "\u5728\u8FD9\u91CC\u76F4\u63A5\u56DE\u7B54\u8FD9\u4E00\u6761\u2026",
+                    onChange: function(event) {
+                      if (typeof props.onAnswerDraft === "function") {
+                        props.onAnswerDraft(key, event.target.value);
+                      }
+                    },
+                    style: Object.assign({}, formInputStyle, { resize: "vertical", fontSize: 12 })
+                  }),
+                  dirty ? h(
+                    "div",
+                    { style: { display: "flex", gap: 6, alignItems: "center" } },
+                    h(
+                      "button",
+                      {
+                        type: "button",
+                        disabled: props.busy === true,
+                        onClick: function() {
+                          if (typeof props.onSaveAnswer === "function") props.onSaveAnswer(key, draft);
+                        },
+                        style: Object.assign({}, buttonBase(true, props.busy), { padding: "2px 12px", fontSize: 12 })
+                      },
+                      "\u4FDD\u5B58\u8FD9\u6761"
+                    ),
+                    props.answerError && props.answerError.question === key ? h("span", { style: { fontSize: 11, color: "var(--dsw-alias-state-error-primary)" } }, props.answerError.text) : null
+                  ) : null
+                );
+              })
+            )
+          ) : null,
           section(
             "\u5907\u6CE8 / \u6401\u7F6E\u7406\u7531",
             h(
@@ -3093,6 +3158,39 @@
                 { style: { marginTop: 10, color: "var(--dsw-alias-label-primary)" } },
                 renderMarkdown(props.body)
               ) : null
+            )
+          ),
+          section(
+            "\u6D3E\u53D1",
+            h(
+              "div",
+              { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
+              /* 按钮列表来自宿主的 `task_dispatch`——判定三层（大类规则 / 父模板
+                 dispatch / 子模板 default_kind）全在宿主那边做，面板只管显示。
+                 **不在面板里硬编码"哪些能派"**：那样一改模板就两边不一致。 */
+              (props.dispatch || []).map(function(item) {
+                return h(
+                  "button",
+                  {
+                    key: "dispatch-" + item.type,
+                    type: "button",
+                    title: item.type + " \xB7 " + item.name + "\uFF08" + item.kind + "\uFF09",
+                    onClick: function() {
+                      if (typeof props.onDispatch === "function") props.onDispatch(item);
+                    },
+                    style: Object.assign({}, buttonBase(false), {
+                      padding: "3px 10px",
+                      fontSize: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5
+                    })
+                  },
+                  h("span", { style: { fontFamily: "ui-monospace, monospace", fontSize: 11, opacity: 0.7 } }, item.type),
+                  h("span", null, item.name)
+                );
+              }),
+              (props.dispatch || []).length === 0 ? h("div", { style: lineStyle }, "\u8FD9\u4E00\u6761\u4E0B\u9762\u6D3E\u53D1\u4E0D\u4E86\u4EFB\u4F55\u6A21\u677F\u3002") : null
             )
           ),
           section(
@@ -3675,7 +3773,7 @@
             return h("option", { key: "opt-" + (item.id || "none"), value: item.id }, item.id === "" ? item.title : item.id + " \xB7 " + item.title);
           });
         };
-        const lineStyle = { fontSize: 12, color: "var(--dsw-alias-label-secondary)" };
+        const lineStyle2 = { fontSize: 12, color: "var(--dsw-alias-label-secondary)" };
         return h(
           "div",
           {
@@ -3702,6 +3800,22 @@
             h("span", { style: { flex: 1 } }),
             h("button", { type: "button", onClick: props.onCancel, style: Object.assign({}, buttonBase(false), { padding: "2px 12px" }) }, "\u53D6\u6D88")
           ),
+          /* 从「失败」按钮带过来的说明：先建阻碍，再点失败。 */
+          props.hint ? h(
+            "div",
+            {
+              style: {
+                fontSize: 12,
+                lineHeight: 1.6,
+                marginBottom: 6,
+                padding: "6px 10px",
+                borderRadius: 8,
+                border: "1px solid var(--dsw-alias-state-warn-primary)",
+                color: "var(--dsw-alias-state-warn-primary)"
+              }
+            },
+            props.hint
+          ) : null,
           h(
             "div",
             { style: { display: "flex", gap: 18, flex: 1, minHeight: 0 } },
@@ -3806,7 +3920,7 @@
               h(
                 "div",
                 { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u7236\u8BA1\u5212"),
+                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle2) }, "\u7236\u8BA1\u5212"),
                 h(
                   "select",
                   {
@@ -3822,7 +3936,7 @@
               h(
                 "div",
                 { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u5DE5\u4F5C\u7A7A\u95F4"),
+                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle2) }, "\u5DE5\u4F5C\u7A7A\u95F4"),
                 h("input", {
                   value: workspace,
                   placeholder: "\u5B50\u5DE5\u4F5C\u7A7A\u95F4\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u7A7A = \u4F1A\u8BDD\u76EE\u5F55\uFF09",
@@ -3835,7 +3949,7 @@
               h(
                 "div",
                 { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u989D\u5916"),
+                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle2) }, "\u989D\u5916"),
                 h("input", {
                   value: workspaces,
                   placeholder: "\u989D\u5916\u5DE5\u4F5C\u533A\uFF0C\u9017\u53F7\u5206\u9694\u7684\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u8981\u8BFB\u5199\u7684\u5176\u5B83\u76EE\u5F55\uFF0C\u53EF\u7A7A\uFF09",
@@ -3848,7 +3962,7 @@
               h(
                 "div",
                 { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u6743\u9650"),
+                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle2) }, "\u6743\u9650"),
                 h(
                   "select",
                   {
@@ -3863,7 +3977,7 @@
                   })
                 )
               ),
-              h("span", { style: lineStyle }, "\u5173\u8054\uFF08\u7BAD\u5934\u4ECE\u5148\u51B3\u6307\u5411\u4F9D\u8D56\u65B9\uFF09"),
+              h("span", { style: lineStyle2 }, "\u5173\u8054\uFF08\u7BAD\u5934\u4ECE\u5148\u51B3\u6307\u5411\u4F9D\u8D56\u65B9\uFF09"),
               links.map(function(link, index) {
                 return h(
                   "div",
@@ -3923,7 +4037,7 @@
               "div",
               { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "auto", paddingRight: 6, borderLeft: "1px solid var(--dsw-alias-border-l1)", paddingLeft: 16 } },
               /* 模板的一句话说明留在顶部：让人知道"这一类该写什么"，但不占输入框。 */
-              template && type !== "" ? h("div", { style: lineStyle }, template.name + "\uFF1A" + template.description) : null,
+              template && type !== "" ? h("div", { style: lineStyle2 }, template.name + "\uFF1A" + template.description) : null,
               /* **两种形态**（用户两次纠正后的最终口径）：
                *
                *   `framed: false`（MG 用户任务）→ 一个空白正文框。
@@ -4010,6 +4124,36 @@
         const historyState = React.useState({ id: "", entries: [] });
         const historyInfo = historyState[0];
         const setHistoryInfo = historyState[1];
+        const dispatchState = React.useState({ id: "", items: [] });
+        const dispatchInfo = dispatchState[0];
+        const setDispatchInfo = dispatchState[1];
+        const questionsOf = function(text) {
+          const out = [];
+          const source = String(text || "");
+          const headingPattern = /^#{2,4}\s*.*(要定的点|待定|开放问题|需要你定|需要决定).*$/gmu;
+          let match;
+          while ((match = headingPattern.exec(source)) !== null) {
+            const start = match.index + match[0].length;
+            const rest = source.slice(start);
+            const nextHeading = /^#{1,4}\s+/mu.exec(rest);
+            const section = nextHeading === null ? rest : rest.slice(0, nextHeading.index);
+            const itemPattern = /^\s*(\d+)\.\s+(.+)$/gmu;
+            let item;
+            while ((item = itemPattern.exec(section)) !== null) {
+              out.push({
+                index: Number(item[1]),
+                text: item[2].trim().replace(/\*\*/gu, "")
+              });
+            }
+          }
+          return out;
+        };
+        const answerState = React.useState({ id: "", question: "", value: "" });
+        const answerDraft = answerState[0];
+        const setAnswerDraft = answerState[1];
+        const answerErrState = React.useState({ question: "", text: "" });
+        const answerError = answerErrState[0];
+        const setAnswerError = answerErrState[1];
         const createState = React.useState({ open: false, busy: false, error: "" });
         const create = createState[0];
         const setCreate = createState[1];
@@ -4083,6 +4227,17 @@
         );
         const runState = function(next) {
           if (!activeNodeId) return;
+          if (next === "\u5931\u8D25") {
+            setCreate({
+              open: true,
+              busy: false,
+              error: "",
+              initial: { parent: activeNodeId, type: "RB", kind: "record" },
+              /* 交给 CreateForm 一句额外说明：建完这条再点失败 */
+              hint: "\u5148\u5EFA\u8FD9\u6761\u300C\u963B\u788D\u300D\u628A\u539F\u56E0\u5199\u6E05\u695A\uFF1B\u5EFA\u5B8C\u4E4B\u540E\u518D\u70B9\u300C\u5931\u8D25\u300D\u3002"
+            });
+            return;
+          }
           setAction({ busy: true, error: "" });
           runCommand("/task-state " + activeNodeId + " " + next, sessionId).then(function(settled) {
             const text = commandText(settled);
@@ -4112,6 +4267,30 @@
             load();
           }).catch(function(error) {
             setNote({ id: activeNodeId, draft: value, error: String(error && error.message || error) });
+          });
+        };
+        const saveAnswer = function(question, value) {
+          if (!activeNodeId) return;
+          setAnswerError({ question: "", text: "" });
+          runCommand(
+            "/task-answer " + JSON.stringify({ id: activeNodeId, question: String(question), answer: String(value || "") }),
+            sessionId
+          ).then(function(settled) {
+            const text = commandText(settled);
+            let saved = null;
+            try {
+              saved = JSON.parse(text);
+            } catch (failure) {
+              saved = null;
+            }
+            if (saved && saved.answers && typeof saved.answers === "object") {
+              setAnswerDraft({ id: activeNodeId, question: String(question), value: saved.answers[String(question)] || "" });
+              load();
+            } else {
+              setAnswerError({ question: String(question), text: text || "\u56DE\u7B54\u6CA1\u4FDD\u5B58\u4E0A" });
+            }
+          }).catch(function(error) {
+            setAnswerError({ question: String(question), text: String(error && error.message || error) });
           });
         };
         const loadTemplates = function(onError) {
@@ -4269,6 +4448,25 @@
             };
           },
           [activeNodeId, historyInfo.id, sessionId]
+        );
+        React.useEffect(
+          function() {
+            if (activeNodeId === "") return void 0;
+            if (dispatchInfo.id === activeNodeId) return void 0;
+            let canceled = false;
+            runCommand("/task-dispatch", { id: activeNodeId }).then(function(payload) {
+              if (canceled) return;
+              const list = Array.isArray(payload?.allowed) ? payload.allowed : [];
+              setDispatchInfo({ id: activeNodeId, items: list });
+            }).catch(function() {
+              if (canceled) return;
+              setDispatchInfo({ id: activeNodeId, items: [] });
+            });
+            return function() {
+              canceled = true;
+            };
+          },
+          [activeNodeId, dispatchInfo.id]
         );
         const editNode = editId && graph.byId[editId] ? graph.byId[editId].node : null;
         const editInitial = editNode ? {
@@ -4434,6 +4632,10 @@
             },
             onSubmit: submitUpdate
           }) : create.open ? h(CreateForm, {
+            /* 派发按钮带过来的预填：parent + 模板 + 大类。
+               这样用户点「派发：调研」后，只填标题和正文就能交。 */
+            initial: create.initial,
+            hint: create.hint || "",
             templates,
             plans: tasks,
             busy: create.busy,
@@ -4448,6 +4650,25 @@
             body: data.bodies[activeId] || "",
             busy: action.busy,
             error: action.error,
+            dispatch: dispatchInfo.id === activeNode.id ? dispatchInfo.items : [],
+            /* 开放问题：一问一答的卡片。 */
+            questions: questionsOf(data.bodies[activeNode.id] || ""),
+            answerDraft,
+            answerError,
+            onAnswerDraft: function(question, value) {
+              setAnswerDraft({ id: activeNode.id, question: String(question), value });
+            },
+            onSaveAnswer: saveAnswer,
+            /* 点派发按钮：直接开新建表单，parent 和模板都已填好。
+               用户只需要写标题和正文——不用去表单里选"父计划"。 */
+            onDispatch: function(item) {
+              setCreate({
+                open: true,
+                busy: false,
+                error: "",
+                initial: { parent: activeNode.id, type: item.type, kind: item.kind }
+              });
+            },
             onState: runState,
             onClose: function() {
               setSelected("");

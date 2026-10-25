@@ -419,6 +419,69 @@ const FINAL = STATUS.filter((status) => hasGroup(status, '完成'));
 /** 草稿：两组都不属于（目前只有「未指定」）。 */
 const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup(status, '完成'));
 
+/*
+ * ---------------------------------------------------------------------------
+ * 目标的状态由子事项推导（DP-02）
+ * ---------------------------------------------------------------------------
+ *
+ * 用户原话（五条规则，按优先级从上往下）：
+ *
+ *   > 没有采纳的子任务：未开始。
+ *   > 子任务都被需要授权：需要授权。
+ *   > 子任务有采纳的且未完成未中断：进行中。
+ *   > 子任务全部失败：失败。
+ *   > 子任务都在完成态且不是全部失败：完成。
+ *
+ * **不落盘**——只在读取时算。理由（用户原话）：
+ *   「不存推导值。手动不能点完成。因为目标的语义就是无限的。完成了还能重开。没意义。」
+ *
+ * 也就是说目标是纯投影：它没有自己的生命周期，只有"下面那堆事到哪一步了"。
+ *
+ * 注意推导出的状态名不直接复用九态：九态是 A2A 对齐层，不能加新值。
+ * 所以这里返回的是**展示用的派生状态**，它不进 `status` 字段，
+ * 也不参与 `TRANSITIONS` 判定。真实的 `status` 仍然只由用户/工具显式设置。
+ */
+const GOAL_DERIVED = {
+	未开始: '未开始',
+	需要授权: '需要授权',
+	需要补充: '需要补充',
+	进行中: '进行中',
+	失败: '失败',
+	完成: '完成',
+	取消: '已取消',
+};
+
+/**
+ * 按子事项推导一个目标当前的样子。没有子事项时返回 `未开始`。
+ *
+ * 优先级（先命中先返回）：
+ *   1. 没有非草稿子事项            → 未开始
+ *   2. 有子事项在「需要补充」      → 需要补充（用户没提，但它也是"中断"，归这里）
+ *   3. 活跃的都在「需要授权」      → 需要授权
+ *   4. 有子事项在「提交/处理中」  → 进行中
+ *   5. 全是「失败」                → 失败
+ *   6. 全终结且不全失败            → 完成
+ *   7. 其它（混合了草稿和终结）    → 进行中（还有草稿没采纳，等于没完）
+ */
+function deriveGoalStatus(task, all) {
+	const children = all.filter((item) => item.parent === task.id);
+	/* 草稿（未指定）不算数：用户还没采纳，等于"还没开始"。 */
+	const live = children.filter((item) => !DRAFT.includes(String(item.status || '未指定')));
+	if (live.length === 0) {
+		return children.length === 0 ? GOAL_DERIVED.未开始 : GOAL_DERIVED.未开始;
+	}
+
+	const statuses = live.map((item) => String(item.status || ''));
+	if (statuses.some((status) => status === '需要补充')) return GOAL_DERIVED.需要补充;
+	if (statuses.every((status) => status === '需要授权')) return GOAL_DERIVED.需要授权;
+	if (statuses.some((status) => status === '提交' || status === '处理中')) return GOAL_DERIVED.进行中;
+	if (statuses.every((status) => status === '失败')) return GOAL_DERIVED.失败;
+	/* 全终结且不全是失败 */
+	if (statuses.every((status) => FINAL.includes(status))) return GOAL_DERIVED.完成;
+	/* 混合：有还没开始的、也有终结的 */
+	return GOAL_DERIVED.进行中;
+}
+
 function isActive(status) {
 	return ACTIVE.includes(status);
 }
@@ -934,6 +997,72 @@ async function setNote(id, note) {
 	});
 }
 
+/*
+ * ---------------------------------------------------------------------------
+ * 开放问题（answers）
+ * ---------------------------------------------------------------------------
+ *
+ * 设计类事项正文里常有「## 两个要定的点」这种**开放问题**。
+ * 以前只能整段堆在备注里，用户没法一条一条回答——他会说"完全在备注里面打字，
+ * 没法一一直接回答"。
+ *
+ * 所以给事项加一个 `answers` 字段：`{ 问题键: 回答 }`。
+ *   · 问题键取自正文的编号（`1` / `2` / `3`…），稳定、不依赖标题文字
+ *   · 面板按编号渲染成一问一答的卡片，每条一个输入框
+ *   · 与 note 正交：note 是自由结论，answers 是逐条应答
+ *
+ * 为什么不塞进 body：body 是 Markdown 交付物，回答是可被反复改写的状态。
+ * 混在一起以后既没法单独改某一条，也没法知道"哪几条还没答"。
+ */
+const ANSWERS_LIMIT = 20000;
+
+/** 从正文里抠出「开放问题」的编号列表（供面板/工具知道该问几条）。 */
+function extractQuestions(body) {
+	const text = String(body ?? '');
+	const questions = [];
+	/* 只看「要定的点」/「待定」/「开放问题」这几个小标题下的内容。 */
+	const headingPattern = /^#{2,4}\s*.*(要定的点|待定|开放问题|需要你定|需要决定).*$/gmu;
+	let match;
+	while ((match = headingPattern.exec(text)) !== null) {
+		const start = match.index + match[0].length;
+		/* 到下一个同级或更高级标题为止 */
+		const rest = text.slice(start);
+		const nextHeading = /^#{1,4}\s+/mu.exec(rest);
+		const section = nextHeading === null ? rest : rest.slice(0, nextHeading.index);
+		/* 取 `1. **xxx**：yyy` 或 `1. xxx` 形式的条目 */
+		const itemPattern = /^\s*(\d+)\.\s+(.+)$/gmu;
+		let item;
+		while ((item = itemPattern.exec(section)) !== null) {
+			questions.push({
+				index: Number(item[1]),
+				text: item[2].trim().replace(/\*\*/gu, ''),
+			});
+		}
+	}
+	return questions;
+}
+
+async function setAnswer(id, question, answer) {
+	return withWrite(async () => {
+		const task = await readTask(id);
+		if (task === undefined) throw new Error(`没有这份计划：${id}`);
+		const key = String(question ?? '').trim();
+		if (key === '') throw new Error('要说明回答的是第几问（question）');
+		const value = String(answer ?? '').trim();
+		const current = task.answers && typeof task.answers === 'object' ? Object.assign({}, task.answers) : {};
+		if (value === '') delete current[key];
+		else current[key] = value;
+		const total = Object.values(current).join('').length;
+		if (total > ANSWERS_LIMIT) {
+			throw new Error(`回答总长超限（${total} 字），上限 ${ANSWERS_LIMIT} 字`);
+		}
+		const next = Object.assign({}, task, { answers: current });
+		await saveTask(next);
+		return next;
+	});
+}
+
+
 /** 只认识 `key: value` 行的极简头解析，够用且不怕正文里的冒号。 */
 function parseTask(raw, file) {
 	const lines = String(raw ?? '').split(/\r?\n/u);
@@ -1410,6 +1539,13 @@ function registerCommands(ctx) {
 							   面板就没法按四类别显示。这里统一填好，面板不用自己推。 */
 							kind: kindOf(head),
 							type: normalizeType(head.type),
+							/* 开放问题进度：正文里有几问、已答几问。
+							   面板据此在树/列表上标「还差 2 条没答」。 */
+							questionCount: extractQuestions(body).length,
+							answeredCount: Object.keys(head.answers ?? {}).length,
+							/* 目标：推导出来的样子（不落盘，只给面板显示）。 */
+							derived:
+								kindOf(head) === 'goal' ? deriveGoalStatus({ ...head, body }, tasks) : '',
 						});
 					}),
 				),
@@ -1488,6 +1624,137 @@ async function loadTemplate(type) {
 	}
 	return readFile(join(TEMPLATE_DIR, `${wanted}.yml`), 'utf8');
 }
+
+/*
+ * ---------------------------------------------------------------------------
+ * 模板元数据（dispatch / default_kind / behavior / framed / domain）
+ * ---------------------------------------------------------------------------
+ *
+ * 这些字段以前**只写在模板文件里，代码一个都不读**——等于装饰。
+ * 现在读出来，让 `dispatch` 真的能收窄可派发范围。
+ *
+ * 不做完整 YAML 解析：模板是我们自己写的，字段都在顶层。
+ * 只认 `^key: value` 这一种形态，够用且不会因为缩进变化而炸。
+ */
+const TEMPLATE_META_CACHE = new Map();
+
+function parseTemplateMeta(source) {
+	const meta = {
+		name: '',
+		defaultKind: '',
+		behavior: '',
+		framed: null,
+		domain: '',
+		/** dispatch 里允许的大类；空数组表示"没写，按大类默认"。 */
+		dispatch: [],
+	};
+	for (const line of String(source ?? '').split(/\r?\n/u)) {
+		if (/^\s/u.test(line)) continue;
+		const match = /^([a-z_]+):\s*(.*)$/u.exec(line);
+		if (match === null) continue;
+		const key = match[1];
+		const value = match[2].trim();
+		if (key === 'name') meta.name = value;
+		else if (key === 'default_kind') meta.defaultKind = value;
+		else if (key === 'behavior') meta.behavior = value;
+		else if (key === 'domain') meta.domain = value;
+		else if (key === 'framed') meta.framed = value !== 'false';
+		else if (key === 'dispatch') {
+			/* 形如 `[goal, design, record, work]` */
+			const inner = /^\[(.*)\]$/u.exec(value);
+			meta.dispatch = inner
+				? inner[1]
+						.split(',')
+						.map((part) => part.trim())
+						.filter((part) => part !== '' && Object.hasOwn(KINDS, part))
+				: [];
+		}
+	}
+	return meta;
+}
+
+/** 读某模板的元数据（带缓存）。读不到返回 null。 */
+async function templateMeta(type) {
+	const wanted = normalizeType(type);
+	if (wanted === '' || !TYPES.includes(wanted)) return null;
+	if (TEMPLATE_META_CACHE.has(wanted)) return TEMPLATE_META_CACHE.get(wanted);
+	let source = '';
+	try {
+		source = await readFile(join(TEMPLATE_DIR, `${wanted}.yml`), 'utf8');
+	} catch (failure) {
+		return null;
+	}
+	const meta = parseTemplateMeta(source);
+	TEMPLATE_META_CACHE.set(wanted, meta);
+	return meta;
+}
+
+/** 清缓存：模板文件可能在运行期被改（开发时常见）。 */
+function clearTemplateMetaCache() {
+	TEMPLATE_META_CACHE.clear();
+}
+
+/**
+ * 从 `fromId` 出发，能派发哪些模板。
+ *
+ * 判定三层，缺一不可：
+ *   1. **大类规则**：工作不能派「要做的事」（`ENTITY_TYPES`）
+ *   2. **父模板的 dispatch**：写了就收窄；没写按大类默认（什么都行）
+ *   3. **子模板的 default_kind** 必须落在允许的大类里
+ *
+ * 返回 `{ allowed: [{type, name, kind}], blocked: [{type, reason}] }`。
+ * `blocked` 是给人看的——"为什么那个模板不在这"，比静默隐藏有用。
+ */
+async function dispatchOptions(fromId) {
+	const from = String(fromId ?? '').trim();
+	const fromTask = from === '' ? undefined : await readTask(from);
+	const parentKind = fromTask === undefined ? '' : kindOf(fromTask);
+	const parentType = fromTask === undefined ? '' : normalizeType(fromTask.type);
+	const parentMeta = parentType === '' ? null : await templateMeta(parentType);
+
+	/* 父模板写了 dispatch 就用它；没写就是四类全开。 */
+	const declared = parentMeta !== null && parentMeta.dispatch.length > 0 ? parentMeta.dispatch : KIND_ORDER;
+
+	const allowed = [];
+	const blocked = [];
+	for (const type of TYPES) {
+		const meta = await templateMeta(type);
+		if (meta === null) continue;
+		const childKind = meta.defaultKind !== '' && Object.hasOwn(KINDS, meta.defaultKind)
+			? meta.defaultKind
+			: TYPE_TO_KIND[type] ?? 'work';
+
+		/* 第一层：大类规则 */
+		if (parentKind === 'work' && childKind === 'work' && ENTITY_TYPES.has(type)) {
+			blocked.push({
+				type,
+				name: (meta.name || type).replace(/^[A-Z]{1,2}\s*[·・.]\s*/u, '').trim() || type,
+				reason: '工作是原子任务，不能再派另一件要做的事（该升级为目标）',
+			});
+			continue;
+		}
+
+		/* 第二层 + 第三层：父模板的 dispatch 收窄 */
+		if (!declared.includes(childKind)) {
+			blocked.push({
+				type,
+				name: (meta.name || type).replace(/^[A-Z]{1,2}\s*[·・.]\s*/u, '').trim() || type,
+				reason:
+					parentMeta === null
+						? `父事项没有模板，只允许 ${declared.join('/')}`
+						: `${parentType} 的 dispatch 只允许 ${declared.join('/')}`,
+			});
+			continue;
+		}
+
+		/* 模板的 `name` 字段本身就是 `WI · 实现` 这种带编号的形式，
+		   剥掉前缀只留中文名，否则会显示成「WI · WI · 实现」。 */
+		const label = (meta.name || type).replace(/^[A-Z]{1,2}\s*[·・.]\s*/u, '').trim() || type;
+		allowed.push({ type, name: label, kind: childKind });
+	}
+	return { from: fromTask, parentKind, allowed, blocked };
+}
+
 
 /**
  * 一个计划进入终止态后，把整片下游一起收掉（递归、防环）。
@@ -1619,6 +1886,56 @@ async function setStateInner(id, next, agent, byUser, note) {
 	/* 状态转移规则：安全边界（草稿不能进处理中）+ 终态重开限定。 */
 	const blocker = transitionBlocker(from, wanted, byUser);
 	if (blocker !== '') throw new Error(blocker);
+
+	/* 目标的状态是**推导**的，不能手动设（DP-02）。
+	 *
+	 * 用户原话：「不存推导值。手动不能点完成。因为目标的语义就是无限的。
+	 * 完成了还能重开。没意义。除了取消以外，不给手动按钮。」
+	 *
+	 * 所以这里只放行两个动作：
+	 *   · 「拒绝」—— 放弃整个目标（除了取消以外唯一该有的手动动作）
+	 *   · 「未指定」—— 草稿阶段的状态变更（采纳前）
+	 *
+	 * 「取消」也允许：用户说的是"除了取消以外"，拒绝和取消都算终止整个目标。
+	 */
+	if (kindOf(task) === 'goal' && !DRAFT.includes(from)) {
+		const allowed = new Set(['拒绝', '取消', '提交']);
+		if (!allowed.has(wanted)) {
+			const derived = deriveGoalStatus(task, await listAll());
+			throw new Error(
+				`${task.id} 是「目标」，它的状态由子事项推导，不能手动设成「${wanted}」。\n` +
+					`现在推导出来是「${derived}」。\n` +
+					'要让目标往前走，去推进它的子事项；要放弃整个目标，用「拒绝」或「取消」。',
+			);
+		}
+	}
+
+	/* 转「失败」必须有理由载体（WI-01）。
+	 *
+	 * 用户原话：「必须要有一个记录类型的子任务。并且可以点击失败按钮以后，
+	 * 效果就是新建->记录->阻碍。不区分具体是什么记录。」
+	 *
+	 * 判定顺序（宽进）：
+	 *   1. 有记录类子事项（最好是 RB 阻碍）→ 通过
+	 *   2. 或 note 写了东西 → 通过（AI 用工具时不一定走面板的弹窗）
+	 *   3. 都没有 → 拒绝，并说明该怎么做
+	 *
+	 * 为什么允许 note 兜底：面板能把用户引向"建阻碍"，但 AI 调
+	 * `task_state` 时不会弹窗。对它来说，note 就是那句话的载体。
+	 */
+	if (wanted === '失败') {
+		const children = (await listAll()).filter((item) => item.parent === task.id);
+		const hasRecord = children.some((item) => kindOf(item) === 'record');
+		const wroteNote = text(note) !== '' || text(task.note) !== '';
+		if (!hasRecord && !wroteNote) {
+			throw new Error(
+				`${task.id} 要转「失败」，得先说明失败的原因。两个办法：\n` +
+					'  1. 派一条记录（推荐 RB 阻碍）把它写清楚：task_submit 时 parent 填这个 id、type 填 RB\n' +
+					'  2. 或者在这条事项的 note 里写清：卡在哪、为什么过不去、下一件该试什么\n' +
+					'理由：失败的原因常常很长、还会牵涉别的事项。塞进一句话里，后来的人看不出所以然。',
+			);
+		}
+	}
 
 	if (wanted === '处理中') {
 		/* 只有「工作」这一类才能被领取（四类别模型）。
@@ -1769,14 +2086,65 @@ function registerExtraTools(ctx) {
 				'取一种事项模板（GitHub issue forms 的 YAML）。写事项前先取模板，按 body 里的字段填。' +
 				`可选模板：${typeCatalog()}。` +
 				'每个模板声明了 default_kind（默认大类）与 behavior（界面形态）。' +
-				'注意 H1–H8 已废除：它们是"为什么停"的理由，现在是阻碍模板（B）里的 reason 小节。',
-			parameters: { type: { type: 'string', required: true, description: `${TYPES.join('/')}` } },
+				'给了 `from`（父事项 id）时，会同时列出该父事项允许派发的模板——' +
+				'不允许的会说明原因（例如工作不能再派另一件要做的事）。',
+			parameters: {
+				type: { type: 'string', required: true, description: `${TYPES.join('/')}` },
+				from: { type: 'string', description: '父事项 id；给了就一并校验能否派发' },
+			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
 				render: (_args, value) => [{ type: 'text', text: value.text }],
 			},
 			async execute(args) {
-				return { text: await loadTemplate(args.type) };
+				const yaml = await loadTemplate(args.type);
+				const fromId = String(args.from ?? '').trim();
+				if (fromId === '') return { text: yaml };
+				/* 顺带把"这个模板能不能挂在那个父事项下"一起回答，
+				   省得模型取了模板、写完、提交时才被拒。 */
+				const options = await dispatchOptions(fromId);
+				const wanted = normalizeType(args.type);
+				const blocked = options.blocked.find((item) => item.type === wanted);
+				if (blocked !== undefined) {
+					throw new Error(`不能把 ${wanted} 挂在 ${fromId} 下面：${blocked.reason}`);
+				}
+				return { text: yaml };
+			},
+		}),
+	);
+
+	ctx.tools.register(
+		defineTool({
+			name: 'task_dispatch',
+			description:
+				'列出某个事项下面**允许派发**哪些模板（以及为什么另一些不行）。' +
+				'判定三层：大类规则（工作不能派另一件要做的事）、父模板的 dispatch 收窄、子模板的 default_kind。' +
+				'不给 id 时返回全部模板（等于没限制）。',
+			parameters: { id: { type: 'string', description: '父事项 id，例如 WI-01；空 = 全部模板' } },
+			output: {
+				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
+				render: (_args, value) => [{ type: 'text', text: value.text }],
+			},
+			async execute(args) {
+				const options = await dispatchOptions(args.id);
+				const lines = [];
+				if (options.from !== undefined) {
+					lines.push(
+						`${options.from.id}（${KINDS[options.parentKind]?.name ?? options.parentKind}）下面可以派发：`,
+					);
+				} else {
+					lines.push('全部可用模板（没指定父事项，等于没限制）：');
+				}
+				for (const item of options.allowed) {
+					lines.push(`  ✅ ${item.type} · ${item.name}（${KINDS[item.kind]?.name ?? item.kind}）`);
+				}
+				if (options.blocked.length > 0) {
+					lines.push('', '不能派发的：');
+					for (const item of options.blocked) {
+						lines.push(`  ❌ ${item.type} · ${item.name} —— ${item.reason}`);
+					}
+				}
+				return { text: lines.join('\n') };
 			},
 		}),
 	);
@@ -1821,6 +2189,32 @@ function registerExtraTools(ctx) {
 			async execute(args) {
 				const entries = await readHistory(args.id, args.limit);
 				return { text: renderHistory(String(args.id).trim(), entries) };
+			},
+		}),
+	);
+
+	ctx.tools.register(
+		defineTool({
+			name: 'task_answer',
+			description:
+				'回答设计类计划里的**某一个开放问题**（正文「要定的点 / 待定」小标题下编号的那些）。' +
+				'与 task_note 的区别：note 是一整段自由结论，answer 是**逐条应答**，' +
+				'面板会把它们渲染成一问一答，能看出哪几条还没答。' +
+				'question 用编号（"1" / "2"），空字符串表示删掉这条回答。',
+			parameters: {
+				id: { type: 'string', required: true, description: '计划 id，例如 DP-05' },
+				question: { type: 'string', required: true, description: '第几问（正文里的编号，例如 "1"）' },
+				answer: { type: 'string', required: true, description: '回答内容；空串 = 删掉这条回答' },
+			},
+			output: {
+				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
+				render: (_args, value) => [{ type: 'text', text: value.text }],
+			},
+			async execute(args) {
+				const task = await setAnswer(args.id, args.question, args.answer);
+				const answered = Object.keys(task.answers ?? {}).length;
+				const total = extractQuestions(task.body).length;
+				return { text: `已记录 ${task.id} 第 ${args.question} 问的回答（已答 ${answered}/${total} 条）` };
 			},
 		}),
 	);
@@ -1889,6 +2283,27 @@ function registerExtraCommands(ctx) {
 					templates: TEMPLATE_DIR,
 					home: resolveDshHome(),
 				}),
+			};
+		},
+	});
+
+	ctx.commands.register({
+		name: 'task-dispatch',
+		description: '列出某个事项下面允许派发的模板（面板读；JSON：{id} → {allowed,blocked}）',
+		input: { hint: '{"id":"WI-01"}' },
+		recordInput: false,
+		async handler(payload) {
+			let id = '';
+			try {
+				const parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+				id = String(parsed?.id ?? '').trim();
+			} catch (error) {
+				return { kind: 'error', text: '参数不是合法 JSON' };
+			}
+			const options = await dispatchOptions(id);
+			return {
+				kind: 'success',
+				text: JSON.stringify({ allowed: options.allowed, blocked: options.blocked }),
 			};
 		},
 	});
@@ -1969,6 +2384,29 @@ function registerExtraCommands(ctx) {
 			const task = await readTask(String(rawInput ?? '').trim());
 			if (task === undefined) return { kind: 'error', text: `没有这份计划：${rawInput}` };
 			return { kind: 'success', text: JSON.stringify(task) };
+		},
+	});
+	ctx.commands.register({
+		name: 'task-answer',
+		description: '回答某一条开放问题（面板调用；JSON：{id,question,answer}）',
+		input: { hint: '{"id":"DP-05","question":"1","answer":"…"}' },
+		recordInput: false,
+		async handler(payload) {
+			let parsed = null;
+			try {
+				parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+			} catch (error) {
+				return { kind: 'error', text: '参数不是合法 JSON' };
+			}
+			try {
+				const task = await setAnswer(parsed?.id, parsed?.question, parsed?.answer);
+				return {
+					kind: 'success',
+					text: JSON.stringify({ id: task.id, answers: task.answers ?? {} }),
+				};
+			} catch (error) {
+				return { kind: 'error', text: String((error && error.message) || error) };
+			}
 		},
 	});
 	ctx.commands.register({
@@ -2189,16 +2627,24 @@ async function assertParent(parentId, childKind, childType) {
 	if (PARENT_CLOSED.has(parent.status)) {
 		throw new Error(`父节点 ${id} 已「${parent.status}」，不能再往下派生`);
 	}
-	/* 工作不能派"另一件要做的事"。调研 / 记录 / 复盘 / 设计都可以派。 */
-	if (kindOf(parent) === 'work' && childKind === 'work') {
-		const child = normalizeType(childType);
-		if (child === '' || ENTITY_TYPES.has(child)) {
-			throw new Error(
-				`${id} 是「工作」，不能再派另一件要做的事。\n` +
-					'理由：「能一次做完」和「能再拆」互斥 —— 还要拆的东西本身是容器，那是「目标」。\n' +
-					`要么把 ${id} 升级为目标，要么派调研（WR）/ 记录（RB、RR、RF）/ 设计（DC、DP）。`,
-			);
+	/* 用与 task_dispatch / 面板按钮**同一套判定**，避免"按钮里没有、
+	   task_submit 却能建"这种两处规则不一致。 */
+	const child = normalizeType(childType);
+	if (child !== '' && TYPES.includes(child)) {
+		const options = await dispatchOptions(id);
+		const blocked = options.blocked.find((item) => item.type === child);
+		if (blocked !== undefined) {
+			throw new Error(`${id} 下面不能派 ${child}：${blocked.reason}`);
 		}
+		return;
+	}
+	/* 空模板（没写 type）：只挡"工作派工作"这条大类规则。 */
+	if (kindOf(parent) === 'work' && childKind === 'work') {
+		throw new Error(
+			`${id} 是「工作」，不能再派另一件要做的事。\n` +
+				'理由：「能一次做完」和「能再拆」互斥 —— 还要拆的东西本身是容器，那是「目标」。\n' +
+				`要么把 ${id} 升级为目标，要么派调研（WR）/ 记录（RB、RR、RF）/ 设计（DC、DP）。`,
+		);
 	}
 }
 /**

@@ -237,8 +237,23 @@ async function claim(id, sessionId) {
 }
 
 /** 模型改状态（task_state，byUser=false）。 */
-async function changeState(id, status) {
-	return tool('task_state').execute({ id, status });
+/** 从 /tasks 输出里取某个目标的推导状态（DP-02）。 */
+async function derivedOf(id) {
+	const listed = await command('tasks').handler({ rawInput: '' });
+	const rows = JSON.parse(listed.text);
+	const row = rows.find((item) => item.id === id);
+	assert.ok(row, `${id} 不在 /tasks 输出里`);
+	assert.ok('derived' in row, `/tasks 输出缺 derived 字段：${JSON.stringify(Object.keys(row))}`);
+	return row.derived;
+}
+
+async function changeState(id, status, note) {
+	/* 转「失败」必须有理由载体（WI-01）。这里默认给一句，
+	   免得每个用例都要单独补——专门验证拒绝的用例会显式不传。 */
+	const args = { id, status };
+	if (note !== undefined) args.note = note;
+	else if (status === '失败') args.note = '测试用：卡在依赖上，过不去';
+	return tool('task_state').execute(args);
 }
 
 function escapeRegExp(value) {
@@ -299,9 +314,11 @@ after(() => {
 
 /* ── 7. 用例 ───────────────────────────────────────────────────────────── */
 
-test('apply 注册九个工具、十二条面板命令、「按计划」预设、守卫和 planClaims', () => {
+test('apply 注册十一个工具、十四条面板命令、「按计划」预设、守卫和 planClaims', () => {
 	assert.deepEqual([...tools.keys()].sort(), [
+		'task_answer',
 		'task_claim',
+		'task_dispatch',
 		'task_get',
 		'task_history',
 		'task_list',
@@ -312,8 +329,10 @@ test('apply 注册九个工具、十二条面板命令、「按计划」预设�
 		'task_update',
 	]);
 	assert.deepEqual([...commands.keys()].sort(), [
+		'task-answer',
 		'task-approve',
 		'task-create',
+		'task-dispatch',
 		'task-get',
 		'task-groups',
 		'task-history',
@@ -380,6 +399,97 @@ test('备注：可写可清空，不受「只有未指定可改」限制，task_
 		() => tool('task_note').execute({ id, note: 'x'.repeat(4001) }),
 		/备注太长/u,
 	);
+});
+
+test('失败必须有理由：没阻碍子事项、也没 note 时拒绝', async () => {
+	/* 用户要求：点失败 = 新建 -> 记录 -> 阻碍。
+	   理由要有载体，不能是一句空话。 */
+	const id = await submit({ title: '会失败的活', type: 'WI' });
+	await approve(id);
+	await claim(id, newSession());
+
+	/* 什么都没有 → 拒绝，且报错要说清两个办法 */
+	await assert.rejects(
+		() => tool('task_state').execute({ id, status: '失败' }),
+		/得先说明失败的原因/u,
+	);
+	/* 报错要给出路，不能只说"不允许" */
+	await assert.rejects(
+		() => tool('task_state').execute({ id, status: '失败' }),
+		/派一条记录/u,
+	);
+	assert.equal(taskOf(id).status, '处理中', '被拒后状态不变');
+
+	/* 出路 1：派一条记录（阻碍） */
+	await submit({ title: '卡在没有梯子', type: 'RB', parent: id });
+	await tool('task_state').execute({ id, status: '失败' });
+	assert.equal(taskOf(id).status, '失败');
+});
+
+test('失败必须有理由：note 也能当理由载体（AI 走工具路径时）', async () => {
+	/* 面板会引导用户建阻碍，但 AI 调 task_state 不会弹窗。
+	   对它来说 note 就是那句话的载体。 */
+	const id = await submit({ title: '会失败的活', type: 'WI' });
+	await approve(id);
+	await claim(id, newSession());
+	await tool('task_state').execute({ id, status: '失败', note: '卡在权限上，没有可用的网络出口' });
+	assert.equal(taskOf(id).status, '失败');
+	assert.equal(taskOf(id).note, '卡在权限上，没有可用的网络出口');
+});
+
+test('失败必须有理由：记录类子事项就算理由，不必非得是阻碍', async () => {
+	/* 用户说"不区分具体是什么记录"。所以 RR / RF / RD 都算。 */
+	const id = await submit({ title: '会失败的活', type: 'WI' });
+	await approve(id);
+	await claim(id, newSession());
+	await submit({ title: '一份复盘', type: 'RF', parent: id });
+	await tool('task_state').execute({ id, status: '失败' });
+	assert.equal(taskOf(id).status, '失败');
+});
+
+test('开放问题：能从正文里数出来，且能逐条回答', async () => {
+	/* 设计类事项正文里常有「## 两个要定的点」这种开放问题。
+	   用户要求能一条一条回答，不能全堆在备注里。 */
+	const id = await submit({
+		title: '一个设计',
+		type: 'DP',
+		body: [
+			'## 要做什么',
+			'',
+			'随便写点。',
+			'',
+			'## 两个要定的点',
+			'',
+			'1. **约束和阻碍的区别**：会不会重叠？',
+			'',
+			'2. **相关能不能跨树**：我倾向能。',
+			'',
+		].join('\n'),
+	});
+
+	/* 逐条回答 */
+	await tool('task_answer').execute({ id, question: '1', answer: '不重叠：阻碍是性质，约束是关系' });
+	await tool('task_answer').execute({ id, question: '2', answer: '能跨树' });
+	assert.equal(taskOf(id).answers['1'], '不重叠：阻碍是性质，约束是关系');
+	assert.equal(taskOf(id).answers['2'], '能跨树');
+
+	/* 空串删掉那一条 */
+	await tool('task_answer').execute({ id, question: '2', answer: '' });
+	assert.equal(taskOf(id).answers['2'], undefined);
+	assert.equal(taskOf(id).answers['1'], '不重叠：阻碍是性质，约束是关系');
+
+	/* 不同问题互不覆盖 */
+	assert.equal(Object.keys(taskOf(id).answers).length, 1);
+});
+
+test('开放问题：正文里没有「要定的点」时不产生问题', async () => {
+	const id = await submit({
+		title: '没有开放问题',
+		type: 'DP',
+		body: '## 要做什么\n\n只有这一节。\n',
+	});
+	/* 没答过 → answers 是空的 */
+	assert.deepEqual(taskOf(id).answers ?? {}, {});
 });
 
 test('九态分组：一个状态可属于多个组，三分类由分组派生', async () => {
@@ -598,15 +708,18 @@ test('父节点已终结时，不能再往下派生（创建阶段就挡住）',
 	/* 这是保留下来的限制：父都收尾了，孩子不该再冒出来。
 	   注意它跟"父必须在处理中"完全不同——后者已被删除。
 
-	   生效点在**创建阶段**（assertParent），比领取阶段更早挡住。 */
-	const parent = await submit({ title: '父', kind: 'goal' });
+	   生效点在**创建阶段**（assertParent），比领取阶段更早挡住。
+
+	   用「拒绝」而不是「完成」：目标的状态是推导的，不能手动设完成（DP-02）。
+	   拒绝是目标上唯一该有的手动终止动作。 */
+	const parent = await submit({ title: '父', type: 'GU' });
 	await approve(parent);
-	await changeState(parent, '完成');
-	assert.equal(taskOf(parent).status, '完成');
+	await changeState(parent, '拒绝', '这个目标不要了');
+	assert.equal(taskOf(parent).status, '拒绝');
 
 	await assert.rejects(
-		() => submit({ title: '子', kind: 'work', parent }),
-		/已「完成」，不能再往下派生/u,
+		() => submit({ title: '子', type: 'WI', parent }),
+		/已「拒绝」，不能再往下派生/u,
 	);
 });
 
@@ -1176,9 +1289,13 @@ test('/task-reject 与 planClaims.release 走同一个改状态入口，终止�
 
 	/* planClaims.release 释放到终止态时同样要级联。
 	   注意：release 是针对「被领取的工作」，所以 core 必须是 work。
-	   但 work 不能派 work —— 所以 kid 用 design（它也属进行态，会被级联到）。 */
-	const core = await submit({ title: '被 release 的父计划', kind: 'work' });
-	const kid = await submit({ title: '它的子计划', kind: 'design', parent: core });
+	   但 work 不能派 work —— 所以 kid 用 design（它也属进行态，会被级联到）。
+	   显式给 type：空模板会走"没写 type"的分支，被当成 work。
+	   release 不接受 note 参数，所以失败的理由走"派一条阻碍"这条路（WI-01）。 */
+	const core = await submit({ title: '被 release 的父计划', type: 'WI' });
+	const kid = await submit({ title: '它的子计划', type: 'DP', parent: core });
+	/* 失败的理由载体：一条记录类子事项 */
+	await submit({ title: '卡在哪', type: 'RB', parent: core });
 	await approve(kid);
 	await approve(core);
 	const claims = ctx.planClaims;
@@ -1409,7 +1526,7 @@ test('重开（T-030）：终态可以被用户重开回「提交」，模型不
 	const id = await submit({ title: '会失败的计划' });
 	await approve(id);
 	await claim(id, newSession());
-	await tool('task_state').execute({ id, status: '失败' });
+	await changeState(id, '失败');
 	assert.equal(taskOf(id).status, '失败');
 
 	/* 模型不能自己复活一张终态计划 */
@@ -1726,25 +1843,30 @@ test('四类别：只有「工作」能领取，目标/设计/记录都领不了
 	   而新模型里能当容器的父节点（目标）根本不可领取。
 
 	   所以不是"允许父子换手"，是"父子争位这种情况不存在"。 */
-	const goal = await submit({ title: '目标', kind: 'goal' });
-	const design = await submit({ title: '设计', kind: 'design' });
-	const record = await submit({ title: '记录', kind: 'record' });
-	const work = await submit({ title: '工作', kind: 'work' });
+	/* 用模板决定 kind，不要用 kind 覆盖 type——两者矛盾时 type 才是真源。 */
+	const goal = await submit({ title: '目标', type: 'GU' });
+	const design = await submit({ title: '设计', type: 'DP' });
+	const record = await submit({ title: '记录', type: 'RR' });
+	const work = await submit({ title: '工作', type: 'WI' });
 	await approve(goal);
 	await approve(design);
 	await approve(record);
 	await approve(work);
 
 	const a = newSession();
-	/* 三类都不能领，而且报错要说清为什么 */
+	/* 三类都不能领，而且报错要说清为什么。
+	   目标走的是「状态由子事项推导」这条路（DP-02），
+	   设计和记录走的是「不是工作，不能领取」那条。 */
 	for (const [id, label] of [
 		[goal, '目标'],
 		[design, '设计'],
 		[record, '记录'],
 	]) {
-		await assert.rejects(() => claim(id, a), /不能领取/u, `${label}不该能被领取`);
-		await assert.rejects(() => claim(id, a), /只有「工作」/u);
+		await assert.rejects(() => claim(id, a), /不能/u, `${label}不该能被领取`);
 	}
+	await assert.rejects(() => claim(goal, a), /由子事项推导/u, '目标要说清是推导的');
+	await assert.rejects(() => claim(design, a), /只有「工作」/u);
+	await assert.rejects(() => claim(record, a), /只有「工作」/u);
 	/* 只有工作能领 */
 	await claim(work, a);
 	assert.equal(taskOf(work).status, '处理中');
@@ -1778,6 +1900,67 @@ test('四类别：不相干的两个工作仍然不能同时持有', async () =>
 	const SAME = 'one-session-2';
 	await claim(a, SAME);
 	await assert.rejects(() => claim(b, SAME), /一次只能做一个/u);
+});
+
+test('目标的状态由子事项推导（DP-02）：五条规则', async () => {
+	/* 用户给的五条，按优先级从上往下：
+	     没有采纳的子任务 → 未开始
+	     子任务都被需要授权 → 需要授权
+	     子任务有采纳的且未完成未中断 → 进行中
+	     子任务全部失败 → 失败
+	     子任务都在完成态且不是全部失败 → 完成
+
+	   推导值**不落盘**：只在 /tasks 输出里给面板看。 */
+	const goal = await submit({ title: '带子事项的目标', type: 'GU' });
+	await approve(goal);
+
+	/* 没有子事项 → 未开始 */
+	assert.equal(await derivedOf(goal), '未开始', '空目标应是未开始');
+
+	/* 全是草稿 → 未开始（还没采纳等于没开始） */
+	const draftKid = await submit({ title: '草稿子事项', type: 'WI', parent: goal });
+	assert.equal(await derivedOf(goal), '未开始');
+
+	/* 有已采纳但未完成的 → 进行中 */
+	await approve(draftKid);
+	assert.equal(await derivedOf(goal), '进行中');
+
+	/* 子事项都在需要授权 → 需要授权 */
+	await tool('task_state').execute({ id: draftKid, status: '需要授权', note: '等预算' });
+	assert.equal(await derivedOf(goal), '需要授权');
+
+	/* 子事项全失败 → 失败 */
+	await tool('task_state').execute({ id: draftKid, status: '失败', note: '卡住了' });
+	assert.equal(await derivedOf(goal), '失败');
+
+	/* 全终结且不全是失败 → 完成。
+	   换一个新目标测：失败是终态，不能重开（T-030）。 */
+	const goal2 = await submit({ title: '第二个目标', type: 'GU' });
+	await approve(goal2);
+	const kid2 = await submit({ title: '子事项二', type: 'WI', parent: goal2 });
+	await approve(kid2);
+	await claim(kid2, newSession());
+	await changeState(kid2, '完成');
+	assert.equal(await derivedOf(goal2), '完成');
+});
+
+test('目标不能手动设状态：完成/处理中都被拒，拒绝和取消可以', async () => {
+	/* 用户原话：「手动不能点完成。因为目标的语义就是无限的。
+	   完成了还能重开。没意义。除了取消以外，不给手动按钮。」 */
+	const goal = await submit({ title: '一个目标', type: 'GU' });
+	await approve(goal);
+
+	for (const status of ['完成', '处理中', '失败']) {
+		await assert.rejects(
+			() => changeState(goal, status, '随便写'),
+			/由子事项推导/u,
+			`目标不该能被手动设成「${status}」`,
+		);
+	}
+
+	/* 拒绝可以：放弃整个目标 */
+	await changeState(goal, '拒绝', '这个方向不要了');
+	assert.equal(taskOf(goal).status, '拒绝');
 });
 
 test('四类别：兄弟工作之间也不能同时持有', async () => {
@@ -1881,6 +2064,63 @@ test('设计可以派设计（用户可以同时有多个待决问题）', async
 	await approve(outer);
 	const inner = await submit({ title: '子决策', kind: 'design', parent: outer });
 	assert.ok(inner);
+});
+
+test('task_dispatch：工作不能派「要做的事」，但能派调研/记录/设计', async () => {
+	/* 模板里的 dispatch 现在**真的被读了**（以前只写在文件里，代码一个都不看）。
+	   判定三层：大类规则 → 父模板 dispatch → 子模板 default_kind。 */
+	const work = await submit({ title: '一个实现', type: 'WI' });
+	await approve(work);
+
+	const listed = await tool('task_dispatch').execute({ id: work });
+	const text = listed.text;
+
+	assert.match(text, /WR · 调研/u, '工作应能派调研');
+	assert.match(text, /RB · 阻碍/u, '工作应能派记录');
+	assert.match(text, /DC · 决策/u, '工作应能派设计');
+
+	assert.match(text, /WT · 实现项/u, '工作不能派实现项');
+	assert.match(text, /WF · 缺陷/u, '工作不能派缺陷');
+	assert.match(text, /不能再派另一件要做的事/u, '要给原因');
+
+	/* 目标下面什么都能派 */
+	const goal = await submit({ title: '一个目标', type: 'GU' });
+	const all = await tool('task_dispatch').execute({ id: goal });
+	assert.match(all.text, /WT · 实现项/u, '目标应能派实现项');
+	assert.match(all.text, /WR · 调研/u);
+});
+
+test('task_dispatch：目标下可派发的模板远多于工作下', async () => {
+	const goal = await submit({ title: '目标', type: 'GU' });
+	const work = await submit({ title: '实现', type: 'WI' });
+	await approve(work);
+	const goalText = (await tool('task_dispatch').execute({ id: goal })).text;
+	const workText = (await tool('task_dispatch').execute({ id: work })).text;
+	const count = (text) => (text.match(/✅/gu) ?? []).length;
+	assert.ok(count(goalText) > count(workText), `目标(${count(goalText)}) 应多于工作(${count(workText)})`);
+});
+
+test('task_template 带 from 时，不能派的模板直接报错', async () => {
+	/* 这样模型不用写完才发现被拒。 */
+	const work = await submit({ title: '实现', type: 'WI' });
+	await assert.rejects(
+		() => tool('task_template').execute({ type: 'WT', from: work }),
+		/不能把 WT 挂在/u,
+	);
+	const ok = await tool('task_template').execute({ type: 'WR', from: work });
+	assert.match(ok.text, /^name: WR/u);
+});
+
+test('assertParent 与 task_dispatch 用同一套判定', async () => {
+	/* 两处规则必须一致：按钮里没有的，task_submit 也不能建。 */
+	const work = await submit({ title: '实现', type: 'WI' });
+	await approve(work);
+	await assert.rejects(
+		() => submit({ title: '子实现项', type: 'WT', parent: work }),
+		/不能再派另一件要做的事/u,
+	);
+	const research = await submit({ title: '子调研', type: 'WR', parent: work });
+	assert.ok(research);
 });
 
 test('task_state 校验九态名与计划 id，非法值不改状态', async () => {

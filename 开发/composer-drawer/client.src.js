@@ -1116,7 +1116,20 @@ window.__ModuleLoader__.load({
         '取消': [{ to: '提交', label: '重开', primary: true }],
         '拒绝': [{ to: '提交', label: '重开', primary: true }],
       };
-      const actions = TRANSITIONS[node.status] || [];
+      /* 目标的状态是**推导**的，不给手动改的按钮（DP-02）。
+       *
+       * 用户原话：「手动不能点完成。因为目标的语义就是无限的。
+       * 完成了还能重开。没意义。除了取消以外，不给手动按钮。」
+       *
+       * 所以目标上只留两个动作：放弃（拒绝）/ 取消。
+       * 注意这只是**面板不给按钮**，宿主的 setStateInner 也挡了——
+       * 两处都挡是因为 AI 会直接调工具。 */
+      const goalActions = [
+        { to: '取消', label: '取消' },
+        { to: '拒绝', label: '放弃目标' },
+      ];
+      const actions =
+        node.kind === 'goal' && node.status !== '未指定' ? goalActions : TRANSITIONS[node.status] || [];
       const chip = function (label, target) {
         return h(
           'button',
@@ -1323,6 +1336,82 @@ window.__ModuleLoader__.load({
             }),
           ),
         ),
+        /* 开放问题：设计类事项正文里「要定的点 / 待定」小标题下编号的那些。
+         *
+         * 用户原话：「你的设计，里面有几个开放问题。而现在完全在备注里面打字。
+         * 没法一一直接回答。」
+         *
+         * 所以每条问题一个卡片 + 一个输入框，答完一条存一条。
+         * 不与备注混在一起：备注是自由结论，这里是逐条应答。 */
+        (props.questions || []).length > 0
+          ? section(
+              '开放问题（已答 ' +
+                Object.keys(node.answers || {}).filter(function (key) {
+                  return String(node.answers[key] || '').trim() !== '';
+                }).length +
+                ' / ' +
+                props.questions.length +
+                '）',
+              h(
+                'div',
+                { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+                props.questions.map(function (item) {
+                  const key = String(item.index);
+                  const value = (node.answers && node.answers[key]) || '';
+                  const draft =
+                    props.answerDraft && props.answerDraft.id === node.id && props.answerDraft.question === key
+                      ? props.answerDraft.value
+                      : value;
+                  const dirty = draft !== value;
+                  return h(
+                    'div',
+                    { key: 'q-' + key, style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+                    h(
+                      'div',
+                      { style: { fontSize: 12, lineHeight: 1.6, color: 'var(--dsw-alias-label-primary)' } },
+                      h('span', { style: { opacity: 0.55, marginRight: 5 } }, key + '.'),
+                      item.text,
+                      value !== ''
+                        ? h('span', { style: { marginLeft: 6, fontSize: 11, color: 'var(--dsw-alias-state-success-primary)' } }, '已答')
+                        : null,
+                    ),
+                    h('textarea', {
+                      value: draft,
+                      rows: 2,
+                      placeholder: '在这里直接回答这一条…',
+                      onChange: function (event) {
+                        if (typeof props.onAnswerDraft === 'function') {
+                          props.onAnswerDraft(key, event.target.value);
+                        }
+                      },
+                      style: Object.assign({}, formInputStyle, { resize: 'vertical', fontSize: 12 }),
+                    }),
+                    dirty
+                      ? h(
+                          'div',
+                          { style: { display: 'flex', gap: 6, alignItems: 'center' } },
+                          h(
+                            'button',
+                            {
+                              type: 'button',
+                              disabled: props.busy === true,
+                              onClick: function () {
+                                if (typeof props.onSaveAnswer === 'function') props.onSaveAnswer(key, draft);
+                              },
+                              style: Object.assign({}, buttonBase(true, props.busy), { padding: '2px 12px', fontSize: 12 }),
+                            },
+                            '保存这条',
+                          ),
+                          props.answerError && props.answerError.question === key
+                            ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-state-error-primary)' } }, props.answerError.text)
+                            : null,
+                        )
+                      : null,
+                  );
+                }),
+              ),
+            )
+          : null,
         section(
           '备注 / 搁置理由',
           h(
@@ -1408,6 +1497,41 @@ window.__ModuleLoader__.load({
                   { style: { marginTop: 10, color: 'var(--dsw-alias-label-primary)' } },
                   renderMarkdown(props.body),
                 )
+              : null,
+          ),
+        ),
+        section(
+          '派发',
+          h(
+            'div',
+            { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } },
+            /* 按钮列表来自宿主的 `task_dispatch`——判定三层（大类规则 / 父模板
+               dispatch / 子模板 default_kind）全在宿主那边做，面板只管显示。
+               **不在面板里硬编码"哪些能派"**：那样一改模板就两边不一致。 */
+            (props.dispatch || []).map(function (item) {
+              return h(
+                'button',
+                {
+                  key: 'dispatch-' + item.type,
+                  type: 'button',
+                  title: item.type + ' · ' + item.name + '（' + item.kind + '）',
+                  onClick: function () {
+                    if (typeof props.onDispatch === 'function') props.onDispatch(item);
+                  },
+                  style: Object.assign({}, buttonBase(false), {
+                    padding: '3px 10px',
+                    fontSize: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                  }),
+                },
+                h('span', { style: { fontFamily: 'ui-monospace, monospace', fontSize: 11, opacity: 0.7 } }, item.type),
+                h('span', null, item.name),
+              );
+            }),
+            (props.dispatch || []).length === 0
+              ? h('div', { style: lineStyle }, '这一条下面派发不了任何模板。')
               : null,
           ),
         ),
@@ -2156,6 +2280,24 @@ window.__ModuleLoader__.load({
           h('span', { style: { flex: 1 } }),
           h('button', { type: 'button', onClick: props.onCancel, style: Object.assign({}, buttonBase(false), { padding: '2px 12px' }) }, '取消'),
         ),
+        /* 从「失败」按钮带过来的说明：先建阻碍，再点失败。 */
+        props.hint
+          ? h(
+              'div',
+              {
+                style: {
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  marginBottom: 6,
+                  padding: '6px 10px',
+                  borderRadius: 8,
+                  border: '1px solid var(--dsw-alias-state-warn-primary)',
+                  color: 'var(--dsw-alias-state-warn-primary)',
+                },
+              },
+              props.hint,
+            )
+          : null,
         h(
           'div',
           { style: { display: 'flex', gap: 18, flex: 1, minHeight: 0 } },
@@ -2496,6 +2638,42 @@ window.__ModuleLoader__.load({
       const historyState = React.useState({ id: '', entries: [] });
       const historyInfo = historyState[0];
       const setHistoryInfo = historyState[1];
+      /* 可派发的模板（WI-03）：判定在宿主（task_dispatch），面板只缓存结果。
+         带着 id 存，避免切换事项时短暂显示上一张的按钮。 */
+      const dispatchState = React.useState({ id: '', items: [] });
+      const dispatchInfo = dispatchState[0];
+      const setDispatchInfo = dispatchState[1];
+      /* 开放问题（WI-04）：设计类事项正文里「要定的点 / 待定」下编号的那些。
+         面板要能一条一条回答，不能全堆在备注里。
+         解析规则与宿主 extractQuestions 保持一致（小标题 + 编号条目）。 */
+      const questionsOf = function (text) {
+        const out = [];
+        const source = String(text || '');
+        const headingPattern = /^#{2,4}\s*.*(要定的点|待定|开放问题|需要你定|需要决定).*$/gmu;
+        let match;
+        while ((match = headingPattern.exec(source)) !== null) {
+          const start = match.index + match[0].length;
+          const rest = source.slice(start);
+          const nextHeading = /^#{1,4}\s+/mu.exec(rest);
+          const section = nextHeading === null ? rest : rest.slice(0, nextHeading.index);
+          const itemPattern = /^\s*(\d+)\.\s+(.+)$/gmu;
+          let item;
+          while ((item = itemPattern.exec(section)) !== null) {
+            out.push({
+              index: Number(item[1]),
+              text: item[2].trim().replace(/\*\*/gu, ''),
+            });
+          }
+        }
+        return out;
+      };
+      /* 回答草稿：{id, question, value}。切换事项或问题时自动换。 */
+      const answerState = React.useState({ id: '', question: '', value: '' });
+      const answerDraft = answerState[0];
+      const setAnswerDraft = answerState[1];
+      const answerErrState = React.useState({ question: '', text: '' });
+      const answerError = answerErrState[0];
+      const setAnswerError = answerErrState[1];
       const createState = React.useState({ open: false, busy: false, error: '' });
       const create = createState[0];
       const setCreate = createState[1];
@@ -2616,6 +2794,30 @@ window.__ModuleLoader__.load({
 
       const runState = function (next) {
         if (!activeNodeId) return;
+        /* 点「失败」不是直接改状态——**先派一条阻碍**。
+         *
+         * 用户原话：「必须要有一个记录类型的子任务。并且可以点击失败按钮以后，
+         * 效果就是新建->记录->阻碍。不区分具体是什么记录。
+         * 但是手点失败的时候，弹出新建，默认在阻碍。」
+         *
+         * 理由：失败的原因会写一大片、甚至联系别的事项。
+         * 塞进 note 是一段死文字；做成一条记录，能挂依赖、能被搜到、
+         * 能派调研、能被后续引用。
+         *
+         * 所以这里改成两步：先开新建（parent=当前事项，模板=RB 阻碍），
+         * 那条记录建完，再由用户点失败（此时已经有了理由载体）。
+         */
+        if (next === '失败') {
+          setCreate({
+            open: true,
+            busy: false,
+            error: '',
+            initial: { parent: activeNodeId, type: 'RB', kind: 'record' },
+            /* 交给 CreateForm 一句额外说明：建完这条再点失败 */
+            hint: '先建这条「阻碍」把原因写清楚；建完之后再点「失败」。',
+          });
+          return;
+        }
         setAction({ busy: true, error: '' });
         runCommand('/task-state ' + activeNodeId + ' ' + next, sessionId)
           .then(function (settled) {
@@ -2652,6 +2854,38 @@ window.__ModuleLoader__.load({
           })
           .catch(function (error) {
             setNote({ id: activeNodeId, draft: value, error: String((error && error.message) || error) });
+          });
+      };
+
+      /** 保存某一条开放问题的回答（WI-04）。
+       *
+       * 走命令 /task-answer（JSON 入参），因为回答里会有换行和引号，
+       * 用空格切参的 /task-note 那种形式会被切坏。 */
+      const saveAnswer = function (question, value) {
+        if (!activeNodeId) return;
+        setAnswerError({ question: '', text: '' });
+        runCommand(
+          '/task-answer ' + JSON.stringify({ id: activeNodeId, question: String(question), answer: String(value || '') }),
+          sessionId,
+        )
+          .then(function (settled) {
+            const text = commandText(settled);
+            let saved = null;
+            try {
+              saved = JSON.parse(text);
+            } catch (failure) {
+              saved = null;
+            }
+            if (saved && saved.answers && typeof saved.answers === 'object') {
+              /* 存上了：把草稿归零（值已在服务端） */
+              setAnswerDraft({ id: activeNodeId, question: String(question), value: saved.answers[String(question)] || '' });
+              load();
+            } else {
+              setAnswerError({ question: String(question), text: text || '回答没保存上' });
+            }
+          })
+          .catch(function (error) {
+            setAnswerError({ question: String(question), text: String((error && error.message) || error) });
           });
       };
 
@@ -2860,6 +3094,35 @@ window.__ModuleLoader__.load({
         [activeNodeId, historyInfo.id, sessionId],
       );
 
+      /* 可派发的模板：选中事项时问一次宿主。
+       *
+       * 走**命令**（`/task-dispatch`）而不是自己读模板算：
+       * 判定要读 27 个模板的 dispatch + 父事项 kind + ENTITY_TYPES，
+       * 在面板里重算就是第二份真源，改了模板两边必然不一致。
+       *
+       * 结果带 id 缓存，切换事项时不会短暂显示上一张的按钮。 */
+      React.useEffect(
+        function () {
+          if (activeNodeId === '') return undefined;
+          if (dispatchInfo.id === activeNodeId) return undefined;
+          let canceled = false;
+          runCommand('/task-dispatch', { id: activeNodeId })
+            .then(function (payload) {
+              if (canceled) return;
+              const list = Array.isArray(payload?.allowed) ? payload.allowed : [];
+              setDispatchInfo({ id: activeNodeId, items: list });
+            })
+            .catch(function () {
+              if (canceled) return;
+              setDispatchInfo({ id: activeNodeId, items: [] });
+            });
+          return function () {
+            canceled = true;
+          };
+        },
+        [activeNodeId, dispatchInfo.id],
+      );
+
       const editNode = editId && graph.byId[editId] ? graph.byId[editId].node : null;
       const editInitial = editNode
         ? {
@@ -3038,6 +3301,10 @@ window.__ModuleLoader__.load({
             })
           : create.open
           ? h(CreateForm, {
+              /* 派发按钮带过来的预填：parent + 模板 + 大类。
+                 这样用户点「派发：调研」后，只填标题和正文就能交。 */
+              initial: create.initial,
+              hint: create.hint || '',
               templates: templates,
               plans: tasks,
               busy: create.busy,
@@ -3054,6 +3321,25 @@ window.__ModuleLoader__.load({
               body: (data.bodies[activeId] || ''),
               busy: action.busy,
               error: action.error,
+              dispatch: dispatchInfo.id === activeNode.id ? dispatchInfo.items : [],
+              /* 开放问题：一问一答的卡片。 */
+              questions: questionsOf(data.bodies[activeNode.id] || ''),
+              answerDraft: answerDraft,
+              answerError: answerError,
+              onAnswerDraft: function (question, value) {
+                setAnswerDraft({ id: activeNode.id, question: String(question), value: value });
+              },
+              onSaveAnswer: saveAnswer,
+              /* 点派发按钮：直接开新建表单，parent 和模板都已填好。
+                 用户只需要写标题和正文——不用去表单里选"父计划"。 */
+              onDispatch: function (item) {
+                setCreate({
+                  open: true,
+                  busy: false,
+                  error: '',
+                  initial: { parent: activeNode.id, type: item.type, kind: item.kind },
+                });
+              },
               onState: runState,
               onClose: function () {
                 setSelected('');
