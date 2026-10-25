@@ -1,0 +1,38 @@
+async function readHistory(id, limit) {
+	const wanted = String(id ?? '').trim();
+	if (wanted === '') throw new Error('task_history: 需要一个计划 id，例如 MG-01');
+	let raw = '';
+	try {
+		raw = await readFile(STORE_FILE, 'utf8');
+	} catch (error) {
+		if (!error || error.code !== 'ENOENT') throw error;
+		raw = '';
+	}
+	const entries = [];
+	for (const line of raw.split(/\r?\n/u)) {
+		if (line.trim() === '') continue;
+		let event;
+		try {
+			event = JSON.parse(line);
+		} catch (failure) {
+			/* 坏行跳过：历史读不出来不该让整个调用失败。 */
+			continue;
+		}
+		if (!event || event.op !== 'upsert' || !event.task || String(event.task.id) !== wanted) continue;
+		entries.push({
+			ts: text(event.ts),
+			actor: text(event.actor),
+			from: text(event.from),
+			to: text(event.to),
+			status: text(event.task.status),
+			note: text(event.task.note),
+		});
+	}
+	if (entries.length === 0) {
+		const any = await readTask(wanted);
+		if (any === undefined) throw new Error(`没有这份计划：${wanted}`);
+		return [];
+	}
+	const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50;
+	return entries.slice(-cap);
+}

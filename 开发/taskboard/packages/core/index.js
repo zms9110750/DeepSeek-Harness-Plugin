@@ -57,9 +57,67 @@ import {
 } from '../plan-preset/index.js';
 import { within } from '../workspace/index.js';
 
+/*
+ * ── 绑到存储服务 ──────────────────────────────────────────────────────
+ *
+ * 持久化已经拆到独立的 `@local/taskboard-store` 包（用户要求的第 ① 块）。
+ * 这个模块不再直接碰文件，而是把 store service 的方法接成同名局部函数，
+ * 这样下面几百处调用一行都不用改。
+ *
+ * 为什么用这层薄壳而不是全改成 `ctx.taskboardStore.xxx`：
+ * 那些调用点分散在两三千行里，逐个改既危险又没收益。
+ * 薄壳还能在 store 缺失时给出清楚的报错，而不是 `undefined is not a function`。
+ */
+let STORE = null;
+
+/** store 的方法名 → 局部同名函数。 */
+function bindStore(service) {
+	STORE = service;
+}
+
+/** 拿一个 store 方法，缺失时给出可读的报错。 */
+function storeFn(name) {
+	return function (...args) {
+		if (STORE === null || typeof STORE[name] !== 'function') {
+			throw new Error(`任务板存储服务不可用（缺 ${name}）。检查 @local/taskboard-store 是否启用。`);
+		}
+		return STORE[name](...args);
+	};
+}
+
+/* 这些原来都是本模块的函数，现在转给 store。 */
+const listAll = storeFn('listAll');
+const readTask = storeFn('readTask');
+const saveTask = storeFn('saveTask');
+const appendEvent = storeFn('appendEvent');
+const withWrite = storeFn('withWrite');
+const listGroups = storeFn('listGroups');
+const saveGroup = storeFn('saveGroup');
+const readCurrentGroup = storeFn('readCurrentGroup');
+const writeCurrentGroup = storeFn('writeCurrentGroup');
+const readStore = storeFn('readStore');
+const migrateLegacy = storeFn('migrateLegacy');
+const parseTask = storeFn('parseTask');
+const renderTask = storeFn('renderTask');
+const readHistory = storeFn('readHistory');
+
+/** 存储文件路径（提示文案里要显示"存储在哪"）。 */
+function storeFilePath() {
+	return STORE && typeof STORE.storeFile === 'string' ? STORE.storeFile : '（未知）';
+}
+
+/** 老的 resolveDshHome —— 现在只有提示文案用得到。 */
+function resolveDshHome(configured) {
+	const fromEnv = process.env.DSH_HOME;
+	return configured !== undefined && configured !== null && String(configured).trim() !== ''
+		? String(configured)
+		: fromEnv !== undefined && fromEnv.trim().length > 0
+			? fromEnv
+			: join(homedir(), '.dsh');
+}
 export const name = 'taskboard';
 
-export const inject = ['tools', 'commands', 'permissionPresets', 'sessionProjections'];
+export const inject = ['tools', 'commands', 'permissionPresets', 'sessionProjections', 'taskboardStore'];
 
 /** 老格式目录（一份计划一个 md），只在首次启动时迁移用。 */
 const LEGACY_DIR = process.env.TASKBOARD_ROOT || 'X:\\temp\\dsh\\任务';
@@ -798,396 +856,6 @@ async function setFlags(id, flags) {
 }
 
 
-/** 只认识 `key: value` 行的极简头解析，够用且不怕正文里的冒号。 */
-function parseTask(raw, file) {
-	const lines = String(raw ?? '').split(/\r?\n/u);
-	const head = {};
-	let index = 0;
-	if (lines[0] === '---') {
-		for (index = 1; index < lines.length; index += 1) {
-			if (lines[index] === '---') {
-				index += 1;
-				break;
-			}
-			const match = /^([A-Za-z_]+):[ \t]?(.*)$/u.exec(lines[index]);
-			if (match) head[match[1]] = match[2].trim();
-		}
-	}
-	const id = text(head.id) || String(file).replace(/\.md$/u, '');
-	return {
-		id,
-		title: text(head.title) || id,
-		/* 存归一化后的编号：老数据的单字母在这里自动升级成双字母。 */
-		type: normalizeType(head.type),
-		/* kind 存了就用存的；没存是因为老数据，读的时候按 type 推（见 kindOf）。 */
-		kind: text(head.kind),
-		status: text(head.status) || '未指定',
-		parent: text(head.parent),
-		links: text(head.links),
-		workspace: text(head.workspace),
-		workspaces: text(head.workspaces),
-		permission: text(head.permission),
-		deny: text(head.deny),
-		claimed_by: text(head.claimed_by),
-		body: lines.slice(index).join('\n').trim(),
-		note: text(head.note),
-		flags: text(head.flags),
-		file,
-	};
-}
-
-function renderTask(task) {
-	const lines = ['---'];
-	for (const field of HEAD_FIELDS) {
-		if (field === 'kind') {
-			/* 老数据没存 kind：这里输出**推断后**的值，并标出它是推出来的。 */
-			const resolved = kindOf(task);
-			const stored = text(task.kind);
-			lines.push(`kind: ${resolved}${stored === '' ? ' (推断)' : ''}`);
-			continue;
-		}
-		lines.push(`${field}: ${text(task[field])}`);
-	}
-	lines.push('---', '', text(task.body));
-	if (text(task.note) !== '') lines.push('', '<!-- note -->', text(task.note));
-	return `${lines.join('\n')}\n`;
-}
-
-/* ---- 存储：一个 JSONL 文件，放在用户目录 ----
- * 路径：%USERPROFILE%\.dsh\taskboard\plans.jsonl
- * 每行一个事件：{"op":"upsert","task":{…}}；读取时顺序折叠成当前状态。
- * 追加写、无原生依赖；单文件，备份/搬迁只搬这一个。
- */
-/**
- * 数据根目录：与宿主同一套规则（读自 `app.asar` 的 `@deepseek-ai/dsh-home-paths`）。
- *
- * 优先级（高 → 低）：
- *   1. 显式配置的路径
- *   2. `$DSH_HOME`（空串/纯空白视为没设，避免把 home 解析成当前目录）
- *   3. `~/.dsh`
- *
- * 计划库是**运行时数据**，跟会话消息一个地位，所以必须住在同一个根下（T-032）。
- * 支持 `~` / `~/` / `~\` 前缀展开。
- */
-function expandHomePath(raw) {
-	const value = String(raw ?? '');
-	if (value === '~') return homedir();
-	if (value.startsWith('~/') || value.startsWith('~\\')) return join(homedir(), value.slice(2));
-	return value;
-}
-
-function resolveDshHome(configured) {
-	const fromEnv = process.env.DSH_HOME;
-	const picked =
-		configured !== undefined && configured !== null && String(configured).trim() !== ''
-			? configured
-			: fromEnv !== undefined && fromEnv.trim().length > 0
-				? fromEnv
-				: join(homedir(), '.dsh');
-	return resolve(expandHomePath(picked));
-}
-
-const STORE_DIR = join(resolveDshHome(), 'taskboard');
-const STORE_FILE = process.env.TASKBOARD_STORE || join(STORE_DIR, 'plans.jsonl');
-/*
- * ---------------------------------------------------------------------------
- * 分组（groups）
- * ---------------------------------------------------------------------------
- *
- * 用户原话：
- *   > 肯定要分组啊。我这里打插件要这些任务。等下我写程序还要这些任务干什么？
- *   > 我的工作空间是在仓库的根目录的。为了做工作的时候可以读别的程序。
- *
- * 关键澄清：**`workspace` 不是分组**。那是"能读哪个目录"的权限字段，
- * 用户为了能读别的项目，把它设成了仓库根目录——所以按 workspace 分组
- * 会把所有事项挤进同一堆。分组必须是**独立的概念**。
- *
- * 设计：一个分组就是一个**命名的集合**，事项可以属于任意多个分组。
- *   · 与父子树正交（一条事项既可属于某分组，又在某棵树下）
- *   · 与九态正交（分组不是状态）
- *   · 存独立文件 `groups.jsonl`，不污染 `plans.jsonl` 的行格式
- *     （用户明确要求过"不要随便改日志"；新建文件比改旧行安全）
- *
- * 记录格式（一行一个事件，追加式，同样按 id fold）：
- *   {"op":"upsert","ts":"…","group":{"id":"g-1","name":"插件开发","members":["T-001",…]}}
- */
-const GROUPS_FILE = process.env.TASKBOARD_GROUPS || join(STORE_DIR, 'groups.jsonl');
-/*
- * ---------------------------------------------------------------------------
- * 当前分组（current group）
- * ---------------------------------------------------------------------------
- *
- * 用户原话：
- *   > 需要有一个当前组。工具的查找是默认对当前组里面找的。
- *   > 去翻别的组需要额外的参数。就比如用户风格，
- *   > 你不可能在程序里面去查绘画的风格。
- *
- * 所以工具的默认范围 = 当前组。这也顺带解决了"分组要一个人记着"的问题：
- * 切一次，后面所有工具调用都默认在那一组里。
- *
- * 存一个单独的文件（`current.json`），因为它是**会话级偏好**，
- * 不是事项数据，混进 plans.jsonl 会把事件流搞脏。
- */
-const CURRENT_FILE = process.env.TASKBOARD_CURRENT || join(STORE_DIR, 'current.json');
-
-/*
- * ⚠️ 当前组**跟随会话**，不是全局。
- *
- * 用户原话：「"当前组"这个状态是有必要的。而且跟随会话。
- * 这个不能跨会话了还同步。」
- *
- * 所以键是 sessionId：A 会话在看"开发任务板"时，B 会话可能在看别的，
- * 默认查询范围互不影响。没有 sessionId 的调用回落到 `_default`。
- */
-function currentKey(sessionId) {
-	const id = String(sessionId ?? '').trim();
-	return id === '' ? '_default' : id;
-}
-
-async function readCurrentMap() {
-	try {
-		const raw = await readFile(CURRENT_FILE, 'utf8');
-		const parsed = JSON.parse(raw);
-		/* 兼容旧格式（{group:"g-1"}）→ 当成 _default。 */
-		if (parsed !== null && typeof parsed === 'object' && typeof parsed.group === 'string' && parsed.sessions === undefined) {
-			return { _default: parsed.group };
-		}
-		return parsed !== null && typeof parsed === 'object' && parsed.sessions !== null && typeof parsed.sessions === 'object'
-			? parsed.sessions
-			: {};
-	} catch (failure) {
-		return {};
-	}
-}
-
-async function readCurrentGroup(sessionId) {
-	const map = await readCurrentMap();
-	const key = currentKey(sessionId);
-	/* 先按会话找；找不到再退回 `_default`（旧格式或没会话上下文的调用）。
-	 *
-	 * 这个回落是必要的：AI 在工具里调时，sessionId 可能拿不到；
-	 * 面板通过命令设当前组时也可能没有会话 id。不给回落的话，
-	 * 就会出现"设了当前组但新建仍然没归组"这种诡异现象。 */
-	const id = String(map[key] ?? map._default ?? '').trim();
-	if (id === '') return '';
-	const groups = (await listGroups()).filter((entry) => entry.name !== '');
-	return groups.some((entry) => entry.id === id) ? id : '';
-}
-
-async function writeCurrentGroup(id, sessionId) {
-	const map = await readCurrentMap();
-	const key = currentKey(sessionId);
-	const value = String(id ?? '').trim();
-	if (value === '') delete map[key];
-	else map[key] = value;
-	await mkdir(dirname(CURRENT_FILE), { recursive: true });
-	await writeFile(CURRENT_FILE, JSON.stringify({ sessions: map }), 'utf8');
-}
-
-/** 读全部分组（追加式 JSONL，按 id fold 最后一次）。 */
-async function listGroups() {
-	await mkdir(dirname(GROUPS_FILE), { recursive: true });
-	let raw = '';
-	try {
-		raw = await readFile(GROUPS_FILE, 'utf8');
-	} catch (failure) {
-		return [];
-	}
-	const byId = new Map();
-	for (const line of String(raw).split(/\r?\n/u)) {
-		const trimmed = line.trim();
-		if (trimmed === '') continue;
-		let event = null;
-		try {
-			event = JSON.parse(trimmed);
-		} catch (failure) {
-			continue;
-		}
-		if (event === null || event.op !== 'upsert') continue;
-		const group = event.group;
-		if (group === null || typeof group !== 'object') continue;
-		const id = String(group.id || '').trim();
-		if (id === '') continue;
-		byId.set(id, {
-			id,
-			name: String(group.name || id),
-			members: Array.isArray(group.members) ? group.members.map(String) : [],
-			createdAt: String(group.createdAt || ''),
-			/* 归档是对分组归档的。 */
-			archived: group.archived === true,
-		});
-	}
-	return [...byId.values()];
-}
-
-/** 写一个分组（追加一行）。 */
-async function saveGroup(group) {
-	await mkdir(dirname(GROUPS_FILE), { recursive: true });
-	/* 没显式传 archived 时沿用现有值。
-	 *
-	 * 为什么要这样：改名、加成员这些操作不该意外把分组从归档里拉出来。
-	 * 之前每个调用点都要自己传 archived，漏一个就是隐形 bug。 */
-	let archived = group.archived;
-	if (archived === undefined) {
-		const existing = (await listGroups()).find((entry) => entry.id === group.id);
-		archived = existing?.archived === true;
-	}
-	const event = {
-		op: 'upsert',
-		ts: new Date().toISOString(),
-		actor: 'user',
-		group: {
-			id: group.id,
-			name: group.name,
-			members: group.members,
-			createdAt: group.createdAt || new Date().toISOString(),
-			/* 归档是对**分组**归档的（用户要求）：
-			 * 「归档是对分组归档的。」所以在组上放一个布尔，
-			 * 而不是给每条事项都打 archived。 */
-			archived: archived === true,
-		},
-	};
-	await appendFile(GROUPS_FILE, JSON.stringify(event) + '\n', 'utf8');
-}
-
-async function readStore() {
-	await mkdir(dirname(STORE_FILE), { recursive: true });
-	let raw = '';
-	try {
-		raw = await readFile(STORE_FILE, 'utf8');
-	} catch (error) {
-		if (!error || error.code !== 'ENOENT') throw error;
-		await migrateLegacy();
-		try {
-			raw = await readFile(STORE_FILE, 'utf8');
-		} catch (again) {
-			raw = '';
-		}
-	}
-	const map = new Map();
-	for (const line of raw.split(/\r?\n/u)) {
-		if (line.trim() === '') continue;
-		let event;
-		try {
-			event = JSON.parse(line);
-		} catch (failure) {
-			continue;
-		}
-		if (!event) continue;
-		if (event.op === 'upsert' && event.task && event.task.id) {
-			map.set(String(event.task.id), event.task);
-		} else if (event.op === 'patch' && event.id && map.has(String(event.id))) {
-			map.set(String(event.id), Object.assign({}, map.get(String(event.id)), event.patch));
-		}
-	}
-	return map;
-}
-
-/** 极简写锁：同一进程内的读改写串行，避免并发丢更新。 */
-let WRITE_CHAIN = Promise.resolve();
-function withWrite(operation) {
-	const run = WRITE_CHAIN.then(operation, operation);
-	WRITE_CHAIN = run.then(
-		() => undefined,
-		() => undefined,
-	);
-	return run;
-}
-/**
- * 追加一条事件（T-019 事件溯源）。
- *
- * 只**增加**字段，不动原有结构：
- *   {op, task}  →  {op, ts, actor, from, to, task}
- *
- * 为什么这么保守：用户明确说过「不要随便改日志，如果读不了，可能整个 agent
- * 都要别的 agent 修」。所以：
- *   · 仍然是 `{"op":"upsert","task":{…}}` 这一行一个事件的老形状；
- *   · `ts`/`actor`/`from`/`to` 是**同级新增**，老读代码（只认 op/task）完全不受影响；
- *   · 老事件没有这些字段 → 读的时候缺就缺，不报错、不补写、不迁移。
- *
- * `from`/`to` 只在状态真的变化时才有；`actor` 是会话 id 或 `user`。
- */
-async function appendEvent(event) {
-	await mkdir(dirname(STORE_FILE), { recursive: true });
-	const enriched = Object.assign({ ts: new Date().toISOString() }, event);
-	/* actor：调用方没给就落到当前写入上下文（见 withActor），最后兜底 'unknown'。 */
-	if (enriched.actor === undefined) enriched.actor = CURRENT_ACTOR.value || 'unknown';
-	await appendFile(STORE_FILE, `${JSON.stringify(enriched)}\n`, 'utf8');
-}
-
-/** 老目录（任务\*.md）→ 一次性导入 JSONL。 */
-async function migrateLegacy() {
-	const marker = `${STORE_FILE}.migrated`;
-	try {
-		await readFile(marker, 'utf8');
-		return;
-	} catch (failure) {
-		/* 没迁移过 */
-	}
-	let files = [];
-	try {
-		files = (await readdir(LEGACY_DIR)).filter((name) => name.endsWith('.md')).sort();
-	} catch (failure) {
-		return;
-	}
-	for (const file of files) {
-		try {
-			const raw = await readFile(join(LEGACY_DIR, file), 'utf8');
-			await appendEvent({ op: 'upsert', task: parseTask(raw, file) });
-		} catch (failure) {
-			/* 跳过坏文件 */
-		}
-	}
-	try {
-		await writeFile(marker, '1', 'utf8');
-	} catch (failure) {
-		/* 标记写失败不影响迁移 */
-	}
-}
-
-async function listAll() {
-	const map = await readStore();
-	return [...map.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-}
-
-async function readTask(id) {
-	const wanted = text(id).trim();
-	if (wanted === '') throw new Error('task_get: 需要一个计划 id，例如 MG-01');
-	return (await readStore()).get(wanted);
-}
-
-/** 关联去重：同一条「类型:目标」只留一份（大小写/空格归一）。 */
-function dedupeLinks(raw) {
-	const seen = new Set();
-	const out = [];
-	String(raw || '')
-		.split(/[,，]/u)
-		.map((part) => part.trim())
-		.filter((part) => part !== '')
-		.forEach((part) => {
-			const key = part.replace(/\s+/gu, '').toLowerCase();
-			if (seen.has(key)) return;
-			seen.add(key);
-			out.push(part);
-		});
-	return out.join(', ');
-}
-/**
- * 写一份计划的当前状态。
- *
- * `meta` 可选：`{from, to}` 表示这次写是一次状态转移（只有 setState 会传）。
- * `from`/`to` 只在真的变化时才写，别的写入（改备注、改正文）不带这两个字段。
- */
-async function saveTask(task, meta) {
-	if (task && typeof task.links === 'string') task = Object.assign({}, task, { links: dedupeLinks(task.links) });
-	const event = { op: 'upsert', task };
-	if (meta && typeof meta.from === 'string' && typeof meta.to === 'string' && meta.from !== meta.to) {
-		event.from = meta.from;
-		event.to = meta.to;
-	}
-	await appendEvent(event);
-}
-
 /** 新建：取下一个空号再追加；撞号就重试。 */
 async function createNew(task) {
 	return withWrite(() => createNewInner(task));
@@ -1260,8 +928,8 @@ function summarize(task) {
 }
 
 function renderList(tasks) {
-	if (tasks.length === 0) return '任务库是空的（存储：' + STORE_FILE + '）';
-	const lines = [`共 ${tasks.length} 份计划（存储：${STORE_FILE}）`];
+	if (tasks.length === 0) return '任务库是空的（存储：' + storeFilePath() + '）';
+	const lines = [`共 ${tasks.length} 份计划（存储：${storeFilePath()}）`];
 	for (const task of tasks) lines.push(`- ${summarize(task)}`);
 	lines.push(
 		'',
@@ -1493,7 +1161,7 @@ function registerTools(ctx) {
 				return {
 					text:
 						`已提交 ${id}（状态=未指定，等用户采纳后变成「提交」才能领取）。\n` +
-						`存储：${STORE_FILE}`,
+						`存储：${storeFilePath()}`,
 				};
 			},
 		}),
@@ -2136,44 +1804,7 @@ async function setStateInner(id, next, agent, byUser, note) {
  * **只读**：不改文件、不补字段、不迁移。老事件没有 ts/actor/from/to 就显示为「—」。
  * 这是「append-only JSONL 本来就存了全部历史，只是没人读」的兑现。
  */
-async function readHistory(id, limit) {
-	const wanted = String(id ?? '').trim();
-	if (wanted === '') throw new Error('task_history: 需要一个计划 id，例如 MG-01');
-	let raw = '';
-	try {
-		raw = await readFile(STORE_FILE, 'utf8');
-	} catch (error) {
-		if (!error || error.code !== 'ENOENT') throw error;
-		raw = '';
-	}
-	const entries = [];
-	for (const line of raw.split(/\r?\n/u)) {
-		if (line.trim() === '') continue;
-		let event;
-		try {
-			event = JSON.parse(line);
-		} catch (failure) {
-			/* 坏行跳过：历史读不出来不该让整个调用失败。 */
-			continue;
-		}
-		if (!event || event.op !== 'upsert' || !event.task || String(event.task.id) !== wanted) continue;
-		entries.push({
-			ts: text(event.ts),
-			actor: text(event.actor),
-			from: text(event.from),
-			to: text(event.to),
-			status: text(event.task.status),
-			note: text(event.task.note),
-		});
-	}
-	if (entries.length === 0) {
-		const any = await readTask(wanted);
-		if (any === undefined) throw new Error(`没有这份计划：${wanted}`);
-		return [];
-	}
-	const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50;
-	return entries.slice(-cap);
-}
+
 
 function renderHistory(id, entries) {
 	if (entries.length === 0) return `${id} 没有可读的历史事件（可能是老数据，或还没被改过）。`;
@@ -2572,7 +2203,7 @@ function registerExtraCommands(ctx) {
 			return {
 				kind: 'success',
 				text: JSON.stringify({
-					store: STORE_FILE,
+					store: storeFilePath(),
 					templates: TEMPLATE_DIR,
 					home: resolveDshHome(),
 				}),
@@ -3450,6 +3081,16 @@ function planClaimsFor(ctx) {
  * 那是**可选**依赖，拿不到就只用内置的。
  */
 export function apply(ctx) {
+	/* 存储服务：持久化在独立包里，这里接上。 */
+	bindStore(ctx.taskboardStore);
+	/* 把业务知识交给存储层（编号归一化、kind 推断、当前写入者）。 */
+	if (typeof ctx.taskboardStore?.provideHooks === 'function') {
+		ctx.taskboardStore.provideHooks({
+			normalizeType,
+			kindOf,
+			currentActor: () => CURRENT_ACTOR.value,
+		});
+	}
 	/* 先把模板服务找出来（可能还没注册 —— 插件加载顺序不保证）。 */
 	bindTemplates(ctx);
 	registerTools(ctx);

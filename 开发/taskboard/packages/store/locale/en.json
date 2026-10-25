@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Taskboard Store",
+    "description": "Persistence provider: JSONL event sourcing, serialization, write queue."
+  }
+}

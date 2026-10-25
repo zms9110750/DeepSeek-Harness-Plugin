@@ -1,0 +1,15 @@
+{
+  "name": "@local/taskboard-store",
+  "version": "0.1.0-a.0",
+  "private": true,
+  "type": "module",
+  "description": "任务板持久化提供者：JSONL 事件溯源、序列化、写队列",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": ["index.js", "locale"],
+  "peerDependencies": { "@deepseek-ai/dsh-tools": "*" },
+  "peerDependenciesMeta": { "@deepseek-ai/dsh-tools": { "optional": true } }
+}

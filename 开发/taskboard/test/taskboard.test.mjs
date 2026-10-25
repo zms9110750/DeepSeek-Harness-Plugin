@@ -75,16 +75,18 @@ registerHooks({
 /* ── 2. 把存储与老格式迁移源都指到临时目录，再 import 插件 ──────────────── */
 
 /* 安全闸：两个环境变量必须还被 index.js 认，否则测试会写真实存储/真实任务目录。 */
-const pluginSource = readFileSync(INDEX, 'utf8');
+/* 持久化已拆到 store 包，安全闸要查那份源码。 */
+const STORE_INDEX = join(PLUGIN_DIR, 'packages', 'store', 'index.js');
+const pluginSource = readFileSync(STORE_INDEX, 'utf8');
 assert.match(
 	pluginSource,
 	/process\.env\.TASKBOARD_STORE/u,
-	'index.js 的存储路径必须可被 TASKBOARD_STORE 覆盖，测试不碰真实 plans.jsonl',
+	'store 的存储路径必须可被 TASKBOARD_STORE 覆盖，测试不碰真实 plans.jsonl',
 );
 assert.match(
 	pluginSource,
 	/process\.env\.TASKBOARD_ROOT/u,
-	'index.js 的迁移源必须可被 TASKBOARD_ROOT 覆盖，测试不碰真实 任务\\ 目录',
+	'store 的迁移源必须可被 TASKBOARD_ROOT 覆盖，测试不碰真实 任务\\ 目录',
 );
 
 /* 内置在 core 里的四个模板（packages/core/templates/）。 */
@@ -113,6 +115,8 @@ const REAL_STORE = join(homedir(), '.dsh', 'taskboard', 'plans.jsonl');
 const REAL_LEGACY = 'X:\\temp\\dsh\\任务';
 
 const plugin = await import(pathToFileURL(INDEX).href);
+/* 持久化已拆成独立包：core 通过 inject 拿 taskboardStore。 */
+const storePlugin = await import(pathToFileURL(join(PLUGIN_DIR, 'packages', 'store', 'index.js')).href);
 /* 权限与工作空间是独立包（用户要求拆成六个插件），测试里同样独立加载。 */
 const planPreset = await import(pathToFileURL(join(PLUGIN_DIR, 'packages', 'plan-preset', 'index.js')).href);
 const workspacePlugin = await import(pathToFileURL(join(PLUGIN_DIR, 'packages', 'workspace', 'index.js')).href);
@@ -183,6 +187,8 @@ function makeCtx() {
 	planPreset.provideTaskLoader(() => [] /* 测试里由各用例自己 refresh */);
 	/* 每次 makeCtx 都清模板元数据缓存：它是模块级的，
 	 * 不清的话前一个用例缓存的模板表会污染后一个。 */
+	/* 先装存储包，再把服务交给 core。 */
+	storePlugin.apply(ctx);
 	plugin.clearTemplateMetaCache();
 	plugin.apply(ctx);
 	planPreset.apply(ctx);
