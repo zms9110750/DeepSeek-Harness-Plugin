@@ -1,4 +1,4 @@
-name: JF · 复盘
+name: RF · 复盘
 default_kind: record
 behavior: write
 description: 一件事结束后的回顾：根因、教训、下次怎么避
@@ -50,3 +50,12 @@ body:
       description: |
         指到具体的东西：某个文件、某条规则、某个模板。
         指不出来的教训会立刻忘掉。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        多个根因并存时先修哪个，以及这条教训要不要升级成规则 / 模板改动。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

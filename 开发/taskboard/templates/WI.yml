@@ -1,4 +1,4 @@
-name: GD · 实现
+name: WI · 实现
 default_kind: work
 behavior: execute
 description: 真正改代码；做完给出改动清单
@@ -49,3 +49,12 @@ body:
       description: |
         可以推翻的实现细节：阈值、超时、缓存上限、命名。
         写出来，以后才知道这些不是深思熟虑的结果。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        和已有计划的顺序冲突，以及这次改动要不要同步改文档（WX 文档）。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

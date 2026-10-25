@@ -1,4 +1,4 @@
-name: JW · 汇报
+name: RR · 汇报
 default_kind: record
 behavior: write
 description: 只读的结论汇报；写完即完，不占位
@@ -34,3 +34,12 @@ body:
       description: |
         明确写出哪些是推测、哪些没验证。
         这一节写"无"通常代表谎报——除非真的全部验证过。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        汇报对象换了、需要保密的部分、以及要连带否定的其它计划。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

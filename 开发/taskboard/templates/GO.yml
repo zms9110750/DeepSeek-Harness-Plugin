@@ -1,4 +1,4 @@
-name: MO · 优化
+name: GO · 优化
 default_kind: goal
 behavior: answer
 domain: general
@@ -56,3 +56,12 @@ body:
       description: |
         通常第一步是**量**（派调研），不是改。
         量完才知道该改哪里，也才知道值不值得改。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        基准怎么取、什么算"变慢了"，以及**这个优化值不值得做**（值不值得是决策，不是本节能定的）。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

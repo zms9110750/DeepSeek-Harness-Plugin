@@ -3243,6 +3243,28 @@
         const match = /^domain:\s*(\w+)$/mu.exec(String(yaml || ""));
         return match ? match[1] : "general";
       }
+      function isFramed(yaml) {
+        const match = /^framed:\s*(\w+)$/mu.exec(String(yaml || ""));
+        if (match) return match[1] !== "false";
+        return true;
+      }
+      function skeletonOf(yaml) {
+        const parsed = parseTemplateYaml(String(yaml || ""));
+        if (!parsed || !Array.isArray(parsed.items)) return "";
+        const blocks = [];
+        parsed.items.forEach(function(item) {
+          if (item.type === "markdown") return;
+          const label = item.label || item.id || "";
+          if (label === "") return;
+          const hint = String(item.description || "").split(/\r?\n/u).map(function(line) {
+            return line.trim();
+          }).filter(function(line) {
+            return line !== "";
+          }).join("\n> ");
+          blocks.push("## " + label + (hint ? "\n\n> " + hint + "\n" : "\n"));
+        });
+        return blocks.join("\n");
+      }
       const DOMAIN_OPTIONS = [
         ["code", "\u4EE3\u7801"],
         ["art", "\u7ED8\u753B"],
@@ -3270,7 +3292,7 @@
         const init = props.initial || {};
         const templates = props.templates || {};
         const plans = props.plans || [];
-        const initialType = typeof init.type === "string" ? init.type : "C";
+        const initialType = typeof init.type === "string" && init.type !== "" ? init.type : "GU";
         const initialTemplate = initialType !== "" && templates[initialType] ? parseTemplateYaml(templates[initialType]) : null;
         const initialValues = {};
         if (init.body && initialTemplate) {
@@ -3334,9 +3356,7 @@
             return;
           }
           let text = "";
-          if (fallbackToPlainText) {
-            text = body;
-          } else if (type !== "") {
+          if (isFramed(templates[type]) && fields.length > 0) {
             const parts = [];
             let missing = "";
             fields.forEach(function(item) {
@@ -3352,16 +3372,7 @@
               setError(missing + " \u662F\u5FC5\u586B");
               return;
             }
-            if (parts.length === 0) {
-              if (init.body) {
-                text = init.body;
-              } else {
-                setError("\u6A21\u677F\u5B57\u6BB5\u81F3\u5C11\u586B\u4E00\u9879");
-                return;
-              }
-            } else {
-              text = parts.join("\n\n");
-            }
+            text = parts.length > 0 ? parts.join("\n\n") : body;
           } else {
             text = body;
           }
@@ -3472,7 +3483,7 @@
                       const next = event.target.value;
                       setKind(next);
                       if (type !== "" && next !== "") {
-                        const prefix = { goal: "M", design: "S", record: "J", work: "G" }[next];
+                        const prefix = { goal: "G", design: "D", record: "R", work: "W" }[next];
                         if (prefix && type.charAt(0) !== prefix) setType("");
                       }
                     },
@@ -3499,10 +3510,9 @@
                     onChange: function(event) {
                       const next = event.target.value;
                       setType(next);
-                      if (next !== "") {
-                        const declared = kindOfTemplate(templates[next]);
-                        if (declared !== "") setKind(declared);
-                      }
+                      if (next === "") return;
+                      const declared = kindOfTemplate(templates[next]);
+                      if (declared !== "") setKind(declared);
                     },
                     style: Object.assign({}, formInputStyle, { flex: 1, minWidth: 0 })
                   },
@@ -3642,64 +3652,65 @@
             h(
               "div",
               { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "auto", paddingRight: 6, borderLeft: "1px solid var(--dsw-alias-border-l1)", paddingLeft: 16 } },
+              /* 模板的一句话说明留在顶部：让人知道"这一类该写什么"，但不占输入框。 */
               template && type !== "" ? h("div", { style: lineStyle }, template.name + "\uFF1A" + template.description) : null,
-              fallbackToPlainText ? h(
+              /* **两种形态**（用户两次纠正后的最终口径）：
+               *
+               *   `framed: false`（MG 用户任务）→ 一个空白正文框。
+               *     用户想到什么写什么，加框架等于逼他先学我们的分类法。
+               *
+               *   `framed: true` → **每个槽位一个输入框**，写死的那种。
+               *     提示语放在**输入框的 placeholder**（没字时的灰字），
+               *     不是写进正文。正文只放用户自己打的字。
+               */
+              isFramed(templates[type]) && fields.length > 0 ? h(
                 "div",
-                {
-                  style: {
-                    fontSize: 11,
-                    lineHeight: 1.6,
-                    padding: "6px 8px",
-                    borderRadius: 8,
-                    border: "1px solid var(--dsw-alias-state-warn-primary)",
-                    color: "var(--dsw-alias-state-warn-primary)"
-                  }
-                },
-                "\u6A21\u677F " + type + " \u6CA1\u52A0\u8F7D\u51FA\u6765\uFF0C\u5DF2\u5207\u5230\u7EAF\u6587\u672C\u7F16\u8F91\uFF1A\u4E0B\u9762\u662F\u8BA1\u5212\u539F\u6587\uFF0C\u76F4\u63A5\u6539 Markdown \u5373\u53EF\u3002"
-              ) : null,
-              type !== "" ? h(
-                "div",
-                { style: { display: "flex", flexDirection: "column", gap: 10 } },
-                template ? template.items.map(function(item, index) {
-                  if (item.type === "markdown") {
-                    return h("div", { key: "md-" + index, style: { fontSize: 11, lineHeight: 1.6, color: "var(--dsw-alias-label-secondary)", whiteSpace: "pre-wrap" } }, item.value || "");
-                  }
+                { style: { display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0, overflow: "auto" } },
+                fields.map(function(item, index) {
                   const key = item.id || item.label || "field-" + index;
-                  const common = {
-                    value: values[key] || "",
-                    placeholder: item.placeholder || "",
-                    onChange: function(event) {
-                      const next = Object.assign({}, values);
-                      next[key] = event.target.value;
-                      setValues(next);
-                    }
-                  };
+                  const hint = String(item.description || "").split(/\r?\n/u).map(function(line) {
+                    return line.trim();
+                  }).filter(function(line) {
+                    return line !== "";
+                  }).join(" ");
                   return h(
                     "label",
                     { key: "f-" + key, style: { display: "flex", flexDirection: "column", gap: 3 } },
-                    h("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-primary)" } }, (item.label || item.id) + (item.required ? " *" : "")),
-                    item.description ? h("span", { style: lineStyle }, item.description) : null,
-                    item.type === "input" ? h("input", Object.assign({}, common, { style: formInputStyle })) : h("textarea", Object.assign({}, common, { rows: 3, style: Object.assign({}, formInputStyle, { resize: "vertical" }) }))
+                    h(
+                      "span",
+                      { style: { fontSize: 12, color: "var(--dsw-alias-label-primary)" } },
+                      (item.label || item.id) + (item.required ? " *" : "")
+                    ),
+                    item.type === "input" ? h("input", {
+                      value: values[key] || "",
+                      placeholder: hint,
+                      onChange: function(event) {
+                        const next = Object.assign({}, values);
+                        next[key] = event.target.value;
+                        setValues(next);
+                      },
+                      style: formInputStyle
+                    }) : h("textarea", {
+                      value: values[key] || "",
+                      placeholder: hint,
+                      rows: item.id === "other" ? 2 : 3,
+                      onChange: function(event) {
+                        const next = Object.assign({}, values);
+                        next[key] = event.target.value;
+                        setValues(next);
+                      },
+                      style: Object.assign({}, formInputStyle, { resize: "vertical" })
+                    })
                   );
-                }) : h("div", { style: lineStyle }, "\u6A21\u677F\u8FD8\u6CA1\u52A0\u8F7D\u51FA\u6765\uFF08\u68C0\u67E5\u5BBF\u4E3B\u63D2\u4EF6\u662F\u5426\u5728\u8DD1\uFF09")
-              ) : null,
-              /* 模板缺失且有原文 → 纯文本兜底，保证内容不丢。 */
-              fallbackToPlainText ? h("textarea", {
+                })
+              ) : h("textarea", {
                 value: body,
-                placeholder: "\u6B63\u6587\uFF08Markdown\uFF09",
+                placeholder: type === "" ? "\u6B63\u6587\uFF08Markdown\uFF09\u2014\u2014\u7A7A\u6A21\u677F\uFF0C\u4ECE\u96F6\u5199" : "\u6B63\u6587\uFF08Markdown\uFF09\u2014\u2014\u60F3\u5230\u4EC0\u4E48\u5199\u4EC0\u4E48",
                 onChange: function(event) {
                   setBody(event.target.value);
                 },
                 style: Object.assign({}, formInputStyle, { flex: 1, minHeight: 200, resize: "vertical" })
-              }) : null,
-              type === "" ? h("textarea", {
-                value: body,
-                placeholder: "\u6B63\u6587\uFF08Markdown\uFF09\u2014\u2014\u7A7A\u6A21\u677F\uFF0C\u4ECE\u96F6\u5199",
-                onChange: function(event) {
-                  setBody(event.target.value);
-                },
-                style: Object.assign({}, formInputStyle, { flex: 1, minHeight: 160, resize: "vertical" })
-              }) : null
+              })
             )
           ),
           h(

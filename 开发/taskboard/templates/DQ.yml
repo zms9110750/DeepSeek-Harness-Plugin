@@ -1,4 +1,4 @@
-name: SK · 提问
+name: DQ · 提问
 default_kind: design
 behavior: answer
 description: 一句话问用户；得到答复就完成
@@ -37,3 +37,12 @@ body:
       description: |
         给出一个假设答案。用户只要说"对/不对"就省事了。
         这是提问最省力的形式。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        可能问错人了、或者这个问题本来就有多个答案 —— 那它就不是提问，是决策。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

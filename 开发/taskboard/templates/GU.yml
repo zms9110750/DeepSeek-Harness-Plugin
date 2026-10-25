@@ -1,4 +1,4 @@
-name: MG · 用户提出
+name: GU · 用户任务
 default_kind: goal
 behavior: answer
 description: 用户甩过来的一堆要求或问题；AI 拆成下面的事项去做
@@ -49,3 +49,12 @@ body:
       description: |
         拆成哪些设计 / 工作。拆完就派出去，别在这一条里写方案。
         如果判断不出怎么拆，先派一个"设计：方案"。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        用户的要求里可能还含着没拆开的两件事、只有他知道的前提，或者"这条到底算不算要求"。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

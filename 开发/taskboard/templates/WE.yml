@@ -1,4 +1,4 @@
-name: GY · 修改
+name: WE · 修改
 default_kind: work
 behavior: execute
 domain: writing
@@ -97,3 +97,12 @@ body:
       description: |
         写清：这一轮解决了哪一类问题，下一轮该处理哪一类。
         如果还剩"结构问题"没动，就说明还不能交——结构没定，句子改了也白改。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        作者本人不接受的改法（文风）、编辑的硬性要求，以及这一轮改了会影响哪几章。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

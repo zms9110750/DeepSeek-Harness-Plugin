@@ -214,7 +214,7 @@ async function submit(overrides = {}) {
 		title: '测试计划',
 		/* 默认用 D（实现）→ kind=work，因为只有工作能被领取。
 		   以前默认 A/C，它们现在属于「设计」，不再参与领取。 */
-		type: 'GD',
+		type: 'WI',
 		body: '## 正文\n一句话正文。',
 		...overrides,
 	});
@@ -437,7 +437,7 @@ test('task_submit 落「未指定」：JSONL 一行 upsert，正文/关联/附�
 	assert.equal(event.task.id, id);
 	assert.equal(event.task.status, '未指定');
 	assert.equal(event.task.title, '面板里放任务卡');
-	assert.equal(event.task.type, 'GR');
+	assert.equal(event.task.type, 'WR');
 	assert.equal(event.task.body, '## 问题\n痛点在这里。');
 	assert.equal(event.task.links, '依赖:T-999, 派生:T-004', 'links 应去重（大小写不敏感）');
 	assert.equal(event.task.workspace, workspace);
@@ -456,10 +456,10 @@ test('task_submit 落「未指定」：JSONL 一行 upsert，正文/关联/附�
 test('task_submit 校验类型与标题，失败不落事件；type 留空 = 空模板', async () => {
 	await assert.rejects(
 		() => tool('task_submit').execute({ title: 'x', type: 'Z', body: '' }),
-		/type 必须留空或取 MG\/MO\/ML\/MT\/SQ\/SP\/SK\/SC\/SA\/SV\/JB\/JW\/JF\/JT\/GR\/GD\/GI\/GX\/GN\/GJ\/GZ\/GE\/GY/u,
+		/type 必须留空或取 GU\/GO\/GA\/GV\/DC\/DP\/DQ\/DI\/DB\/DT\/RB\/RR\/RF\/RS\/RD\/RE\/WX\/WR\/WI\/WT\/WF\/WV\/WL\/WC\/WD\/WE/u,
 	);
 	await assert.rejects(
-		() => tool('task_submit').execute({ title: '  ', type: 'SA', body: '' }),
+		() => tool('task_submit').execute({ title: '  ', type: 'DB', body: '' }),
 		/标题不能为空/u,
 	);
 	assert.deepEqual(events(), []);
@@ -692,7 +692,7 @@ test('采纳「取代」：旧计划转拒绝、依赖转移到新计划、派�
 test('task_update 只允许「未指定」的计划改内容，且不改状态', async () => {
 	const id = await submit({
 		title: '原始标题',
-		type: 'SA',
+		type: 'DB',
 		body: '旧正文',
 		links: '依赖:T-003, 依赖:t-003',
 	});
@@ -710,7 +710,7 @@ test('task_update 只允许「未指定」的计划改内容，且不改状态',
 	assert.equal(stored.body, '新正文');
 	assert.equal(stored.links, '依赖:T-003, 派生:T-004', 'links 应去重');
 	assert.equal(stored.workspace, 'X:\\temp\\dsh\\探针\\upd');
-	assert.equal(stored.type, 'SA', '未提供的字段保持原值');
+	assert.equal(stored.type, 'DB', '未提供的字段保持原值');
 	assert.equal(stored.status, '未指定');
 	assert.equal(stored.claimed_by, '');
 
@@ -761,14 +761,14 @@ test('/task-create 默认「未指定」，参数校验失败不落事件', asyn
 	const stored = taskOf(id);
 	assert.equal(stored.status, '未指定');
 	assert.equal(stored.title, '面板新建的计划');
-	assert.equal(stored.type, 'SC');
+	assert.equal(stored.type, 'DI');
 	assert.equal(stored.workspace, workspace);
 	assert.equal(stored.permission, '仅可查看');
 	assert.equal(stored.body, '## 接口\n新增一个命令。');
 
 	/* 显式 status=提交 才直接采纳 */
 	const direct = await command('task-create').handler({
-		rawInput: JSON.stringify({ title: '直接提交的计划', type: 'GD', status: '提交' }),
+		rawInput: JSON.stringify({ title: '直接提交的计划', type: 'WI', status: '提交' }),
 	});
 	assert.equal(direct.kind, 'success');
 	assert.equal(JSON.parse(direct.text).status, '提交');
@@ -792,8 +792,8 @@ test('/task-create 默认「未指定」，参数校验失败不落事件', asyn
 	assert.equal(events().length, before, '校验失败不应追加事件');
 });
 
-test('23 个模板都能读，且每个都声明了 kind 与 behavior', async () => {
-	const all = ['MG','MO','ML','MT','SQ','SP','SK','SC','SA','SV','JB','JW','JF','JT','GR','GD','GI','GX','GN','GJ','GZ','GE','GY'];
+test('26 个模板都能读，且每个都声明了 kind 与 behavior', async () => {
+	const all = ['GU','GO','GA','GV','DC','DP','DQ','DI','DB','DT','RB','RR','RF','RS','RD','RE','WX','WR','WI','WT','WF','WV','WL','WC','WD','WE'];
 	for (const type of all) {
 		const result = await tool('task_template').execute({ type });
 		assert.match(result.text, /^name: /mu, `${type}.yml 缺 name`);
@@ -816,21 +816,36 @@ test('模板的 kind 与大类表一致：G 是目标、B/W/F 是记录、R/D/I 
 	/* 模板自己声明的 kind 必须和 TYPE_TO_KIND 的推断一致，否则会出现
 	   "看起来是记录、实际按工作占位"这种撕裂。 */
 	const expected = {
-		MG: 'goal',
-		MO: 'goal',
-		SQ: 'design',
-		SP: 'design',
-		SK: 'design',
-		SC: 'design',
-		SA: 'design',
-		JB: 'record',
-		JW: 'record',
-		JF: 'record',
-		GR: 'work',
-		GD: 'work',
-		GI: 'work',
-		GX: 'work',
-		GN: 'work',
+		/* 目标 Goal */
+		GU: 'goal',
+		GO: 'goal',
+		GA: 'goal',
+		GV: 'goal',
+		/* 设计 Design */
+		DC: 'design',
+		DP: 'design',
+		DQ: 'design',
+		DI: 'design',
+		DB: 'design',
+		DT: 'design',
+		/* 记录 Record */
+		RB: 'record',
+		RR: 'record',
+		RF: 'record',
+		RS: 'record',
+		RD: 'record',
+		RE: 'record',
+		WX: 'record',
+		/* 工作 Work */
+		WR: 'work',
+		WI: 'work',
+		WT: 'work',
+		WF: 'work',
+		WV: 'work',
+		WL: 'work',
+		WC: 'work',
+		WD: 'work',
+		WE: 'work',
 	};
 	for (const [type, kind] of Object.entries(expected)) {
 		const yaml = (await tool('task_template').execute({ type })).text;
@@ -840,7 +855,7 @@ test('模板的 kind 与大类表一致：G 是目标、B/W/F 是记录、R/D/I 
 
 test('每个模板都至少有一个必填小节，且 hints 存在', async () => {
 	/* 没有必填小节的模板等于没问东西；没有 hints 的模板等于没给 AI 指引。 */
-	for (const type of ['MG','MO','ML','MT','SQ','SP','SK','SC','SA','SV','JB','JW','JF','JT','GR','GD','GI','GX','GN','GJ','GZ','GE','GY']) {
+	for (const type of ['GU','GO','GA','GV','DC','DP','DQ','DI','DB','DT','RB','RR','RF','RS','RD','RE','WX','WR','WI','WT','WF','WV','WL','WC','WD','WE']) {
 		const yaml = (await tool('task_template').execute({ type })).text;
 		assert.match(yaml, /required: true/u, `${type}.yml 至少要有一个必填小节`);
 		assert.match(yaml, /^hints:/mu, `${type}.yml 缺 hints`);
@@ -850,7 +865,7 @@ test('每个模板都至少有一个必填小节，且 hints 存在', async () =
 test('阻碍模板（B）在「失败」提示里禁止穷举', async () => {
 	/* 用户明确要求：失败/信息不足的提示语里必须防止穷举。
 	   这是"列清单"式偷懒的防线，要钉死在测试里。 */
-	const yaml = (await tool('task_template').execute({ type: 'JB' })).text;
+	const yaml = (await tool('task_template').execute({ type: 'RB' })).text;
 	assert.match(yaml, /不要穷举/u, 'B.yml 的 hints 必须写明不要穷举');
 	assert.match(yaml, /一个原因|只写一个/u, 'B.yml 必须要求只写一个原因');
 });
@@ -865,14 +880,14 @@ test('旧模板 H1..H8 已降级为停止原因，可读但不在一等模板列
 		'模板列表里不该再有 H1..H8',
 	);
 	/* 停止原因词表文件存在 */
-	const reasons = await tool('task_template').execute({ type: 'JB' });
+	const reasons = await tool('task_template').execute({ type: 'RB' });
 	assert.match(reasons.text, /停下来的原因/u, '阻碍模板应包含停止原因小节');
 });
 
 test('老数据里的 H1..H8 仍能读（type 原样保留，kind 推成 record）', async () => {
 	/* H* 已不是一等模板，但老记录里的 type 不能被破坏。
 	   直接追加一条老格式事件，读出来应该正常。 */
-	const id = await submit({ title: '兼容测试', type: 'SA' });
+	const id = await submit({ title: '兼容测试', type: 'DB' });
 	const raw = readFileSync(STORE_PATH, 'utf8');
 	/* 老数据没有 kind 字段——这正是要测的：靠 type 推。 */
 	const seed = Object.assign({}, taskOf(id));
@@ -892,7 +907,7 @@ test('老数据里的 H1..H8 仍能读（type 原样保留，kind 推成 record�
 });
 
 test('停止原因词表：阻碍模板带 reason 小节，且词表文档存在', async () => {
-	const yaml = (await tool('task_template').execute({ type: 'JB' })).text;
+	const yaml = (await tool('task_template').execute({ type: 'RB' })).text;
 	assert.match(yaml, /reason/u, 'B.yml 应有 reason 小节');
 	assert.match(yaml, /需要授权/u, 'reason 提示里应列出需要授权类');
 	assert.match(yaml, /需要补充/u, 'reason 提示里应列出需要补充类');
@@ -900,7 +915,7 @@ test('停止原因词表：阻碍模板带 reason 小节，且词表文档存在
 
 test('/tasks 只给计划头、/task-get 给全文、/task-state 命令路径改状态并记 claim', async () => {
 	/* kind=work：只有工作能领取；type=F 会推成 record，领不了。 */
-	const id = await submit({ title: '命令读写的计划', type: 'JF', kind: 'work', body: '## 复盘\n一条。' });
+	const id = await submit({ title: '命令读写的计划', type: 'RF', kind: 'work', body: '## 复盘\n一条。' });
 	const mine = newSession();
 
 	/* 命令路径采纳 + 领取（byUser=true），领取后 claimed_by 记到会话 */
@@ -954,7 +969,7 @@ test('/tasks 只给计划头、/task-get 给全文、/task-state 命令路径改
 });
 
 test('上行：子计划还有进行态时不许完成父计划；草稿与完成态不阻挡', async () => {
-	const parent = await submit({ title: '父计划', type: 'JB', body: '父正文' });
+	const parent = await submit({ title: '父计划', type: 'RB', body: '父正文' });
 	const pending = await submit({ title: '缺信息的子计划', type: 'C', parent });
 	await changeState(pending, '需要补充');
 
@@ -981,12 +996,12 @@ test('上行：子计划还有进行态时不许完成父计划；草稿与完�
 
 test('下行：父计划终止（完成/失败/取消/拒绝）时，进行态的子计划全部取消（递归），草稿与完成态不动', async () => {
 	/* 失败这条最典型：父计划走不下去，还活着的派生任务不该继续挂着 */
-	const parent = await submit({ title: '父计划', type: 'JB', body: '父正文' });
+	const parent = await submit({ title: '父计划', type: 'RB', body: '父正文' });
 	const active = await submit({ title: '待领取的子计划', type: 'C', parent });
 	await approve(active);
 	const shelved = await submit({ title: '搁置的子计划', type: 'C', parent });
 	await changeState(shelved, '需要授权');
-	const grandchild = await submit({ title: '孙计划', type: 'GD', parent: active });
+	const grandchild = await submit({ title: '孙计划', type: 'WI', parent: active });
 	await approve(grandchild);
 	const draft = await submit({ title: '草稿子计划', type: 'C', parent });
 	const delivered = await submit({ title: '已交付的子计划', type: 'C', parent });
@@ -1004,7 +1019,7 @@ test('下行：父计划终止（完成/失败/取消/拒绝）时，进行态�
 });
 
 test('下行：父计划「完成」时派生下游同样是空操作（子计划本来就都终结了）', async () => {
-	const parent = await submit({ title: '父计划', type: 'JB' });
+	const parent = await submit({ title: '父计划', type: 'RB' });
 	const done = await submit({ title: '做完的子计划', type: 'C', parent });
 	await changeState(done, '完成');
 	await changeState(parent, '完成');
@@ -1093,14 +1108,14 @@ test('老格式一次性迁移：`任务\\*.md` 导入 JSONL 后写 .migrated �
 test('级联穿过整片下游：父计划失败后，子计划既取消也带走它自己的依赖方', async () => {
 	/* 结构：parent(失败) → child(进行态) ← dependent(依赖 child)
 	   以及 parent → child2 → grandchild，验证派生链递归 */
-	const parent = await submit({ title: '父计划', type: 'JB' });
+	const parent = await submit({ title: '父计划', type: 'RB' });
 	const child = await submit({ title: '子计划', type: 'C', parent });
 	await approve(child);
 	const dependent = await submit({ title: '依赖子计划的人', links: `依赖:${child}` });
 	await approve(dependent);
 	const child2 = await submit({ title: '另一个子计划', type: 'C', parent });
 	await approve(child2);
-	const grandchild = await submit({ title: '孙计划', type: 'GD', parent: child2 });
+	const grandchild = await submit({ title: '孙计划', type: 'WI', parent: child2 });
 	await approve(grandchild);
 
 	await changeState(parent, '失败');
@@ -1310,7 +1325,7 @@ test('额外工作区 workspaces：可多个、校验绝对路径、并入「工
 	await assert.rejects(
 		() => tool('task_submit').execute({
 			title: '相对路径',
-			type: 'SA',
+			type: 'DB',
 			body: 'x',
 			workspaces: 'some/rel/path',
 		}),
@@ -1669,8 +1684,8 @@ test('事件溯源（T-019）：新事件带 ts/actor/from→to，老事件仍�
 test('事件溯源：老事件（没有 ts/actor/from-to）照样能读，不会被补写或迁移', async () => {
 	/* 造一份「老格式」存储：只有 op/task，没有任何新字段 */
 	const legacy = [
-		{ op: 'upsert', task: { id: 'T-001', title: '老计划', type: 'SA', status: '提交', claimed_by: '', body: 'x' } },
-		{ op: 'upsert', task: { id: 'T-001', title: '老计划', type: 'SA', status: '完成', claimed_by: '', body: 'x' } },
+		{ op: 'upsert', task: { id: 'T-001', title: '老计划', type: 'DB', status: '提交', claimed_by: '', body: 'x' } },
+		{ op: 'upsert', task: { id: 'T-001', title: '老计划', type: 'DB', status: '完成', claimed_by: '', body: 'x' } },
 	];
 	writeFileSync(STORE_PATH, legacy.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8');
 	const before = readFileSync(STORE_PATH, 'utf8');
@@ -1782,7 +1797,7 @@ test('kind 推断：老 type 映射到新 kind，零行为变更', async () => {
 	   task_get 头部是 `[种类/type 模板名]`，推断结果就在那里。 */
 	const KIND_NAME = { goal: '目标', design: '设计', record: '记录', work: '工作' };
 	const cases = [
-		['SA', 'design'],
+		['DB', 'design'],
 		['B', 'record'],
 		['C', 'design'],
 		['D', 'work'],
@@ -1801,7 +1816,7 @@ test('kind 推断：老 type 映射到新 kind，零行为变更', async () => {
 		);
 	}
 	/* 显式写了 kind 就原样保留，不被 type 覆盖 */
-	const explicit = await submit({ title: '显式 kind', type: 'GD', kind: 'design' });
+	const explicit = await submit({ title: '显式 kind', type: 'WI', kind: 'design' });
 	const got = await tool('task_get').execute({ id: explicit });
 	assert.match(got.text, /\[设计\//u, '显式 kind=design 应保留，不被 type=D 覆盖');
 });
@@ -1826,11 +1841,11 @@ test('工作不能派「另一件要做的事」，但可以派调研/记录/设
 
 	/* 派另一件要做的事：拒 */
 	await assert.rejects(
-		() => submit({ title: '子实现项', type: 'GI', parent: work }),
+		() => submit({ title: '子实现项', type: 'WT', parent: work }),
 		/不能再派另一件要做的事/u,
 	);
 	await assert.rejects(
-		() => submit({ title: '子缺陷', type: 'GX', parent: work }),
+		() => submit({ title: '子缺陷', type: 'WF', parent: work }),
 		/不能再派另一件要做的事/u,
 	);
 	/* kind=work 但不写 type（空模板）也算"要做的事"：拒 */
@@ -1840,13 +1855,13 @@ test('工作不能派「另一件要做的事」，但可以派调研/记录/设
 	);
 
 	/* 派调研：允许（这是核心修正） */
-	const research = await submit({ title: '查一下参考', type: 'GR', parent: work });
+	const research = await submit({ title: '查一下参考', type: 'WR', parent: work });
 	assert.ok(research, '工作应能派调研');
 
 	/* 派设计 / 记录：允许 */
-	const design = await submit({ title: '子设计', type: 'SQ', parent: work });
+	const design = await submit({ title: '子设计', type: 'DC', parent: work });
 	assert.ok(design);
-	const record = await submit({ title: '子记录', type: 'JB', parent: work });
+	const record = await submit({ title: '子记录', type: 'RB', parent: work });
 	assert.ok(record);
 });
 

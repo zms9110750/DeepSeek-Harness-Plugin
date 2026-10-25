@@ -47,51 +47,82 @@ const HEAD_FIELDS = [
  * 模板本身只是正文骨架，用来把搁置理由写具体。
  */
 /**
- * 模板编号（双字母）：**大类首字母 + 模板字母**。
+ * 模板编号（双字母）：**大类英文首字母 + 模板英文首字母**。
  *
- *   M = 目标（mubiao）  S = 设计（sheji）  J = 记录（jilu）  G = 工作（gongzuo）
+ *   目标 Goal   → G      设计 Design → D
+ *   记录 Record → R      工作 Work   → W
  *
- * 例：`SQ` = 设计+Q（决策）；`GD` = 工作+D（实现）。
+ * 冲突时退到**第二个单词的首字母**。例：记录类的「汇报」Report 首字母是 R，
+ * 与大类前缀撞了，取第二字母 → `RR`。
  *
- * 为什么双字母：单字母从文件名看不出属于哪个大类，而大类决定"能不能领取"这种
- * 根本行为。双字母让文件名自带语义，也不用记对照表。
- *
- * H1–H8 不再是模板：它们是"为什么停"，已降级为阻碍模板（JB）里的理由词表。
+ * 为什么改用英文：模板字母本来就是英文缩写（Decision / Proposal / Fix…），
+ * 旧方案混用拼音（M/S/J/G）和英文，`GD` 这种编号说不清是"工作+实现"还是别的。
  */
 const TYPES = [
-	// 目标
-	'MG', 'MO', 'ML', 'MT',
-	// 设计
-	'SQ', 'SP', 'SK', 'SC', 'SA', 'SV',
-	// 记录
-	'JB', 'JW', 'JF', 'JT',
-	// 工作
-	'GR', 'GD', 'GI', 'GX', 'GN', 'GJ', 'GZ', 'GE', 'GY',
+	// 目标 Goal
+	'GU', 'GO', 'GA', 'GV',
+	// 设计 Design
+	'DC', 'DP', 'DQ', 'DI', 'DB', 'DT',
+	// 记录 Record
+	'RB', 'RR', 'RF', 'RS', 'RD', 'RE', 'WX',
+	// 工作 Work
+	'WR', 'WI', 'WT', 'WF', 'WV', 'WL', 'WC', 'WD', 'WE',
 ];
-/** 旧类型：只用于读老数据，新建不再接受（但会按 RENAME 自动升级）。 */
+/** 旧类型：只用于读老数据（第一代单字母 + 第二代拼音前缀）。 */
 const LEGACY_TYPES = [
 	'A', 'B', 'C', 'D', 'F', 'G', 'I', 'K', 'N', 'O', 'P', 'Q', 'R', 'W', 'X',
 	'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8',
+	/* 第二代（拼音前缀），已废，只读 */
+	'MG', 'MO', 'ML', 'MT',
+	'SQ', 'SP', 'SK', 'SC', 'SA', 'SV',
+	'JB', 'JW', 'JF', 'JT',
+	'GR', 'GD', 'GI', 'GX', 'GN', 'GJ', 'GZ', 'GE', 'GY',
 ];
 const ALL_TYPES = TYPES.concat(LEGACY_TYPES);
 
-/** 旧单字母 → 新双字母。读老数据时用，保证 type 字段能升级。 */
+/** 旧编号 → 新编号。读老数据时自动升级。 */
 const RENAME = {
-	G: 'MG',
-	O: 'MO',
-	Q: 'SQ',
-	P: 'SP',
-	K: 'SK',
-	C: 'SC',
-	A: 'SA',
-	B: 'JB',
-	W: 'JW',
-	F: 'JF',
-	R: 'GR',
-	D: 'GD',
-	I: 'GI',
-	X: 'GX',
-	N: 'GN',
+	/* 第一代单字母 */
+	A: 'DB',
+	B: 'RB',
+	C: 'DI',
+	D: 'WI',
+	F: 'RF',
+	G: 'GU',
+	I: 'WT',
+	K: 'DQ',
+	N: 'WV',
+	O: 'GO',
+	P: 'DP',
+	Q: 'DC',
+	R: 'WR',
+	W: 'RR',
+	X: 'WF',
+	/* 第二代拼音前缀 */
+	MG: 'GU',
+	MO: 'GO',
+	ML: 'GA',
+	MT: 'GV',
+	SQ: 'DC',
+	SP: 'DP',
+	SK: 'DQ',
+	SC: 'DI',
+	SA: 'DB',
+	SV: 'DT',
+	JB: 'RB',
+	JW: 'RR',
+	JF: 'RF',
+	JT: 'RS',
+	GR: 'WR',
+	GD: 'WI',
+	GI: 'WT',
+	GX: 'WF',
+	GN: 'WV',
+	GJ: 'WL',
+	GZ: 'WC',
+	GE: 'WD',
+	GY: 'WE',
+	/* H1–H8 无对应模板：已降级为阻碍模板里的理由词表 */
 };
 
 /** 把任意写法的 type 归一成当前的编号（旧单字母自动升级）。 */
@@ -104,29 +135,36 @@ function normalizeType(raw) {
 }
 
 const TYPE_NAMES = {
-	MG: '用户提出',
-	MO: '优化',
-	ML: '画作',
-	MT: '小说',
-	SQ: '决策',
-	SP: '方案',
-	SK: '提问',
-	SC: '接口',
-	SA: '问题',
-	SV: '定调',
-	JB: '阻碍',
-	JW: '汇报',
-	JF: '复盘',
-	JT: '设定集',
-	GR: '调研',
-	GD: '实现',
-	GI: '实现项',
-	GX: '缺陷',
-	GN: '校验',
-	GJ: '线稿',
-	GZ: '上色',
-	GE: '起草',
-	GY: '修改',
+	/* 目标 Goal */
+	GU: '用户任务',
+	GO: '优化',
+	GA: '画作',
+	GV: '小说',
+	/* 设计 Design */
+	DC: '决策',
+	DP: '方案',
+	DQ: '提问',
+	DI: '接口',
+	DB: '问题',
+	DT: '定调',
+	/* 记录 Record */
+	RB: '阻碍',
+	RR: '汇报',
+	RF: '复盘',
+	RS: '设定集',
+	RD: '缺陷报告',
+	RE: '功能请求',
+	WX: '文档',
+	/* 工作 Work */
+	WR: '调研',
+	WI: '实现',
+	WT: '实现项',
+	WF: '缺陷',
+	WV: '校验',
+	WL: '线稿',
+	WC: '上色',
+	WD: '起草',
+	WE: '修改',
 	/* 老数据里的 H* 只用于显示 */
 	H1: '需要授权 · 代价过大',
 	H2: '需要授权 · 用户转移话题',
@@ -190,6 +228,37 @@ const KIND_ORDER = ['goal', 'design', 'record', 'work'];
  * 兼容靠 kind 字段：老数据没存 kind 才按 type 推，且老数据不会有新 B。
  */
 const TYPE_TO_KIND = {
+	/* 目标 Goal */
+	GU: 'goal',
+	GO: 'goal',
+	GA: 'goal',
+	GV: 'goal',
+	/* 设计 Design */
+	DC: 'design',
+	DP: 'design',
+	DQ: 'design',
+	DI: 'design',
+	DB: 'design',
+	DT: 'design',
+	/* 记录 Record */
+	RB: 'record',
+	RR: 'record',
+	RF: 'record',
+	RS: 'record',
+	RD: 'record',
+	RE: 'record',
+	WX: 'record',
+	/* 工作 Work */
+	WR: 'work',
+	WI: 'work',
+	WT: 'work',
+	WF: 'work',
+	WV: 'work',
+	WL: 'work',
+	WC: 'work',
+	WD: 'work',
+	WE: 'work',
+	/* 第二代拼音前缀（老数据） */
 	MG: 'goal',
 	MO: 'goal',
 	ML: 'goal',
@@ -1131,7 +1200,7 @@ async function createNewInner(task) {
 	/* 前缀：有模板就用模板编号（MG / SQ / GR…）；
 	   空模板（没选 type）用**大类首字母**：goal→M、design→S、record→J、work→G。
 	   这样空模板也有可读编号，不会冒出一个 ITEM-01 这种怪东西。 */
-	const KIND_PREFIX = { goal: 'M', design: 'S', record: 'J', work: 'G' };
+	const KIND_PREFIX = { goal: 'G', design: 'D', record: 'R', work: 'W' };
 	/* 旧类型（单字母 / H1–H8）不再产生新编号：它们已被 TYPES 淘汰，
 	   如果还照着旧 type 编出 "H1-01" 这种，正则和面板都会含糊。
 	   统一回落到大类首字母。 */
@@ -2096,19 +2165,19 @@ async function activeClaimOf(agent) {
  * 关于第 3 条的口径（用户明确纠正过一次）：
  *
  *   工作**可以**派任何"项目"——调研、记录、复盘、设计，都行。
- *   比如线稿画到一半查参考（派 GR 调研），这是创作里最高频的动作。
+ *   比如线稿画到一半查参考（派 WR 调研），这是创作里最高频的动作。
  *
- *   工作**不能**派"另一件要做的事"（派 GI 实现项 / GX 缺陷 这类）。
+ *   工作**不能**派"另一件要做的事"（派 WT 实现项 / WF 缺陷 这类）。
  *   因为那说明它本来就不是原子任务——它是容器，该升级为目标。
  *
  * 所以判定不能只看 kind，要看**具体模板**：
  *   · ENTITY_TYPES（实现类模板）才是"要动手做的东西"
- *   · GR 调研 / GN 校验 / GJ 线稿 这些是"项目"，工作可以派
+ *   · WR 调研 / WV 校验 / WL 线稿 这些是"项目"，工作可以派
  *
  * 为什么"派另一件工作"必须禁止：两个都要占会话位，必然互相抢。
  * 而调研/记录不占位（或只在被领取时短暂占位），不会与父工作争。
  */
-const ENTITY_TYPES = new Set(['GI', 'GX', 'GD', 'GE', 'GY', 'GZ']);
+const ENTITY_TYPES = new Set(['WT', 'WF', 'WI', 'WD', 'WE', 'WC']);
 
 async function assertParent(parentId, childKind, childType) {
 	const id = String(parentId ?? '').trim();
@@ -2125,7 +2194,7 @@ async function assertParent(parentId, childKind, childType) {
 			throw new Error(
 				`${id} 是「工作」，不能再派另一件要做的事。\n` +
 					'理由：「能一次做完」和「能再拆」互斥 —— 还要拆的东西本身是容器，那是「目标」。\n' +
-					`要么把 ${id} 升级为目标，要么派调研（GR）/ 记录（JB、JW、JF）/ 设计（SQ、SP）。`,
+					`要么把 ${id} 升级为目标，要么派调研（WR）/ 记录（RB、RR、RF）/ 设计（DC、DP）。`,
 			);
 		}
 	}

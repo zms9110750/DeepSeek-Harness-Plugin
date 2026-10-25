@@ -1,4 +1,4 @@
-name: SC · 接口
+name: DI · 接口
 default_kind: design
 behavior: propose
 description: 对外长什么样：契约、边界、错误行为
@@ -46,3 +46,12 @@ body:
       description: |
         写清兼容性边界：哪些改动是破坏性的、需要谁同步。
         这一段是接口类存在的理由。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        版本策略、废弃计划、和外部系统的对接约定（谁先改、怎么灰度）。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

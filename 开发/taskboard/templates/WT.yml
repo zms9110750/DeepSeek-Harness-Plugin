@@ -1,4 +1,4 @@
-name: GI · 实现项
+name: WT · 实现项
 default_kind: work
 behavior: execute
 description: 实现里的一个独立可交付项；小到能一次做完
@@ -38,3 +38,12 @@ body:
         "应该没问题"不算。
     validations:
       required: true
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        这个"项"其实是独立目标（那要升级），以及它得等别的项才能验。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

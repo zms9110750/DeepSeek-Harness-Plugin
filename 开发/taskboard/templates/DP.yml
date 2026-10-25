@@ -1,4 +1,4 @@
-name: SP · 方案
+name: DP · 方案
 default_kind: design
 behavior: propose
 description: 开放问题上的方案；给出做法、代价、替代方案，等用户采纳
@@ -28,6 +28,12 @@ body:
     id: plan
     attributes:
       label: 打算怎么做
+      description: |
+        写到"另一个人照着能动手"的粒度：动哪个文件、加什么、按什么顺序。
+        写不出顺序，说明方案还停在方向层 —— 那就先别写这一节，回去把问题复述清楚。
+
+        不要写"重构一下""优化性能"这种动作名。动作名不是方案：
+        它没说改哪里、改成什么样、怎么知道改对了。
     validations:
       required: true
   - type: textarea
@@ -53,3 +59,12 @@ body:
       description: |
         写出该放弃这个方案的条件。
         日后这个字段就是"什么时候该回头"的判据。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        迁移与回滚、要不要分几步上线、要不要先做一个小实验再全量。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

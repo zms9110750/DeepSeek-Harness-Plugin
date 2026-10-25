@@ -230,7 +230,7 @@ bug 也是后来才发现的，一刀切锁死会让这类计划只能 fork 出�
 | `/task-create <json>` | 新建计划；入参 `{title,type,body,parent,links,workspace,permission,status}`，返回 `{id,status}`。状态默认 `未指定`，只允许 `未指定` 或 `提交`（其它状态走 `/task-state`）；`type` 可留空 = 空模板 |
 | `/task-update <json>` | 改已有计划的**内容**；入参 `{id,title?,type?,body?,parent?,links?,workspace?,permission?}`；只有「未指定」的计划可改 |
 | `/task-state <id> <状态> [备注]` | 用户改状态（byUser=true）：能采纳成「提交」、能在面板「领取」；第三个参数起是备注（含空格）；与 `task_claim` 共享「一次一个」+ 依赖/派生规则 |
-| `/task-templates` | 输出全部计划模板的 JSON：`[{type,yaml}]`（A–F 六份 + H1–H8 八份搁置模板） |
+| `/task-templates` | 输出全部模板的 JSON：`[{type,yaml}]`（26 份，见「模板」一节） |
 | /task-paths | 输出计划库与模板的绝对路径（面板读取，避免硬编码用户目录） |
 | /task-history <id> [limit] | 输出一份计划的事件历史 JSON（面板时间线） |
 
@@ -288,37 +288,33 @@ await planClaims.list();                         // 全部在做的
 
 ## 模板
 
-### A–F：这是什么活
+模板是**语义定义**（`default_kind` / `behavior` / `framed` / `dispatch` / `hints` / `body`），
+完整字段说明见 [`templates/SCHEMA.md`](X:\temp\dsh\开发\taskboard\templates\SCHEMA.md)。
 
-- `templates/A|B|C|D|R|F.yml`：规范模板（GitHub issue forms 的 YAML），`task_template` 和面板的
-  `/task-templates` 读的就是它，字段有 `name` / `description` / `labels` / `body`；
-  正文按 `body` 里各项的 `id`、`label`、`validations.required` 填。
-- `templates/A|B|C|D|R|F.md`：早期的人工提纲，程序不读（`status` 还是旧的「草稿」写法，
-  九态以本 README 为准，实际以 `.yml` 为准）。
+### 编号：大类英文首字母 + 模板英文首字母
 
-### H1–H8：为什么停下来等人（搁置模板）
+| 大类 | 前缀 | 模板 |
+| --- | --- | --- |
+| 目标 **G**oal | G | `GU` 用户任务 · `GO` 优化 · `GA` 画作 · `GV` 小说 |
+| 设计 **D**esign | D | `DC` 决策 · `DP` 方案 · `DQ` 提问 · `DI` 接口 · `DB` 问题 · `DT` 定调 |
+| 记录 **R**ecord | R | `RB` 阻碍 · `RR` 汇报 · `RF` 复盘 · `RS` 设定集 · `RD` 缺陷报告 · `RE` 功能请求 · `WX` 文档 |
+| 工作 **W**ork | W | `WR` 调研 · `WI` 实现 · `WT` 实现项 · `WF` 缺陷 · `WV` 校验 · `WL` 线稿 · `WC` 上色 · `WD` 起草 · `WE` 修改 |
 
-A–F 按「这是什么活」分；H1–H8 按「**为什么停下来**」分。搁置不是一种，每种要填的东西不一样。
+冲突时退到**第二个单词的首字母**（例：汇报 Report 与记录前缀 R 撞 → `RR`）。
 
-| 模板 | 落到哪个状态 | 场景 | 必填 |
-| --- | --- | --- | --- |
-| `H1` | 需要授权 | 代价过大（钱 / 时间 / 风险） | 代价是什么、有哪几个选项、我推荐哪个 |
-| `H2` | 需要授权 | 用户转移话题（主动要求搁置） | 用户原话、停在哪一步、什么条件恢复 |
-| `H3` | 需要授权 | 方案缺陷过大，要换路子 | 缺陷是什么、下一步选项 |
-| `H4` | 需要补充 | 缺用户信息 | 具体缺哪几条、每条用来做什么、没有会怎样 |
-| `H5` | 需要补充 | 需要先调研（派 R 子计划） | 要查什么、查到什么程度算够 |
-| `H6` | 需要授权 | 资源被占用（不能并发） | 被谁占着、等它做什么、它到哪个状态我能继续 |
-| `H7` | 需要授权 | 缺权限 / 操作环境不对 | 哪个工具被挡、缺什么、要改什么环境、改完怎么验证 |
-| `H8` | 需要补充 | 子任务未回收 | 在等哪几张、它们回来之后我做什么 |
+### 两种形态
 
-要点：
+- `framed: false` —— 一个空白正文框。目前只有 `GU · 用户任务`：
+  用户想到什么写什么，加框架等于逼他先学我们的分类法。
+- `framed: true` —— **每个章节一个输入框**，提示语是框里的灰字（placeholder）。
+  这些多半是 AI 写的，需要条条框框才写得稳。每个带框架的模板都有「其他」兜底。
 
-- **模板只是正文骨架，不改变任何状态语义**。`type` 存成 `H1`… 原样保留，但
-  状态、分组、级联都不看 `type`。用 H1 建的计划照样要用户采纳、照样能被领取。
-- 「表里的状态」是**建议落点**，不是自动设置：建完仍是「未指定」，采纳后再由
-  `task_state` 推到对应搁置态，并顺手把 `note` 写上（见「备注」一节）。
-- 这些模板与「父计划派生子任务后自动搁置」**没有关系**：自动触发已被明确否决，
-  搁置是手动动作。
+### H1–H8 已废除
+
+它们是「**为什么停**」，不是「做什么」，语义上和模板不是一个维度。
+现在降级为 `RB · 阻碍` 模板里的 `reason` 词表（见
+[`templates/STOP-REASONS.md`](X:\temp\dsh\开发\taskboard\templates\STOP-REASONS.md)）。
+老数据里的 `type: H1..H8` 仍能读，按记录类处理。
 
 ## 权限：按计划
 
@@ -408,5 +404,5 @@ C:\Users\16229\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.
   「取代」级联三件事（旧计划→拒绝、依赖转移到新计划、派生下游递归取消且防环）；
   父计划「完成」时级联取消仍搁置的子计划（递归）；老格式 `任务\*.md` 一次性迁移进
   JSONL（写 `.migrated` 标记、不重复导入）；`task_update` 只允许「未指定」；
-  `/task-create` 默认「未指定」；A..F 六份 + H1..H8 八份模板可读；`/tasks` 只给计划头、
+  `/task-create` 默认「未指定」；26 份模板可读；`/tasks` 只给计划头、
   `/task-get` 给全文、`/task-state` 命令路径改状态并记 claim。

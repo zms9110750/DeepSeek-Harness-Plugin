@@ -1,4 +1,4 @@
-name: SQ · 决策
+name: DC · 决策
 default_kind: design
 behavior: decide
 description: 要用户拍板；给 2-4 个互斥选项，每个写清代价
@@ -53,3 +53,12 @@ body:
         写清"如果是我，我选 X，因为 Y"。
     validations:
       required: true
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        选项之外的第三种做法（那要重开一条决策），以及"这个决策其实是个伪问题"。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

@@ -1,4 +1,4 @@
-name: GR · 调研
+name: WR · 调研
 default_kind: work
 behavior: execute
 description: 动手去查清一件事；占位，一次只能做一个
@@ -56,3 +56,12 @@ body:
       description: |
         每条结论对应一个可核对的来源：链接、文件路径和行号、命令输出。
         没有证据的结论要标出来。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        查不到时的兜底（该问谁），以及这个结论会推翻哪些已有决定。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

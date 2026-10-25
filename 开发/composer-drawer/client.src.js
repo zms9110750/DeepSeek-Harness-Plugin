@@ -1581,6 +1581,50 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 这个模板要不要预填章节骨架。
+     *
+     * `framed: false` 的是**用户自己写的那种**（例如 MG 用户任务）——
+     * 用户想到什么写什么，加框架等于逼他先学我们的分类法。
+     *
+     * 其余 `framed: true`：那些多半是 AI 写的，需要条条框框才写得稳，
+     * 而且每节的 description 就是**教 LLM 怎么分析的提示词**。
+     */
+    function isFramed(yaml) {
+      const match = /^framed:\s*(\w+)$/mu.exec(String(yaml || ''));
+      if (match) return match[1] !== 'false';
+      return true;
+    }
+
+    /**
+     * 把模板章节拼成 Markdown 骨架，**每节带上提示语**。
+     *
+     * 提示语用引用块跟在标题下面：
+     *   · LLM 读到就知道这一节该分析什么
+     *   · 人也能直接看到，不用去翻模板文件
+     */
+    function skeletonOf(yaml) {
+      const parsed = parseTemplateYaml(String(yaml || ''));
+      if (!parsed || !Array.isArray(parsed.items)) return '';
+      const blocks = [];
+      parsed.items.forEach(function (item) {
+        if (item.type === 'markdown') return;
+        const label = item.label || item.id || '';
+        if (label === '') return;
+        const hint = String(item.description || '')
+          .split(/\r?\n/u)
+          .map(function (line) {
+            return line.trim();
+          })
+          .filter(function (line) {
+            return line !== '';
+          })
+          .join('\n> ');
+        blocks.push('## ' + label + (hint ? '\n\n> ' + hint + '\n' : '\n'));
+      });
+      return blocks.join('\n');
+    }
+
+    /**
      * 领域选项。这是**固定枚举**，不是自由标签（用户明确：不做 tag）。
      *
      * 作用只有一个：筛选模板下拉。用户原话——
@@ -1617,7 +1661,12 @@ window.__ModuleLoader__.load({
       const init = props.initial || {};
       const templates = props.templates || {};
       const plans = props.plans || [];
-      const initialType = typeof init.type === 'string' ? init.type : 'C';
+      /* 新建时默认「MG · 用户任务」——用户原话：
+         「让他常态下默认在"用户任务"，而不是默认用空模板页面。
+          虽然架构长得一样。但是用户任务以后可能要放行为。」
+
+         编辑时用事项本身的 type。 */
+      const initialType = typeof init.type === 'string' && init.type !== '' ? init.type : 'GU';
       const initialTemplate = initialType !== '' && templates[initialType] ? parseTemplateYaml(templates[initialType]) : null;
       const initialValues = {};
       if (init.body && initialTemplate) {
@@ -1694,10 +1743,18 @@ window.__ModuleLoader__.load({
           return;
         }
         let text = '';
-        if (fallbackToPlainText) {
-          /* 模板没加载出来：直接按纯文本保存，不要再拿空 fields 去卡「至少填一项」。 */
-          text = body;
-        } else if (type !== '') {
+        /* **有框架的模板：每个槽位一个框，提交时按 `## 标题` 拼起来。**
+         *
+         * 口径（用户纠正过两次）：
+         *   · `framed: false`（MG 用户任务）→ 一个空白正文框，用户想到什么写什么
+         *   · `framed: true`   → 分槽位，每个槽位一个输入框，
+         *     提示语是**输入框里的灰字占位符**，不是写进正文的内容
+         *
+         * 也就是说：模板决定"有几个格子"，
+         * 格子的提示语决定"这一格该写什么"，
+         * 而**正文本身永远是用户打出来的字**，不含任何注入的骨架。
+         */
+        if (isFramed(templates[type]) && fields.length > 0) {
           const parts = [];
           let missing = '';
           fields.forEach(function (item) {
@@ -1713,16 +1770,7 @@ window.__ModuleLoader__.load({
             setError(missing + ' 是必填');
             return;
           }
-          if (parts.length === 0) {
-            if (init.body) {
-              text = init.body;
-            } else {
-              setError('模板字段至少填一项');
-              return;
-            }
-          } else {
-            text = parts.join('\n\n');
-          }
+          text = parts.length > 0 ? parts.join('\n\n') : body;
         } else {
           text = body;
         }
@@ -1842,7 +1890,8 @@ window.__ModuleLoader__.load({
                     /* 换了大类，当前模板可能不合法 → 清空，让用户重选。
                        留着会让人以为选上了，实际提交时被宿主按新 kind 覆盖。 */
                     if (type !== '' && next !== '') {
-                      const prefix = { goal: 'M', design: 'S', record: 'J', work: 'G' }[next];
+                      /* 大类前缀是**英文首字母**：Goal/Design/Record/Work。 */
+                      const prefix = { goal: 'G', design: 'D', record: 'R', work: 'W' }[next];
                       if (prefix && type.charAt(0) !== prefix) setType('');
                     }
                   },
@@ -1869,11 +1918,12 @@ window.__ModuleLoader__.load({
                   onChange: function (event) {
                     const next = event.target.value;
                     setType(next);
-                    /* 选了模板就同步大类（模板自带 kind），避免两处不一致。 */
-                    if (next !== '') {
-                      const declared = kindOfTemplate(templates[next]);
-                      if (declared !== '') setKind(declared);
-                    }
+                    if (next === '') return;
+                    /* 选了模板就同步大类（模板自带 kind），避免两处不一致。
+                       不再往正文里注入骨架：有框架的模板是**分槽位输入**，
+                       正文只放用户自己打的字。 */
+                    const declared = kindOfTemplate(templates[next]);
+                    if (declared !== '') setKind(declared);
                   },
                   style: Object.assign({}, formInputStyle, { flex: 1, minWidth: 0 }),
                 },
@@ -2022,76 +2072,77 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, overflow: 'auto', paddingRight: 6, borderLeft: '1px solid var(--dsw-alias-border-l1)', paddingLeft: 16 } },
+            /* 模板的一句话说明留在顶部：让人知道"这一类该写什么"，但不占输入框。 */
             template && type !== '' ? h('div', { style: lineStyle }, template.name + '：' + template.description) : null,
-            fallbackToPlainText
+            /* **两种形态**（用户两次纠正后的最终口径）：
+             *
+             *   `framed: false`（MG 用户任务）→ 一个空白正文框。
+             *     用户想到什么写什么，加框架等于逼他先学我们的分类法。
+             *
+             *   `framed: true` → **每个槽位一个输入框**，写死的那种。
+             *     提示语放在**输入框的 placeholder**（没字时的灰字），
+             *     不是写进正文。正文只放用户自己打的字。
+             */
+            isFramed(templates[type]) && fields.length > 0
               ? h(
                   'div',
-                  {
-                    style: {
-                      fontSize: 11,
-                      lineHeight: 1.6,
-                      padding: '6px 8px',
-                      borderRadius: 8,
-                      border: '1px solid var(--dsw-alias-state-warn-primary)',
-                      color: 'var(--dsw-alias-state-warn-primary)',
-                    },
-                  },
-                  '模板 ' + type + ' 没加载出来，已切到纯文本编辑：下面是计划原文，直接改 Markdown 即可。',
-                )
-              : null,
-            type !== ''
-              ? h(
-                  'div',
-                  { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
-                  template
-                    ? template.items.map(function (item, index) {
-                        if (item.type === 'markdown') {
-                          return h('div', { key: 'md-' + index, style: { fontSize: 11, lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'pre-wrap' } }, item.value || '');
-                        }
-                        const key = item.id || item.label || 'field-' + index;
-                        const common = {
-                          value: values[key] || '',
-                          placeholder: item.placeholder || '',
-                          onChange: function (event) {
-                            const next = Object.assign({}, values);
-                            next[key] = event.target.value;
-                            setValues(next);
-                          },
-                        };
-                        return h(
-                          'label',
-                          { key: 'f-' + key, style: { display: 'flex', flexDirection: 'column', gap: 3 } },
-                          h('span', { style: { fontSize: 12, color: 'var(--dsw-alias-label-primary)' } }, (item.label || item.id) + (item.required ? ' *' : '')),
-                          item.description ? h('span', { style: lineStyle }, item.description) : null,
-                          item.type === 'input'
-                            ? h('input', Object.assign({}, common, { style: formInputStyle }))
-                            : h('textarea', Object.assign({}, common, { rows: 3, style: Object.assign({}, formInputStyle, { resize: 'vertical' }) })),
-                        );
+                  { style: { display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minHeight: 0, overflow: 'auto' } },
+                  fields.map(function (item, index) {
+                    const key = item.id || item.label || 'field-' + index;
+                    /* 占位符 = 模板的提示语（description），压成一行。 */
+                    const hint = String(item.description || '')
+                      .split(/\r?\n/u)
+                      .map(function (line) {
+                        return line.trim();
                       })
-                    : h('div', { style: lineStyle }, '模板还没加载出来（检查宿主插件是否在跑）'),
+                      .filter(function (line) {
+                        return line !== '';
+                      })
+                      .join(' ');
+                    return h(
+                      'label',
+                      { key: 'f-' + key, style: { display: 'flex', flexDirection: 'column', gap: 3 } },
+                      h(
+                        'span',
+                        { style: { fontSize: 12, color: 'var(--dsw-alias-label-primary)' } },
+                        (item.label || item.id) + (item.required ? ' *' : ''),
+                      ),
+                      item.type === 'input'
+                        ? h('input', {
+                            value: values[key] || '',
+                            placeholder: hint,
+                            onChange: function (event) {
+                              const next = Object.assign({}, values);
+                              next[key] = event.target.value;
+                              setValues(next);
+                            },
+                            style: formInputStyle,
+                          })
+                        : h('textarea', {
+                            value: values[key] || '',
+                            placeholder: hint,
+                            rows: item.id === 'other' ? 2 : 3,
+                            onChange: function (event) {
+                              const next = Object.assign({}, values);
+                              next[key] = event.target.value;
+                              setValues(next);
+                            },
+                            style: Object.assign({}, formInputStyle, { resize: 'vertical' }),
+                          }),
+                    );
+                  }),
                 )
-              : null,
-            /* 模板缺失且有原文 → 纯文本兜底，保证内容不丢。 */
-            fallbackToPlainText
-              ? h('textarea', {
+              : h('textarea', {
                   value: body,
-                  placeholder: '正文（Markdown）',
+                  placeholder:
+                    type === ''
+                      ? '正文（Markdown）——空模板，从零写'
+                      : '正文（Markdown）——想到什么写什么',
                   onChange: function (event) {
                     setBody(event.target.value);
                   },
                   style: Object.assign({}, formInputStyle, { flex: 1, minHeight: 200, resize: 'vertical' }),
-                })
-              : null,
-            type === ''
-              ? h('textarea', {
-                  value: body,
-                  placeholder: '正文（Markdown）——空模板，从零写',
-                  onChange: function (event) {
-                    setBody(event.target.value);
-                  },
-                  style: Object.assign({}, formInputStyle, { flex: 1, minHeight: 160, resize: 'vertical' }),
-                })
-              : null,
+                }),
           ),
         ),
         h(

@@ -1,4 +1,4 @@
-name: GN · 校验
+name: WV · 校验
 default_kind: work
 behavior: execute
 domain: general
@@ -56,3 +56,12 @@ body:
         不通过要写清是哪一条，不要写"有些问题"。
     validations:
       required: true
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        没法自动验的部分、环境差异导致结果不一致、以及验不过但要先放行的情况。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。
