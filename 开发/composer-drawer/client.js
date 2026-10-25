@@ -4586,6 +4586,9 @@
         const groupPickState = React.useState("");
         const groupPick = groupPickState[0];
         const setGroupPick = groupPickState[1];
+        const tagPickState = React.useState("");
+        const tagPick = tagPickState[0];
+        const setTagPick = tagPickState[1];
         const filterState = React.useState("");
         const groupFilter = filterState[0];
         const setGroupFilter = filterState[1];
@@ -4796,23 +4799,6 @@
             legendItem("parent", false, "\u7236\u5B50"),
             legendItem("link", true, "\u94FE\u63A5"),
             h("span", { style: { flex: 1 } }),
-            /* 显示已归档（DP-04）。
-             *
-             * 用户原话：「归档以后界面不显示。但索引还在。可以显示已归档。」
-             * 所以默认隐藏，这里给一个开关。归档的**数据全都还在**，
-             * AI 用工具照样能查到。 */
-            h(
-              "button",
-              {
-                type: "button",
-                title: "\u5F52\u6863\u7684\u4E8B\u9879\u9ED8\u8BA4\u4E0D\u663E\u793A\uFF1B\u8FD9\u91CC\u53EF\u4EE5\u7FFB\u51FA\u6765\u770B",
-                onClick: function() {
-                  setShowArchived(!showArchived);
-                },
-                style: buttonBase(showArchived)
-              },
-              showArchived ? "\u9690\u85CF\u5DF2\u5F52\u6863" : "\u663E\u793A\u5DF2\u5F52\u6863" + (data.archivedCount > 0 ? "\uFF08" + data.archivedCount + "\uFF09" : "")
-            ),
             /* 视图切换（T-020）：树看关系，列表看密度。 */
             h(
               "button",
@@ -4876,7 +4862,10 @@
                       type: "button",
                       title: group.members.length + " \u6761",
                       onClick: function() {
-                        setGroupPick(active ? "" : group.id);
+                        const next = active ? "" : group.id;
+                        setGroupPick(next);
+                        runCommand("/task-group-select " + JSON.stringify({ group: next }), sessionId).catch(function() {
+                        });
                       },
                       style: Object.assign({}, buttonBase(active), {
                         padding: "2px 10px",
@@ -4887,30 +4876,28 @@
                   )
                 );
               });
-              const loose = allTasks.filter(function(item) {
-                return !Array.isArray(item.groupsOf) || item.groupsOf.length === 0;
-              }).length;
-              if (loose > 0) {
-                buttons.push(
-                  h(
-                    "button",
-                    {
-                      key: "gp-none",
-                      type: "button",
-                      onClick: function() {
-                        setGroupPick(groupPick === "__none__" ? "" : "__none__");
-                      },
-                      style: Object.assign({}, buttonBase(groupPick === "__none__"), {
-                        padding: "2px 10px",
-                        opacity: groupPick === "__none__" ? 1 : 0.75
-                      })
-                    },
-                    "\u672A\u5F52\u7EC4\uFF08" + loose + "\uFF09"
-                  )
-                );
-              }
               return buttons;
-            })()
+            })(),
+            /* 「显示已归档」放在这里，不放工具栏。
+             *
+             * 用户原话：「归档是对分组归档的。所以"显示已归档"的按钮你要考虑ux，
+             * 他是不是放这里。他只对组有用的。」
+             *
+             * 对：归档的粒度是整组（一条事项跟着它的组一起进出视图），
+             * 所以开关紧挨着分组条才有意义，飞到工具栏上是无主的。 */
+            h("span", { style: { flex: 1, minWidth: 8 } }),
+            h(
+              "button",
+              {
+                type: "button",
+                title: "\u5F52\u6863\u7684\u5206\u7EC4\u9ED8\u8BA4\u4E0D\u663E\u793A\uFF1B\u8FD9\u91CC\u53EF\u4EE5\u7FFB\u51FA\u6765\u770B",
+                onClick: function() {
+                  setShowArchived(!showArchived);
+                },
+                style: Object.assign({}, buttonBase(showArchived), { padding: "2px 10px" })
+              },
+              showArchived ? "\u9690\u85CF\u5DF2\u5F52\u6863" : "\u663E\u793A\u5DF2\u5F52\u6863" + (archivedCount > 0 ? "\uFF08" + archivedCount + "\uFF09" : "")
+            )
           ) : null,
           /* 标签筛选（与分组并列，但**维度不同**）。
            *

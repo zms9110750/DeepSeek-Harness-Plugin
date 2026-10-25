@@ -1275,6 +1275,42 @@ const STORE_FILE = process.env.TASKBOARD_STORE || join(STORE_DIR, 'plans.jsonl')
  *   {"op":"upsert","ts":"…","group":{"id":"g-1","name":"插件开发","members":["T-001",…]}}
  */
 const GROUPS_FILE = process.env.TASKBOARD_GROUPS || join(STORE_DIR, 'groups.jsonl');
+/*
+ * ---------------------------------------------------------------------------
+ * 当前分组（current group）
+ * ---------------------------------------------------------------------------
+ *
+ * 用户原话：
+ *   > 需要有一个当前组。工具的查找是默认对当前组里面找的。
+ *   > 去翻别的组需要额外的参数。就比如用户风格，
+ *   > 你不可能在程序里面去查绘画的风格。
+ *
+ * 所以工具的默认范围 = 当前组。这也顺带解决了"分组要一个人记着"的问题：
+ * 切一次，后面所有工具调用都默认在那一组里。
+ *
+ * 存一个单独的文件（`current.json`），因为它是**会话级偏好**，
+ * 不是事项数据，混进 plans.jsonl 会把事件流搞脏。
+ */
+const CURRENT_FILE = process.env.TASKBOARD_CURRENT || join(STORE_DIR, 'current.json');
+
+async function readCurrentGroup() {
+	try {
+		const raw = await readFile(CURRENT_FILE, 'utf8');
+		const parsed = JSON.parse(raw);
+		const id = String(parsed?.group ?? '').trim();
+		if (id === '') return '';
+		/* 分组被删了就当没设过。 */
+		const groups = (await listGroups()).filter((entry) => entry.name !== '');
+		return groups.some((entry) => entry.id === id) ? id : '';
+	} catch (failure) {
+		return '';
+	}
+}
+
+async function writeCurrentGroup(id) {
+	await mkdir(dirname(CURRENT_FILE), { recursive: true });
+	await writeFile(CURRENT_FILE, JSON.stringify({ group: String(id ?? '').trim() }), 'utf8');
+}
 
 /** 读全部分组（追加式 JSONL，按 id fold 最后一次）。 */
 async function listGroups() {
@@ -1566,15 +1602,43 @@ function registerTools(ctx) {
 		defineTool({
 			name: 'task_list',
 			description:
-				'列出任务库里的所有计划（只给头部：id、类型、状态、父、链接、子工作空间、权限档位）。' +
+				'列出事项（只给头部：id、类型、状态、父、链接、分组、标签、工作空间、权限档位）。' +
+				'**默认只列「当前分组」里的事项**；要看别的分组，用 group 参数（或其别名 all=true）。' +
+				'理由（用户原话）：「你不可能在程序里面去查绘画的风格。」' +
 				'状态「未指定」是 AI 提交但用户还没采纳的，不能领取；「提交」才能 task_claim。',
-			parameters: {},
+			parameters: {
+				group: { type: 'string', description: '看哪个分组（空 = 当前分组；all = 全部）' },
+				all: { type: 'boolean', description: 'true = 不分分组，列全部' },
+			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
 				render: (_args, value) => [{ type: 'text', text: value.text }],
 			},
-			async execute() {
-				return { text: renderList(await listAll()) };
+			async execute(args) {
+				const all = await listAll();
+				const groups = (await listGroups()).filter((entry) => entry.name !== '');
+				const wanted = String(args?.group ?? '').trim();
+				if (args?.all === true || wanted === 'all') {
+					return { text: renderList(all) };
+				}
+				const current = wanted !== '' ? wanted : await readCurrentGroup();
+				if (current === '') {
+					/* 没设当前组：列全部，但要说明为什么，避免 AI 以为这就是一组的全部。 */
+					const head =
+						groups.length === 0
+							? '还没有任何分组。'
+							: '⚠️ 还没设「当前分组」。用 task_group action=select group=… 设一个，之后工具默认只看那一组。';
+					return { text: head + '\n\n（下面是全部分组之外的全部事项）\n\n' + renderList(all) };
+				}
+				const target = groups.find((entry) => entry.id === current);
+				if (target === undefined) {
+					throw new Error(`没有这个分组：${current}。现有：${groups.map((entry) => entry.id).join(' / ') || '（没有）'}`);
+				}
+				const mine = new Set(target.members);
+				const inside = all.filter((item) => mine.has(item.id));
+				return {
+					text: `分组 ${target.id} · ${target.name}（${inside.length} 条）\n\n` + renderList(inside),
+				};
 			},
 		}),
 	);
@@ -1620,6 +1684,7 @@ function registerTools(ctx) {
 				workspaces: { type: 'string', description: '额外工作区，逗号分隔的绝对路径（可多个）' },
 				permission: { type: 'string', description: '仅可查看 / 工作区内修改 / 完全权限 / 工具全关' },
 				deny: { type: 'string', description: '按描述符再收窄，逗号分隔：write / destructive / external / idempotent' },
+				group: { type: 'string', description: '所属分组 id（可选；给了父事项就跟随父的分组）' },
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
@@ -1636,6 +1701,39 @@ function registerTools(ctx) {
 				/* kind 先算：assertParent 要拿它判断"工作不能派工作"。 */
 				const kind = resolveKindArg(args.kind, type);
 				await assertParent(text(args.parent), kind, type);
+				/* 分组归属（用户要求：**不存在"未归组"**）。
+				 *
+				 * 用户原话：「元组是不能有未归组。因为闲聊是不会创建出来任务的。」
+				 *
+				 * 判定：给了 parent 就跟随父事项的分组；没给 parent 就用 args.group。
+				 * 两样都没有 → 拒绝，因为一条事项必须属于某次工作。 */
+				const groups = (await listGroups()).filter((entry) => entry.name !== '');
+				const parentId = text(args.parent);
+				let groupId = text(args.group);
+				if (parentId !== '') {
+					const parentTask = await readTask(parentId);
+					const owner = groups.find((entry) => entry.members.includes(parentId));
+					if (owner !== undefined) groupId = owner.id;
+					else if (parentTask !== undefined && groupId === '') {
+						throw new Error(
+							`父事项 ${parentId} 本身没有归组，所以子事项也没法跟着归组。\n` +
+								'先给那条父事项指定分组（task_group action=add），或者用 group 参数显式指定。',
+						);
+					}
+				}
+				if (groupId === '') {
+					throw new Error(
+						'task_submit: 必须指定所属分组（group）。\n' +
+							'每个分组 = 一件事 / 一个项目；"闲聊不会创建出任务"，所以不存在没归组的事项。\n' +
+							(groups.length === 0
+								? '现在一个分组都没有，先用 task_group action=create name=… 建一个。'
+								: `现有分组：${groups.map((entry) => `${entry.id}（${entry.name}）`).join(' / ')}`),
+					);
+				}
+				const target = groups.find((entry) => entry.id === groupId);
+				if (target === undefined) {
+					throw new Error(`没有这个分组：${groupId}。现有：${groups.map((entry) => entry.id).join(' / ') || '（没有）'}`);
+				}
 				/* 额外工作区：校验绝对路径并归一（逗号分隔）；非法直接拒，不落盘。 */
 				const workspaces = splitWorkspaces(args.workspaces).join(', ');
 				const id = await createNew({
@@ -1651,6 +1749,13 @@ function registerTools(ctx) {
 					deny: text(args.deny),
 					claimed_by: '',
 					body: text(args.body),
+				});
+				/* 建完立刻认领进分组（同一把锁里已算好 groupId）。 */
+				await saveGroup({
+					id: target.id,
+					name: target.name,
+					members: [...new Set([...target.members, id])],
+					createdAt: target.createdAt,
 				});
 				return {
 					text:
@@ -2406,12 +2511,31 @@ function registerExtraTools(ctx) {
 				const groups = await listGroups();
 				if (action === 'list') {
 					if (groups.length === 0) return { text: '还没有分组。用 task_group action=create name=… 建一个。' };
+					const current = await readCurrentGroup();
 					const lines = groups.map((group) => {
+						const mark = group.id === current ? '★ ' : '  ';
 						const sample = group.members.slice(0, 6).join(', ');
 						const more = group.members.length > 6 ? ` 等 ${group.members.length} 条` : '';
-						return `  ${group.id} · ${group.name}（${group.members.length} 条）${sample ? '：' + sample + more : ''}`;
+						return `${mark}${group.id} · ${group.name}（${group.members.length} 条）${sample ? '：' + sample + more : ''}`;
 					});
-					return { text: `共 ${groups.length} 个分组：\n` + lines.join('\n') };
+					const head = current === '' ? '（还没设当前分组；用 action=select 设一个）' : `当前分组：${current}`;
+					return { text: `${head}\n共 ${groups.length} 个分组：\n` + lines.join('\n') };
+				}
+				if (action === 'select') {
+					/* 设当前分组：之后 task_list 等工具默认只看这一组。
+					 *
+					 * 用户原话：「需要有一个当前组。工具的查找是默认对当前组里面找的。」 */
+					const wanted = String(args.group ?? '').trim();
+					if (wanted === '') {
+						await writeCurrentGroup('');
+						return { text: '已清空当前分组（工具恢复为看全部）' };
+					}
+					const hit = groups.find((entry) => entry.id === wanted);
+					if (hit === undefined) {
+						throw new Error(`没有这个分组：${wanted}。现有：${groups.map((entry) => `${entry.id}（${entry.name}）`).join(' / ') || '（没有）'}`);
+					}
+					await writeCurrentGroup(hit.id);
+					return { text: `当前分组已设为 ${hit.id} · ${hit.name}（${hit.members.length} 条）` };
 				}
 				if (action === 'create') {
 					const name = String(args.name ?? '').trim();
@@ -2672,6 +2796,31 @@ function registerExtraCommands(ctx) {
 			/* 名字为空 = 墓碑（已删除），不返回给面板。 */
 			const groups = (await listGroups()).filter((group) => group.name !== '');
 			return { kind: 'success', text: JSON.stringify(groups) };
+		},
+	});
+
+	ctx.commands.register({
+		name: 'task-group-select',
+		description: '设置「当前分组」（面板切换分组时调用；JSON：{group}，空 = 清空）',
+		input: { hint: '{"group":"g-2"}' },
+		recordInput: false,
+		async handler(payload) {
+			let parsed = null;
+			try {
+				parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+			} catch (error) {
+				return { kind: 'error', text: '参数不是合法 JSON' };
+			}
+			const wanted = String(parsed?.group ?? '').trim();
+			if (wanted === '') {
+				await writeCurrentGroup('');
+				return { kind: 'success', text: JSON.stringify({ group: '' }) };
+			}
+			const groups = (await listGroups()).filter((entry) => entry.name !== '');
+			const hit = groups.find((entry) => entry.id === wanted);
+			if (hit === undefined) return { kind: 'error', text: `没有这个分组：${wanted}` };
+			await writeCurrentGroup(hit.id);
+			return { kind: 'success', text: JSON.stringify({ group: hit.id, name: hit.name }) };
 		},
 	});
 

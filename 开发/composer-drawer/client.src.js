@@ -3286,6 +3286,10 @@ window.__ModuleLoader__.load({
       const groupPickState = React.useState('');
       const groupPick = groupPickState[0];
       const setGroupPick = groupPickState[1];
+      /* 当前选中的标签：`''` = 不筛。标签可以跨分组检索。 */
+      const tagPickState = React.useState('');
+      const tagPick = tagPickState[0];
+      const setTagPick = tagPickState[1];
       const filterState = React.useState('');
       const groupFilter = filterState[0];
       const setGroupFilter = filterState[1];
@@ -3540,23 +3544,6 @@ window.__ModuleLoader__.load({
           legendItem('parent', false, '父子'),
           legendItem('link', true, '链接'),
           h('span', { style: { flex: 1 } }),
-          /* 显示已归档（DP-04）。
-           *
-           * 用户原话：「归档以后界面不显示。但索引还在。可以显示已归档。」
-           * 所以默认隐藏，这里给一个开关。归档的**数据全都还在**，
-           * AI 用工具照样能查到。 */
-          h(
-            'button',
-            {
-              type: 'button',
-              title: '归档的事项默认不显示；这里可以翻出来看',
-              onClick: function () {
-                setShowArchived(!showArchived);
-              },
-              style: buttonBase(showArchived),
-            },
-            showArchived ? '隐藏已归档' : '显示已归档' + (data.archivedCount > 0 ? '（' + data.archivedCount + '）' : ''),
-          ),
           /* 视图切换（T-020）：树看关系，列表看密度。 */
           h(
             'button',
@@ -3621,7 +3608,13 @@ window.__ModuleLoader__.load({
                         type: 'button',
                         title: group.members.length + ' 条',
                         onClick: function () {
-                          setGroupPick(active ? '' : group.id);
+                          const next = active ? '' : group.id;
+                          setGroupPick(next);
+                          /* 同步给宿主当「当前分组」：工具默认只看这一组。
+                           * 用户原话：「需要有一个当前组。工具的查找是默认对当前组里面找的。」 */
+                          runCommand('/task-group-select ' + JSON.stringify({ group: next }), sessionId).catch(function () {
+                            /* 失败不影响界面筛选，只是工具的默认范围没跟着变。 */
+                          });
                         },
                         style: Object.assign({}, buttonBase(active), {
                           padding: '2px 10px',
@@ -3632,30 +3625,31 @@ window.__ModuleLoader__.load({
                     ),
                   );
                 });
-                const loose = allTasks.filter(function (item) {
-                  return !Array.isArray(item.groupsOf) || item.groupsOf.length === 0;
-                }).length;
-                if (loose > 0) {
-                  buttons.push(
-                    h(
-                      'button',
-                      {
-                        key: 'gp-none',
-                        type: 'button',
-                        onClick: function () {
-                          setGroupPick(groupPick === '__none__' ? '' : '__none__');
-                        },
-                        style: Object.assign({}, buttonBase(groupPick === '__none__'), {
-                          padding: '2px 10px',
-                          opacity: groupPick === '__none__' ? 1 : 0.75,
-                        }),
-                      },
-                      '未归组（' + loose + '）',
-                    ),
-                  );
-                }
+                /* 不再有「未归组」——用户明确要求：
+                 * 「元组是不能有未归组。因为闲聊是不会创建出来任务的。」
+                 * 每条事项都必须属于一个分组（见宿主 task_submit 的强制校验）。 */
                 return buttons;
               })(),
+              /* 「显示已归档」放在这里，不放工具栏。
+               *
+               * 用户原话：「归档是对分组归档的。所以"显示已归档"的按钮你要考虑ux，
+               * 他是不是放这里。他只对组有用的。」
+               *
+               * 对：归档的粒度是整组（一条事项跟着它的组一起进出视图），
+               * 所以开关紧挨着分组条才有意义，飞到工具栏上是无主的。 */
+              h('span', { style: { flex: 1, minWidth: 8 } }),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  title: '归档的分组默认不显示；这里可以翻出来看',
+                  onClick: function () {
+                    setShowArchived(!showArchived);
+                  },
+                  style: Object.assign({}, buttonBase(showArchived), { padding: '2px 10px' }),
+                },
+                showArchived ? '隐藏已归档' : '显示已归档' + (archivedCount > 0 ? '（' + archivedCount + '）' : ''),
+              ),
             )
           : null,
         /* 标签筛选（与分组并列，但**维度不同**）。

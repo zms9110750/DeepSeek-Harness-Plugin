@@ -209,7 +209,19 @@ function newSession() {
 /* ── 5. 操作小工具 ─────────────────────────────────────────────────────── */
 
 /** 跑一次 task_submit，返回新计划 id。 */
+/** 每个用例前确保有一个默认分组（事项必须归组）。 */
+async function ensureGroup() {
+	const listed = await command('task-group-list').handler({});
+	const groups = JSON.parse(listed.text);
+	if (groups.length > 0) return groups[0].id;
+	const made = await tool('task_group').execute({ action: 'create', name: '测试组' });
+	const id = /已建分组 (g-\d+)/u.exec(made.text)?.[1];
+	assert.ok(id, `建分组没返回 id：${made.text}`);
+	return id;
+}
+
 async function submit(overrides = {}) {
+	const group = overrides.group !== undefined ? overrides.group : await ensureGroup();
 	const result = await tool('task_submit').execute({
 		title: '测试计划',
 		/* 默认用 D（实现）→ kind=work，因为只有工作能被领取。
@@ -217,6 +229,7 @@ async function submit(overrides = {}) {
 		type: 'WI',
 		body: '## 正文\n一句话正文。',
 		...overrides,
+		group,
 	});
 	/* 新编号格式：模板编号 + 流水号，例如 MG-01 / GD-03。 */
 	const id = /已提交 ([A-Z]{1,2}-\d+)/u.exec(result.text)?.[1];
@@ -314,7 +327,7 @@ after(() => {
 
 /* ── 7. 用例 ───────────────────────────────────────────────────────────── */
 
-test('apply 注册十三个工具、十七条面板命令、「按计划」预设、守卫和 planClaims', () => {
+test('apply 注册十三个工具、十八条面板命令、「按计划」预设、守卫和 planClaims', () => {
 	assert.deepEqual([...tools.keys()].sort(), [
 		'task_answer',
 		'task_claim',
@@ -339,6 +352,7 @@ test('apply 注册十三个工具、十七条面板命令、「按计划」预�
 		'task-get',
 		'task-group-list',
 		'task-group-save',
+		'task-group-select',
 		'task-groups',
 		'task-history',
 		'task-note',
@@ -1445,12 +1459,14 @@ test('额外工作区 workspaces：可多个、校验绝对路径、并入「工
 	assert.equal(stored.workspaces, 'X:\\temp\\dsh\\探针\\ref, X:\\temp\\dsh\\探针\\out');
 
 	/* 相对路径直接拒，不落盘 */
+	const wsGroup = await ensureGroup();
 	await assert.rejects(
 		() => tool('task_submit').execute({
 			title: '相对路径',
 			type: 'DB',
 			body: 'x',
 			workspaces: 'some/rel/path',
+			group: wsGroup,
 		}),
 		/额外工作区必须是绝对路径/u,
 	);
