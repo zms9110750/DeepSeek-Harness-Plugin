@@ -4347,22 +4347,45 @@ window.__ModuleLoader__.load({
       /* summary 视图：卡片列表里那一行说明。 */
       if (view === 'summary') return '任务面板：抽屉与右侧栏两个入口';
 
+      /*
+       * `props.form` 的形状（读 dsh-client-ui-plugin-manager 的 formFor 确认）：
+       *
+       *   const formFor = (id) => {
+       *     if (!configurations?.some((view) => view.ns === id)) return undefined;
+       *     const form = props.configForm(id);
+       *     return { state: form.getSnapshot(), mutate: (ops, revision) => form.mutate(ops, revision) };
+       *   };
+       *
+       * 也就是说只有 **state**（快照）和 **mutate**（写回），
+       * 没有 subscribe / set / getSnapshot —— 那些是底层 ConfigFormController 的。
+       *
+       * 快照结构：{ value, revision, ... }。写入要带上 revision 做乐观并发控制。
+       */
       const form = props.form;
-      const snapshot = React.useSyncExternalStore(
-        function (onChange) {
-          return form.subscribe(onChange);
-        },
-        function () {
-          return form.getSnapshot();
-        },
-      );
+      if (form === undefined || form === null) return null;
+      const state = form.state;
+      const document = state && state.value;
 
-      /* 当前值：从表单快照里取 ui.drawer / ui.sidebar，缺省 true。 */
+      /* 当前值：从快照里取 ui.drawer / ui.sidebar，缺省 true。 */
       const valueOf = function (key) {
-        const document = snapshot && snapshot.value;
         const ui = document && typeof document === 'object' ? document.ui : undefined;
         if (ui !== null && typeof ui === 'object' && typeof ui[key] === 'boolean') return ui[key];
         return true;
+      };
+
+      /* 写回一个 bool。
+       *
+       * ops 的形状按 ConfigFormController.set() 的实现（客户端 ui-settings）：
+       *
+       *   set(field, value) {
+       *     return this.mutate([{ op: 'set', path: [field], value }]);
+       *   }
+       *
+       * 注意字段名是 `op`（不是 kind），`path` 是数组。
+       * 嵌套字段就把 path 写成多段：['ui', 'drawer']。 */
+      const write = function (key, value) {
+        const revision = state && typeof state.revision === 'number' ? state.revision : undefined;
+        return form.mutate([{ op: 'set', path: ['ui', key], value: value }], revision);
       };
 
       const rowStyle = {
@@ -4378,8 +4401,7 @@ window.__ModuleLoader__.load({
 
       /* 一个开关：点一下写回宿主。 */
       const toggle = function (key) {
-        const next = !valueOf(key);
-        form.set({ ui: Object.assign({}, snapshot && snapshot.value && snapshot.value.ui, { [key]: next }) });
+        write(key, !valueOf(key));
       };
 
       const renderToggle = function (key, title, hint, id) {
@@ -4585,44 +4607,41 @@ window.__ModuleLoader__.load({
           });
         });
 
-        /* ── 设置页卡片（两个 UI 的开关）──────────────────────────────────
+        /* ── 设置页的行配置（两个 UI 的开关）─────────────────────────────
          *
          * 用户要求：「那就做一个插件，然后把他的配置弄出来，开两个 bool。」
          *
-         * 光导出 `Config` 不够：那只让宿主知道 schema，设置页不会自动长表单。
-         * 必须有客户端插件往 `plugins.item` 注册一张卡片，并用 ctx.configForms
-         * 读写那个 namespace。
+         * ## 第一次搞错的地方
          *
-         * namespace = **Host plugin entry id**（`include:taskboard`），
-         * 这是 ConfigFormController 的约定（@param entryId）。
+         * 我先注册到 `plugins.item`。那个 slot 的说明写得很清楚：
          *
-         * `whileServed` 保证：宿主没服务这个 namespace 时不注册任何东西。 */
-        const SETTINGS_NS = 'include:taskboard';
-        if (ctx.configForms && typeof ctx.configForms.get === 'function') {
-          ctx.effect(
-            function () {
-              return ctx.configForms.whileServed([SETTINGS_NS], function () {
-                const form = ctx.configForms.get(SETTINGS_NS);
-                return ctx.slots.inject('plugins.item', function () {
-                  return ctx.slots.register(
-                    {
-                      name: 'plugins.item',
-                      id: 'taskboard',
-                      order: 40,
-                      label: function () {
-                        return t('panel.title');
-                      },
-                    },
-                    function (props) {
-                      return h(TaskboardSettingsCard, Object.assign({}, props, { form: form }));
-                    },
-                  );
-                });
-              });
-            },
-            'taskboard: 设置页卡片',
+         *   OCCUPIED by the official settings pages, one companion package
+         *   per host-plane namespace; **a bundle's configuration belongs in
+         *   `plugins.bundle.config` or `plugins.row.config` instead.**
+         *
+         * 所以 bundle 自己的配置不能用 `plugins.item`——那是官方包的座位。
+         *
+         * ## 正确做法
+         *
+         * `plugins.row.config`，key = **`<包名>#<row id>`**：
+         *
+         *   '@local/taskboard#taskboard'
+         *
+         * 而且这个 slot 的 ownerProps 里已经给了 `form`：
+         *
+         *   interface PluginConfigViewProps {
+         *     view: 'summary' | 'page'
+         *     form?: ConfigPageForm
+         *   }
+         *
+         * **宿主替我们接好了表单控制器**，不需要自己 `configForms.get()`。
+         * 注册上去之后，那一行就会多出一个"配置"控件，点开就是我的页面。 */
+        ctx.slots.inject('plugins.row.config', function () {
+          return ctx.slots.register(
+            { name: 'plugins.row.config', key: '@local/taskboard#taskboard' },
+            TaskboardSettingsCard,
           );
-        }
+        });
       },
     };
   },

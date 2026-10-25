@@ -5450,19 +5450,17 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const view = props.view;
         if (view === "summary") return "\u4EFB\u52A1\u9762\u677F\uFF1A\u62BD\u5C49\u4E0E\u53F3\u4FA7\u680F\u4E24\u4E2A\u5165\u53E3";
         const form = props.form;
-        const snapshot = React.useSyncExternalStore(
-          function(onChange) {
-            return form.subscribe(onChange);
-          },
-          function() {
-            return form.getSnapshot();
-          }
-        );
+        if (form === void 0 || form === null) return null;
+        const state = form.state;
+        const document = state && state.value;
         const valueOf = function(key) {
-          const document = snapshot && snapshot.value;
           const ui = document && typeof document === "object" ? document.ui : void 0;
           if (ui !== null && typeof ui === "object" && typeof ui[key] === "boolean") return ui[key];
           return true;
+        };
+        const write = function(key, value) {
+          const revision = state && typeof state.revision === "number" ? state.revision : void 0;
+          return form.mutate([{ op: "set", path: ["ui", key], value }], revision);
         };
         const rowStyle = {
           display: "flex",
@@ -5475,8 +5473,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const labelStyle = { fontSize: 13, color: "var(--dsw-alias-label-primary)" };
         const hintStyle = { fontSize: 12, color: "var(--dsw-alias-label-tertiary)", marginTop: 2 };
         const toggle = function(key) {
-          const next = !valueOf(key);
-          form.set({ ui: Object.assign({}, snapshot && snapshot.value && snapshot.value.ui, { [key]: next }) });
+          write(key, !valueOf(key));
         };
         const renderToggle = function(key, title, hint, id) {
           const on2 = valueOf(key);
@@ -5638,32 +5635,12 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               return h("span", null, t("panel.title"));
             });
           });
-          const SETTINGS_NS = "include:taskboard";
-          if (ctx.configForms && typeof ctx.configForms.get === "function") {
-            ctx.effect(
-              function() {
-                return ctx.configForms.whileServed([SETTINGS_NS], function() {
-                  const form = ctx.configForms.get(SETTINGS_NS);
-                  return ctx.slots.inject("plugins.item", function() {
-                    return ctx.slots.register(
-                      {
-                        name: "plugins.item",
-                        id: "taskboard",
-                        order: 40,
-                        label: function() {
-                          return t("panel.title");
-                        }
-                      },
-                      function(props) {
-                        return h(TaskboardSettingsCard, Object.assign({}, props, { form }));
-                      }
-                    );
-                  });
-                });
-              },
-              "taskboard: \u8BBE\u7F6E\u9875\u5361\u7247"
+          ctx.slots.inject("plugins.row.config", function() {
+            return ctx.slots.register(
+              { name: "plugins.row.config", key: "@local/taskboard#taskboard" },
+              TaskboardSettingsCard
             );
-          }
+          });
         }
       };
     }
