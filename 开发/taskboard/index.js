@@ -1165,6 +1165,70 @@ async function setTags(id, tags) {
 }
 
 
+/*
+ * ---------------------------------------------------------------------------
+ * 标记（flags）—— 与状态正交的那一套
+ * ---------------------------------------------------------------------------
+ *
+ * 用户原话：
+ *   > 需要有醒目，分组，之类的功能。例如 ai 改写了备注，要求需要回答。之类的。沟通。
+ *   > 需要像围棋落子一样，高亮。或者说，「需要处理」，「需要审核」，「已读」，「设置为未读」。
+ *   > 就像受邮箱那样。
+ *
+ * 四个**固定枚举**（不是自由 tag——用户明确：「目前只需要具体枚举的语义」）：
+ *
+ *   unread        系统置：新建 / 被改动 → 我没看过
+ *   read          我置：打开详情即置 → 看过了
+ *   needs-me      事项自己声明 → 卡在我这里，等我动手
+ *   needs-review  派发方置 → 我做的，等你审
+ *
+ * 为什么必须与状态分开：
+ *   · 「已读」不是生命周期的一部分——一件「处理中」的事项可以已读也可以未读
+ *   · 「需要处理」可能对应多个状态（需要授权 / 待选 / 需要补充），
+ *     但语义是同一个：**等我**
+ *   · 塞进状态会数量爆炸（3 组 × 2 读 × 2 待 = 12 种，还要按 kind 再乘）
+ */
+const FLAGS = ['unread', 'read', 'needs-me', 'needs-review'];
+
+/** 解析存储里的 flags 字符串（逗号分隔）→ 数组，只留合法值。 */
+function parseFlags(raw) {
+	return String(raw ?? '')
+		.split(/[,，\s]+/u)
+		.map((flag) => flag.trim())
+		.filter((flag) => FLAGS.includes(flag));
+}
+
+/** 把 flags 数组归一：read 和 unread 互斥，后者覆盖前者。 */
+function normalizeFlags(list) {
+	const out = [];
+	for (const flag of list) {
+		if (!FLAGS.includes(flag)) continue;
+		/* 设 read 就清 unread；设 unread 就清 read。 */
+		if (flag === 'read') {
+			const at = out.indexOf('unread');
+			if (at !== -1) out.splice(at, 1);
+		}
+		if (flag === 'unread') {
+			const at = out.indexOf('read');
+			if (at !== -1) out.splice(at, 1);
+		}
+		if (!out.includes(flag)) out.push(flag);
+	}
+	return out;
+}
+
+async function setFlags(id, flags) {
+	return withWrite(async () => {
+		const task = await readTask(id);
+		if (task === undefined) throw new Error(`没有这份事项：${id}`);
+		const list = normalizeFlags(Array.isArray(flags) ? flags.map(String) : []);
+		const next = Object.assign({}, task, { flags: list.join(',') });
+		await saveTask(next);
+		return next;
+	});
+}
+
+
 /** 只认识 `key: value` 行的极简头解析，够用且不怕正文里的冒号。 */
 function parseTask(raw, file) {
 	const lines = String(raw ?? '').split(/\r?\n/u);
@@ -1643,6 +1707,15 @@ function summarize(task) {
 	];
 	if (task.parent) bits.push(`父=${task.parent}`);
 	if (task.links) bits.push(`链接=${task.links}`);
+	/* 标记放前面（紧挨状态），因为它们决定"要不要我现在看"。
+	 * 用符号而不是文字，扫一眼就能看出哪几条在等我。 */
+	const flags = parseFlags(task.flags);
+	if (flags.length > 0) {
+		const mark = flags
+			.map((flag) => ({ unread: '●未读', read: '✓已读', 'needs-me': '◉待我', 'needs-review': '◇待审' })[flag] || flag)
+			.join(' ');
+		bits.splice(2, 0, mark);
+	}
 	if (task.workspace) bits.push(`子工作空间=${task.workspace}`);
 	if (text(task.workspaces) !== '') bits.push(`额外工作区=${task.workspaces}`);
 	if (task.permission) bits.push(`权限=${task.permission}`);
@@ -1866,7 +1939,7 @@ function registerTools(ctx) {
 					kind,
 					status: '未指定',
 					parent: text(args.parent),
-					links: text(args.links),
+					links: normalizeLinks(args.links),
 					workspace: text(args.workspace),
 					workspaces,
 					permission: text(args.permission),
@@ -1911,6 +1984,15 @@ function registerTools(ctx) {
 				lines.push(`额外工作区：${task.workspaces || '（无）'}`);
 				lines.push(`权限档位：${task.permission || '（计划没写，按会话当前档位）'}`);
 				lines.push('', '提醒：计划的附属权限只在会话权限档位为「按计划」时生效；其它档位按会话当前权限执行。');
+				/* 约束 / 参考：**不阻断领取，但要说出来**。
+				 *
+				 * 约束常常是外部条件（没梯子、没权限），硬拒会让事项永远领不了；
+				 * 但也不能不提——用户要的是"领之前知道有这个限制"。 */
+				const hints = await claimHints(task);
+				if (hints.length > 0) {
+					lines.push('', '这条事项挂着：');
+					for (const hint of hints) lines.push('  ' + hint);
+				}
 				return { text: lines.join('\n') };
 			},
 		}),
@@ -1963,6 +2045,8 @@ function registerCommands(ctx) {
 							groupsOf: groupOfTask.get(head.id) ?? [],
 							/* 标签：多个，自由字符串。用于跨组检索。 */
 							tags: Array.isArray(head.tags) ? head.tags : [],
+							/* 标记：与状态正交（unread/read/needs-me/needs-review）。 */
+							flags: parseFlags(head.flags),
 						});
 					}),
 				),
@@ -2756,6 +2840,38 @@ function registerExtraTools(ctx) {
 
 	ctx.tools.register(
 		defineTool({
+			name: 'task_flag',
+			description:
+				'给事项打**标记**（与状态正交，四个固定枚举）。' +
+				'unread（新建/被改动，我没看过）/ read（看过了）/ ' +
+				'needs-me（卡在我这里，等我动手）/ needs-review（我做的，等你审）。' +
+				'与状态的区别：「已读」不是生命周期的一部分——一件「处理中」的事项可以已读也可以未读；' +
+				'而「需要处理」可能对应多个状态（需要授权/待选/需要补充），语义都是"等我"。' +
+				'read 与 unread 互斥（后设的覆盖前一个）。给空数组表示清空全部标记。',
+			parameters: {
+				id: { type: 'string', required: true, description: '事项 id' },
+				flags: { type: 'string', required: true, description: '逗号分隔的标记；空串 = 清空' },
+			},
+			output: {
+				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
+				render: (_args, value) => [{ type: 'text', text: value.text }],
+			},
+			async execute(args) {
+				const list = parseFlags(args.flags);
+				const task = await setFlags(args.id, list);
+				const now = parseFlags(task.flags);
+				return {
+					text:
+						now.length === 0
+							? `已清空 ${task.id} 的标记`
+							: `${task.id} 的标记：${now.join(', ')}`,
+				};
+			},
+		}),
+	);
+
+	ctx.tools.register(
+		defineTool({
 			name: 'task_tag',
 			description:
 				'给事项打**标签**（多个，自由字符串）。与分组的区别：' +
@@ -3082,7 +3198,7 @@ function registerExtraCommands(ctx) {
 					kind,
 					status,
 					parent: text(input.parent),
-					links: text(input.links),
+					links: normalizeLinks(input.links),
 					workspace: text(input.workspace),
 					workspaces: splitWorkspaces(input.workspaces).join(', '),
 					permission: text(input.permission),
@@ -3244,6 +3360,75 @@ async function updateTaskInner(id, patch) {
 }
 
 /** 一份新计划被采纳（提交）时，它 links 里「取代:X」的那些旧计划直接转「拒绝」。 */
+/*
+ * ---------------------------------------------------------------------------
+ * 关系类型（links）
+ * ---------------------------------------------------------------------------
+ *
+ * 用户原话：
+ *   > 考虑给关联新增更多内容。例如一期，二期。意味着他们是一件事情。
+ *   > 那么是否除了用兄弟节点的联系以外，是否需要给一个"相关"的关系？
+ *   > 然后还要有"约束"，"参考"之类的关系。
+ *   > 例如一个目标，一个工作，用约束/参考，联系到记录/阻碍/研究里面去。
+ *
+ * 三个维度决定一种关系：
+ *   ① 有没有方向      ② 有没有行为      ③ 影不影响状态
+ *
+ * | 类型 | 方向 | 行为 | 典型用法 |
+ * |------|------|------|----------|
+ * | 依赖 | 有向 | 阻断领取 + 上游失败则下游取消 | A 完成才能做 B |
+ * | 相关 | 无向 | 无 | 一期 / 二期、同类问题 |
+ * | 约束 | 有向 | 阻断领取（宽松：只警告不硬拒） | 查资料被"没有梯子"约束 |
+ * | 参考 | 有向 | 无 | 做这事时该看那条记录 |
+ * | 取代 | 有向 | 旧转拒绝 + 依赖转移 | 新方案替代旧方案 |
+ * | 派生 | 有向 | 无（遗留字段，父子结构才是主路径） | 我从哪来 |
+ * | 来源 | 有向 | 无 | 追溯出处 |
+ *
+ * **约束 vs 阻碍**（用户明确区分过）：
+ *   「约束，是一个关系。阻碍，是一个性质，他可没说阻碍谁啊。
+ *    不同的事情也可以被一个无关的东西阻碍。例如搜什么东西，然后约束于没有梯子。」
+ *
+ *   阻碍 = 事项的性质（"我被卡住了"），自身不指向谁
+ *   约束 = 两个事项之间的关系，**可以跨树**指向一件完全无关的事
+ *
+ * 所以约束存在 links 里，不是父子结构。
+ */
+const RELATIONS = {
+	依赖: { direction: 'forward', blocks: 'hard', cascades: true },
+	相关: { direction: 'none', blocks: 'none', cascades: false },
+	约束: { direction: 'forward', blocks: 'soft', cascades: false },
+	参考: { direction: 'forward', blocks: 'none', cascades: false },
+	取代: { direction: 'forward', blocks: 'none', cascades: true },
+	派生: { direction: 'forward', blocks: 'none', cascades: false },
+	来源: { direction: 'forward', blocks: 'none', cascades: false },
+};
+/** 用户在 links 里能用的（派生/来源是系统写的，不拦手写）。 */
+const RELATION_LABELS = Object.keys(RELATIONS);
+
+/** 校验 links 字符串里的关系名，返回归一后的字符串。 */
+function normalizeLinks(raw) {
+	const parts = String(raw ?? '')
+		.split(/[,，]/u)
+		.map((part) => part.trim())
+		.filter((part) => part !== '');
+	const out = [];
+	for (const part of parts) {
+		const cut = part.split(/[:：]/u);
+		const label = (cut[0] || '').trim();
+		const to = (cut[1] || '').trim();
+		if (to === '') continue;
+		if (!RELATION_LABELS.includes(label)) {
+			throw new Error(
+				`不认识的关系「${label}」。可用的：${RELATION_LABELS.join(' / ')}。\n` +
+					'依赖=前者完成才能做 / 相关=同一件事的两个阶段 / 约束=被某件外部的事限制 / ' +
+					'参考=做这事时该看那条 / 取代=新方案替旧方案',
+			);
+		}
+		out.push(`${label}:${to}`);
+	}
+	return out.join(', ');
+}
+
 /** links 解析成 [{label,to}]。 */
 function linkPairs(task) {
 	return String(task.links || '')
@@ -3285,6 +3470,14 @@ async function claimBlocker(task, tasks) {
 		   和"阻碍"（在做、中途卡住）不是一回事。 */
 		if (dep.status !== '完成') return `依赖 ${link.to} 还没完成（当前「${dep.status}」），不能领取`;
 	}
+	/* 约束（RELATIONS.约束 = soft）：**不硬拒，只往 text 里加提示**。
+	 *
+	 * 为什么软：约束常常是"外部条件不理想"（没梯子、没权限、数据量太大），
+	 * 硬拒会让事项永远领不了。用户能判断"这个约束现在绕得过去"。
+	 * 所以领是可以领的，但要把约束明确说出来。
+	 *
+	 * 实现上不在这里返回——调用方拿不到"提示"这个返回值形态。
+	 * 约束的提示由 claim 工具自己拼（见 claimConstraints）。 */
 	if (task.parent) {
 		const parent = byId.get(task.parent);
 		if (parent === undefined) return `父计划 ${task.parent} 不存在`;
@@ -3294,6 +3487,29 @@ async function claimBlocker(task, tasks) {
 		}
 	}
 	return '';
+}
+
+/**
+ * 列出这条事项的「约束」和「参考」，给领取时做提示（不阻断）。
+ *
+ * 用户原话：「例如一个目标，一个工作，用约束/参考，联系到记录/阻碍/研究里面去。」
+ * 约束跨树指向——它指向的东西可能完全不在同一棵树下，所以不能靠父子结构找。
+ */
+async function claimHints(task, tasks) {
+	const all = tasks || (await listAll());
+	const byId = new Map(all.map((item) => [item.id, item]));
+	const hints = [];
+	for (const link of linkPairs(task)) {
+		if (link.label !== '约束' && link.label !== '参考') continue;
+		const target = byId.get(link.to);
+		const label = link.label === '约束' ? '约束' : '参考';
+		if (target === undefined) {
+			hints.push(`⚠️ ${label} ${link.to} 不存在`);
+			continue;
+		}
+		hints.push(`${label}：${target.id}（${target.status}）${target.title} —— 先看一眼`);
+	}
+	return hints;
 }
 
 /** 当前会话正在进行的任务（处理中）；没有就 undefined。 */

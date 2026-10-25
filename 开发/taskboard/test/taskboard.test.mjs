@@ -332,11 +332,12 @@ after(() => {
 
 /* ── 7. 用例 ───────────────────────────────────────────────────────────── */
 
-test('apply 注册十三个工具、十九条面板命令、「按计划」预设、守卫和 planClaims', () => {
+test('apply 注册十四个工具、十九条面板命令、「按计划」预设、守卫和 planClaims', () => {
 	assert.deepEqual([...tools.keys()].sort(), [
 		'task_answer',
 		'task_claim',
 		'task_dispatch',
+		'task_flag',
 		'task_get',
 		'task_group',
 		'task_history',
@@ -470,6 +471,85 @@ test('失败必须有理由：记录类子事项就算理由，不必非得是�
 	await submit({ title: '一份复盘', type: 'RF', parent: id });
 	await tool('task_state').execute({ id, status: '失败' });
 	assert.equal(taskOf(id).status, '失败');
+});
+
+test('关系类型：相关无向无行为，约束软提示不阻断，参考只是提示', async () => {
+	/* 用户原话：「例如一期，二期。意味着他们是一件事情。……
+	   还需要有"约束"，"参考"之类的关系。」
+	   以及关键区分：「约束，是一个关系。阻碍，是一个性质。」 */
+	const blocker = await submit({ title: '没有梯子', type: 'RB' });
+	const one = await submit({ title: '一期', type: 'WI', links: '相关:' + blocker });
+	const two = await submit({ title: '二期', type: 'WI', links: '相关:' + one });
+
+	/* 相关：不阻断领取 */
+	await approve(one);
+	await claim(one, newSession());
+	assert.equal(taskOf(one).status, '处理中');
+
+	/* 相关关系能读出来 */
+	assert.match(taskOf(two).links, /相关:WI-0\d/u);
+
+	/* 约束：跨树指向一条记录，**能领**，但领取输出里要有提示 */
+	const constrained = await submit({ title: '查资料', type: 'WI', links: '约束:' + blocker });
+	await approve(constrained);
+	const session = newSession();
+	const claimed = await tool('task_claim').execute({ id: constrained }, { agent: { id: session } });
+	assert.match(claimed.text, /约束：/u, '领取时要把约束说出来');
+	assert.match(claimed.text, /没有梯子/u, '要说出约束的是哪一条');
+	assert.equal(taskOf(constrained).status, '处理中', '约束不阻断领取');
+
+	/* 参考：只是提示，不影响任何行为 */
+	const ref = await submit({ title: '照着做', type: 'WI', links: '参考:' + one });
+	await approve(ref);
+	const refClaimed = await tool('task_claim').execute({ id: ref }, { agent: { id: newSession() } });
+	assert.match(refClaimed.text, /参考：/u);
+	assert.equal(taskOf(ref).status, '处理中');
+});
+
+test('关系类型：不认识的关系名直接拒，说明可用值', async () => {
+	await assert.rejects(
+		() => submit({ title: '瞎连', type: 'WI', links: '随便连:WI-01' }),
+		/不认识的关系/u,
+	);
+	await assert.rejects(
+		() => submit({ title: '瞎连', type: 'WI', links: '随便连:WI-01' }),
+		/可用的：依赖/u,
+	);
+});
+
+test('标记（flags）：四个固定枚举，read/unread 互斥，与状态无关', async () => {
+	/* 用户原话：「需要像围棋落子一样，高亮。或者说，「需要处理」，
+	   「需要审核」，「已读」，「设置为未读」。就像受邮箱那样。」 */
+	const id = await submit({ title: '带标记的活' });
+
+	await tool('task_flag').execute({ id, flags: 'unread' });
+	assert.equal(taskOf(id).flags, 'unread');
+
+	/* 设 read 会清掉 unread（互斥） */
+	await tool('task_flag').execute({ id, flags: 'read' });
+	assert.equal(taskOf(id).flags, 'read');
+
+	/* 再设 unread 反过来清掉 read */
+	await tool('task_flag').execute({ id, flags: 'unread' });
+	assert.equal(taskOf(id).flags, 'unread');
+
+	/* 多个标记可以共存 */
+	await tool('task_flag').execute({ id, flags: 'needs-me,needs-review' });
+	assert.equal(taskOf(id).flags, 'needs-me,needs-review');
+
+	/* 非法标记被丢掉，不报错 */
+	await tool('task_flag').execute({ id, flags: 'needs-me,瞎写的' });
+	assert.equal(taskOf(id).flags, 'needs-me');
+
+	/* 空数组清空 */
+	await tool('task_flag').execute({ id, flags: '' });
+	assert.equal(taskOf(id).flags ?? '', '');
+
+	/* **标记与状态正交**：改状态不影响标记 */
+	await tool('task_flag').execute({ id, flags: 'needs-review' });
+	await approve(id);
+	assert.equal(taskOf(id).status, '提交');
+	assert.equal(taskOf(id).flags, 'needs-review', '改状态不该清掉标记');
 });
 
 test('开放问题：能从正文里数出来，且能逐条回答', async () => {
