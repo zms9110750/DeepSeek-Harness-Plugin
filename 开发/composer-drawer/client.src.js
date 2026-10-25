@@ -4230,6 +4230,57 @@ window.__ModuleLoader__.load({
         return this.props.children;
       }
     }
+    /*
+     * ── 运行期 UI 开关（模块级）────────────────────────────────────────
+     *
+     * 为什么需要这个：`.volatile()` 的含义是"改完立刻生效，但**不重新挂载**"。
+     * 也就是说 config 改了之后 `apply` 不会再被跑一次，而 slot 一旦注册就
+     * 一直占着位置。所以"在 apply 里按 config 决定注册不注册"这件事，
+     * 从机制上就不可能跟着开关走 —— 用户实测「关掉抽屉，它还在」正是如此。
+     *
+     * 做法：把开关值放进一个模块级的小 store，**组件渲染时读它**，
+     * 值变了就返回 null（不渲染）。注册留着，渲染撤掉 —— 视觉上就是消失。
+     * 这样不依赖任何重挂机制，也不用跟 slot 生命周期较劲。
+     */
+    let liveUi = { drawer: true, sidebar: true };
+    const uiListeners = new Set();
+
+    function readLiveUi() {
+      return liveUi;
+    }
+
+    function setLiveUi(next) {
+      const changed = next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar;
+      if (!changed) return;
+      liveUi = next;
+      for (const listener of [...uiListeners]) {
+        try {
+          listener();
+        } catch (failure) {
+          /* 单个订阅者出错不影响其它 */
+        }
+      }
+    }
+
+    function subscribeLiveUi(listener) {
+      uiListeners.add(listener);
+      return function () {
+        uiListeners.delete(listener);
+      };
+    }
+
+    /** 订阅模块级 store 的 hook。 */
+    function useLiveUi() {
+      const pair = React.useState(readLiveUi);
+      const setLocal = pair[1];
+      React.useEffect(function () {
+        return subscribeLiveUi(function () {
+          setLocal(readLiveUi());
+        });
+      }, []);
+      return pair[0];
+    }
+
     function ComposerDrawer(props) {
       const state = React.useState(false);
       const open = state[0];
@@ -4239,6 +4290,9 @@ window.__ModuleLoader__.load({
       const setHover = hoverPair[1];
 
       useLocaleRevision();
+      /* 开关关掉时整块不渲染（注册还在，但看不到）。 */
+      const visible = useLiveUi().drawer;
+      if (!visible) return null;
 
       const toggle = React.useCallback(function () {
         setOpen(function (current) {
@@ -4300,10 +4354,13 @@ window.__ModuleLoader__.load({
       const open = state[0];
       const setOpen = state[1];
       useLocaleRevision();
+      /* 开关关掉时整块不渲染。 */
+      const visible = useLiveUi().sidebar;
       /* 只在 tab 真正挂上时渲染任务板，避免右侧栏没打开也去拉数据。 */
       React.useEffect(function () {
         setOpen(true);
       }, []);
+      if (!visible) return null;
       return h(
         'div',
         {
@@ -4562,7 +4619,7 @@ window.__ModuleLoader__.load({
          */
         const FORMS_NS = 'include:taskboard';
 
-        /** 当前该显示哪些入口。读不到 form 就按 apply 收到的 config 走。 */
+        /* 读开关的当前值：先看 form 快照，读不到就用 apply 收到的 config。 */
         const readUiFlags = function () {
           let document;
           try {
@@ -4579,110 +4636,70 @@ window.__ModuleLoader__.load({
           };
         };
 
-        /* 注册器：两个 UI 各一个函数，返回 disposer。 */
-        const mountDrawer = function () {
-          return ctx.slots.inject('conversation.input.dock', function () {
-            return ctx.slots.register(
-              {
-                name: 'conversation.input.dock',
-                id: 'composer-drawer',
-                /* Last row of the dock: rows above it (todo / goal / queue) then
-                   grow upward without pushing the button off the card's corner. */
-                order: 999,
-              },
-              ComposerDrawer,
-            );
-          });
-        };
+        /*
+         * 两个 UI 都**只注册一次**，开关只决定"渲不渲染"。
+         *
+         * 为什么不做成动态注册/注销：slot 的注册是 cordis fiber 级操作，
+         * 而 config 变化时 fiber 不会重建（volatile 的语义就是"不重挂"）。
+         * 反复 register / dispose 还可能撞上 React 的重渲染时机。
+         * 让组件返回 null 既简单又没有时序问题 —— 视觉上完全一样。
+         */
+        ctx.slots.inject('conversation.input.dock', function () {
+          return ctx.slots.register(
+            {
+              name: 'conversation.input.dock',
+              id: 'composer-drawer',
+              /* Last row of the dock: rows above it (todo / goal / queue) then
+                 grow upward without pushing the button off the card's corner. */
+              order: 999,
+            },
+            ComposerDrawer,
+          );
+        });
 
-        const mountSidebar = function () {
-          const offs = [];
-          offs.push(
-            ctx.effect(function () {
-              return ctx.sidebarRightTabs.register({
+        ctx.effect(function () {
+          return ctx.sidebarRightTabs.register({
+            id: 'taskboard',
+            kind: 'taskboard',
+            title: function () {
+              return t('panel.title');
+            },
+            guide: [
+              {
                 id: 'taskboard',
-                kind: 'taskboard',
+                order: 60,
                 title: function () {
                   return t('panel.title');
                 },
-                guide: [
-                  {
-                    id: 'taskboard',
-                    order: 60,
-                    title: function () {
-                      return t('panel.title');
-                    },
-                    description: function () {
-                      return t('panel.description');
-                    },
-                  },
-                ],
-              });
-            }, 'taskboard: 注册右侧栏 tab 类型'),
-          );
-          offs.push(
-            ctx.slots.inject('sidebar.right.pane.tab', function () {
-              return ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'taskboard' }, RightbarPanel);
-            }),
-          );
-          offs.push(
-            ctx.slots.inject('sidebar.right.pane.tab.title', function () {
-              return ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'taskboard' }, function () {
-                return h('span', null, t('panel.title'));
-              });
-            }),
-          );
-          return function () {
-            for (const off of offs) {
-              try {
-                if (typeof off === 'function') off();
-              } catch (failure) {
-                /* 注销失败不影响其它 */
-              }
-            }
-          };
-        };
+                description: function () {
+                  return t('panel.description');
+                },
+              },
+            ],
+          });
+        }, 'taskboard: 注册右侧栏 tab 类型');
 
-        /* 按当前 flags 对齐两份注册：多了就注销，少了就注册。 */
-        let drawerOff = null;
-        let sidebarOff = null;
+        ctx.slots.inject('sidebar.right.pane.tab', function () {
+          return ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'taskboard' }, RightbarPanel);
+        });
+        ctx.slots.inject('sidebar.right.pane.tab.title', function () {
+          return ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'taskboard' }, function () {
+            return h('span', null, t('panel.title'));
+          });
+        });
 
-        const syncEntries = function () {
-          const flags = readUiFlags();
-
-          if (flags.drawer && drawerOff === null) drawerOff = mountDrawer();
-          else if (!flags.drawer && drawerOff !== null) {
-            try {
-              drawerOff();
-            } catch (failure) {
-              /* ignore */
-            }
-            drawerOff = null;
-          }
-
-          if (flags.sidebar && sidebarOff === null) sidebarOff = mountSidebar();
-          else if (!flags.sidebar && sidebarOff !== null) {
-            try {
-              sidebarOff();
-            } catch (failure) {
-              /* ignore */
-            }
-            sidebarOff = null;
-          }
-        };
-
-        /* 先按当前值装一遍，再订阅后续变化。 */
-        syncEntries();
-
+        /* 把当前值推进 store，再订阅后续变化。
+         * store 变了组件就重渲染 —— 这就是"立刻生效"。 */
+        setLiveUi(readUiFlags());
         try {
           const form = ctx.configForms.get(FORMS_NS);
           ctx.effect(function () {
             return form.subscribe(function () {
-              syncEntries();
+              setLiveUi(readUiFlags());
             });
-          }, 'taskboard: 跟随 config 变化重挂 UI');
+          }, 'taskboard: config 变化同步到 UI store');
         } catch (failure) {
-          /* 没有 configForms 时退回"只在 mount 时按 config 装一次" */
+          /* 没有 configForms 时只按 apply 那一刻的 config 走 */
         }
 
         /* ── 设置页的行配置（两个 UI 的开关）─────────────────────────────

@@ -5376,6 +5376,38 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           return this.props.children;
         }
       }
+      let liveUi = { drawer: true, sidebar: true };
+      const uiListeners = /* @__PURE__ */ new Set();
+      function readLiveUi() {
+        return liveUi;
+      }
+      function setLiveUi(next) {
+        const changed = next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar;
+        if (!changed) return;
+        liveUi = next;
+        for (const listener of [...uiListeners]) {
+          try {
+            listener();
+          } catch (failure) {
+          }
+        }
+      }
+      function subscribeLiveUi(listener) {
+        uiListeners.add(listener);
+        return function() {
+          uiListeners.delete(listener);
+        };
+      }
+      function useLiveUi() {
+        const pair = React.useState(readLiveUi);
+        const setLocal = pair[1];
+        React.useEffect(function() {
+          return subscribeLiveUi(function() {
+            setLocal(readLiveUi());
+          });
+        }, []);
+        return pair[0];
+      }
       function ComposerDrawer(props) {
         const state = React.useState(false);
         const open = state[0];
@@ -5384,6 +5416,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const hover = hoverPair[0];
         const setHover = hoverPair[1];
         useLocaleRevision();
+        const visible = useLiveUi().drawer;
+        if (!visible) return null;
         const toggle = React.useCallback(function() {
           setOpen(function(current) {
             return !current;
@@ -5427,9 +5461,11 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const open = state[0];
         const setOpen = state[1];
         useLocaleRevision();
+        const visible = useLiveUi().sidebar;
         React.useEffect(function() {
           setOpen(true);
         }, []);
+        if (!visible) return null;
         return h(
           "div",
           {
@@ -5602,95 +5638,55 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               sidebar: live !== null && typeof live === "object" && typeof live.sidebar === "boolean" ? live.sidebar : wantSidebar
             };
           };
-          const mountDrawer = function() {
-            return ctx.slots.inject("conversation.input.dock", function() {
-              return ctx.slots.register(
+          ctx.slots.inject("conversation.input.dock", function() {
+            return ctx.slots.register(
+              {
+                name: "conversation.input.dock",
+                id: "composer-drawer",
+                /* Last row of the dock: rows above it (todo / goal / queue) then
+                   grow upward without pushing the button off the card's corner. */
+                order: 999
+              },
+              ComposerDrawer
+            );
+          });
+          ctx.effect(function() {
+            return ctx.sidebarRightTabs.register({
+              id: "taskboard",
+              kind: "taskboard",
+              title: function() {
+                return t("panel.title");
+              },
+              guide: [
                 {
-                  name: "conversation.input.dock",
-                  id: "composer-drawer",
-                  /* Last row of the dock: rows above it (todo / goal / queue) then
-                     grow upward without pushing the button off the card's corner. */
-                  order: 999
-                },
-                ComposerDrawer
-              );
-            });
-          };
-          const mountSidebar = function() {
-            const offs = [];
-            offs.push(
-              ctx.effect(function() {
-                return ctx.sidebarRightTabs.register({
                   id: "taskboard",
-                  kind: "taskboard",
+                  order: 60,
                   title: function() {
                     return t("panel.title");
                   },
-                  guide: [
-                    {
-                      id: "taskboard",
-                      order: 60,
-                      title: function() {
-                        return t("panel.title");
-                      },
-                      description: function() {
-                        return t("panel.description");
-                      }
-                    }
-                  ]
-                });
-              }, "taskboard: \u6CE8\u518C\u53F3\u4FA7\u680F tab \u7C7B\u578B")
-            );
-            offs.push(
-              ctx.slots.inject("sidebar.right.pane.tab", function() {
-                return ctx.slots.register({ name: "sidebar.right.pane.tab", key: "taskboard" }, RightbarPanel);
-              })
-            );
-            offs.push(
-              ctx.slots.inject("sidebar.right.pane.tab.title", function() {
-                return ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "taskboard" }, function() {
-                  return h("span", null, t("panel.title"));
-                });
-              })
-            );
-            return function() {
-              for (const off of offs) {
-                try {
-                  if (typeof off === "function") off();
-                } catch (failure) {
+                  description: function() {
+                    return t("panel.description");
+                  }
                 }
-              }
-            };
-          };
-          let drawerOff = null;
-          let sidebarOff = null;
-          const syncEntries = function() {
-            const flags = readUiFlags();
-            if (flags.drawer && drawerOff === null) drawerOff = mountDrawer();
-            else if (!flags.drawer && drawerOff !== null) {
-              try {
-                drawerOff();
-              } catch (failure) {
-              }
-              drawerOff = null;
-            }
-            if (flags.sidebar && sidebarOff === null) sidebarOff = mountSidebar();
-            else if (!flags.sidebar && sidebarOff !== null) {
-              try {
-                sidebarOff();
-              } catch (failure) {
-              }
-              sidebarOff = null;
-            }
-          };
-          syncEntries();
+              ]
+            });
+          }, "taskboard: \u6CE8\u518C\u53F3\u4FA7\u680F tab \u7C7B\u578B");
+          ctx.slots.inject("sidebar.right.pane.tab", function() {
+            return ctx.slots.register({ name: "sidebar.right.pane.tab", key: "taskboard" }, RightbarPanel);
+          });
+          ctx.slots.inject("sidebar.right.pane.tab.title", function() {
+            return ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "taskboard" }, function() {
+              return h("span", null, t("panel.title"));
+            });
+          });
+          setLiveUi(readUiFlags());
           try {
             const form = ctx.configForms.get(FORMS_NS);
             ctx.effect(function() {
               return form.subscribe(function() {
-                syncEntries();
+                setLiveUi(readUiFlags());
               });
-            }, "taskboard: \u8DDF\u968F config \u53D8\u5316\u91CD\u6302 UI");
+            }, "taskboard: config \u53D8\u5316\u540C\u6B65\u5230 UI store");
           } catch (failure) {
           }
           ctx.slots.inject("plugins.row.config", function() {
