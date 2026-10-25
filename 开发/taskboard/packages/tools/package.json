@@ -1,0 +1,15 @@
+{
+  "name": "@local/taskboard-tools",
+  "version": "0.1.0-a.0",
+  "private": true,
+  "type": "module",
+  "description": "任务板给 agent 的工具面：十四个工具 + 面板命令 + 系统提示",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": ["index.js", "locale"],
+  "peerDependencies": { "@deepseek-ai/dsh-tools": "*" },
+  "peerDependenciesMeta": { "@deepseek-ai/dsh-tools": { "optional": true } }
+}

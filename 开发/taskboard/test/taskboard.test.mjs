@@ -117,6 +117,8 @@ const REAL_LEGACY = 'X:\\temp\\dsh\\任务';
 const plugin = await import(pathToFileURL(INDEX).href);
 /* 持久化已拆成独立包：core 通过 inject 拿 taskboardStore。 */
 const storePlugin = await import(pathToFileURL(join(PLUGIN_DIR, 'packages', 'store', 'index.js')).href);
+/* 工具面也是独立包：tools 依赖 core（单向），core 不认识 tools。 */
+const toolsPlugin = await import(pathToFileURL(join(PLUGIN_DIR, 'packages', 'tools', 'index.js')).href);
 /* 权限与工作空间是独立包（用户要求拆成六个插件），测试里同样独立加载。 */
 const planPreset = await import(pathToFileURL(join(PLUGIN_DIR, 'packages', 'plan-preset', 'index.js')).href);
 const workspacePlugin = await import(pathToFileURL(join(PLUGIN_DIR, 'packages', 'workspace', 'index.js')).href);
@@ -191,6 +193,7 @@ function makeCtx() {
 	storePlugin.apply(ctx);
 	plugin.clearTemplateMetaCache();
 	plugin.apply(ctx);
+	toolsPlugin.apply(ctx);
 	planPreset.apply(ctx);
 	workspacePlugin.apply(ctx);
 	return { ctx, tools, commands, guards, effects, emitted };
