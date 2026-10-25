@@ -4702,36 +4702,82 @@ window.__ModuleLoader__.load({
           );
         });
 
-        ctx.effect(function () {
-          return ctx.sidebarRightTabs.register({
-            id: 'taskboard',
-            kind: 'taskboard',
-            title: function () {
-              return t('panel.title');
-            },
-            guide: [
-              {
+        /*
+         * ── 右侧栏：必须真的注销注册，光返回 null 不够 ──────────────────
+         *
+         * 实测：抽屉（返回 null）能消失，右侧栏不能。
+         *
+         * 因为右侧栏的 tab 归 layout 系统管：tab **类型**注册之后，
+         * 已打开的 tab 会被记在 layout 里，内容组件返回 null 只是渲染空白，
+         * tab 标题仍在，占着那个位置。
+         *
+         * 所以右侧栏走「按开关注册 / 注销」而不是「渲染时返回 null」：
+         * 类型没了，layout 就不认为这个 tab 存在。
+         *
+         * 用 ctx.effect 包住 register，disposer 会把三种注册（tab 类型、
+         * 内容、标题）一起撤掉。 */
+        let sidebarOff = null;
+
+        const mountSidebar = function () {
+          const offs = [];
+          offs.push(
+            ctx.effect(function () {
+              return ctx.sidebarRightTabs.register({
                 id: 'taskboard',
-                order: 60,
+                kind: 'taskboard',
                 title: function () {
                   return t('panel.title');
                 },
-                description: function () {
-                  return t('panel.description');
-                },
-              },
-            ],
-          });
-        }, 'taskboard: 注册右侧栏 tab 类型');
+                guide: [
+                  {
+                    id: 'taskboard',
+                    order: 60,
+                    title: function () {
+                      return t('panel.title');
+                    },
+                    description: function () {
+                      return t('panel.description');
+                    },
+                  },
+                ],
+              });
+            }, 'taskboard: 注册右侧栏 tab 类型'),
+          );
+          offs.push(
+            ctx.slots.inject('sidebar.right.pane.tab', function () {
+              return ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'taskboard' }, RightbarPanel);
+            }),
+          );
+          offs.push(
+            ctx.slots.inject('sidebar.right.pane.tab.title', function () {
+              return ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'taskboard' }, function () {
+                return h('span', null, t('panel.title'));
+              });
+            }),
+          );
+          return function () {
+            for (const off of offs) {
+              try {
+                if (typeof off === 'function') off();
+              } catch (failure) {
+                /* 注销失败不影响其它 */
+              }
+            }
+          };
+        };
 
-        ctx.slots.inject('sidebar.right.pane.tab', function () {
-          return ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'taskboard' }, RightbarPanel);
-        });
-        ctx.slots.inject('sidebar.right.pane.tab.title', function () {
-          return ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'taskboard' }, function () {
-            return h('span', null, t('panel.title'));
-          });
-        });
+        /** 按当前 store 对齐右侧栏的注册。 */
+        const syncSidebar = function () {
+          if (readLiveUi().sidebar && sidebarOff === null) sidebarOff = mountSidebar();
+          else if (!readLiveUi().sidebar && sidebarOff !== null) {
+            try {
+              sidebarOff();
+            } catch (failure) {
+              /* ignore */
+            }
+            sidebarOff = null;
+          }
+        };
 
         /* 把当前值推进 store，再订阅后续变化。
          * store 变了组件就重渲染 —— 这就是"立刻生效"。
@@ -4741,13 +4787,19 @@ window.__ModuleLoader__.load({
          *   · 单 namespace 表单 —— 兜底
          * 只订阅其中一个的话，另一个路径上的变化就漏了。 */
         setLiveUi(readUiFlags());
+        /* 首次按开关对齐右侧栏（抽屉靠渲染时的 null 就够了）。 */
+        syncSidebar();
+
+        /* 订阅后每次都同步 store 与右侧栏注册。 */
+        const onConfigChanged = function () {
+          setLiveUi(readUiFlags());
+          syncSidebar();
+        };
 
         try {
           const mirror = ctx.configForms.describe();
           ctx.effect(function () {
-            return mirror.subscribe(function () {
-              setLiveUi(readUiFlags());
-            });
+            return mirror.subscribe(onConfigChanged);
           }, 'taskboard: describe mirror 变化同步到 UI store');
           /* ensure() 触发首次拉取；拉回来之后 subscribe 会被调用。 */
           if (typeof mirror.ensure === 'function') mirror.ensure();
@@ -4758,9 +4810,7 @@ window.__ModuleLoader__.load({
         try {
           const form = ctx.configForms.get(FORMS_NS);
           ctx.effect(function () {
-            return form.subscribe(function () {
-              setLiveUi(readUiFlags());
-            });
+            return form.subscribe(onConfigChanged);
           }, 'taskboard: config 变化同步到 UI store');
         } catch (failure) {
           /* 没有 configForms 时只按 apply 那一刻的 config 走 */

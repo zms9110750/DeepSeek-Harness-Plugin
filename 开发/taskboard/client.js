@@ -5674,42 +5674,73 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               ComposerDrawer
             );
           });
-          ctx.effect(function() {
-            return ctx.sidebarRightTabs.register({
-              id: "taskboard",
-              kind: "taskboard",
-              title: function() {
-                return t("panel.title");
-              },
-              guide: [
-                {
+          let sidebarOff = null;
+          const mountSidebar = function() {
+            const offs = [];
+            offs.push(
+              ctx.effect(function() {
+                return ctx.sidebarRightTabs.register({
                   id: "taskboard",
-                  order: 60,
+                  kind: "taskboard",
                   title: function() {
                     return t("panel.title");
                   },
-                  description: function() {
-                    return t("panel.description");
-                  }
+                  guide: [
+                    {
+                      id: "taskboard",
+                      order: 60,
+                      title: function() {
+                        return t("panel.title");
+                      },
+                      description: function() {
+                        return t("panel.description");
+                      }
+                    }
+                  ]
+                });
+              }, "taskboard: \u6CE8\u518C\u53F3\u4FA7\u680F tab \u7C7B\u578B")
+            );
+            offs.push(
+              ctx.slots.inject("sidebar.right.pane.tab", function() {
+                return ctx.slots.register({ name: "sidebar.right.pane.tab", key: "taskboard" }, RightbarPanel);
+              })
+            );
+            offs.push(
+              ctx.slots.inject("sidebar.right.pane.tab.title", function() {
+                return ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "taskboard" }, function() {
+                  return h("span", null, t("panel.title"));
+                });
+              })
+            );
+            return function() {
+              for (const off of offs) {
+                try {
+                  if (typeof off === "function") off();
+                } catch (failure) {
                 }
-              ]
-            });
-          }, "taskboard: \u6CE8\u518C\u53F3\u4FA7\u680F tab \u7C7B\u578B");
-          ctx.slots.inject("sidebar.right.pane.tab", function() {
-            return ctx.slots.register({ name: "sidebar.right.pane.tab", key: "taskboard" }, RightbarPanel);
-          });
-          ctx.slots.inject("sidebar.right.pane.tab.title", function() {
-            return ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "taskboard" }, function() {
-              return h("span", null, t("panel.title"));
-            });
-          });
+              }
+            };
+          };
+          const syncSidebar = function() {
+            if (readLiveUi().sidebar && sidebarOff === null) sidebarOff = mountSidebar();
+            else if (!readLiveUi().sidebar && sidebarOff !== null) {
+              try {
+                sidebarOff();
+              } catch (failure) {
+              }
+              sidebarOff = null;
+            }
+          };
           setLiveUi(readUiFlags());
+          syncSidebar();
+          const onConfigChanged = function() {
+            setLiveUi(readUiFlags());
+            syncSidebar();
+          };
           try {
             const mirror = ctx.configForms.describe();
             ctx.effect(function() {
-              return mirror.subscribe(function() {
-                setLiveUi(readUiFlags());
-              });
+              return mirror.subscribe(onConfigChanged);
             }, "taskboard: describe mirror \u53D8\u5316\u540C\u6B65\u5230 UI store");
             if (typeof mirror.ensure === "function") mirror.ensure();
           } catch (failure) {
@@ -5717,9 +5748,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           try {
             const form = ctx.configForms.get(FORMS_NS);
             ctx.effect(function() {
-              return form.subscribe(function() {
-                setLiveUi(readUiFlags());
-              });
+              return form.subscribe(onConfigChanged);
             }, "taskboard: config \u53D8\u5316\u540C\u6B65\u5230 UI store");
           } catch (failure) {
           }
