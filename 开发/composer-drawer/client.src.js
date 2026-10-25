@@ -3029,7 +3029,32 @@ window.__ModuleLoader__.load({
               const rowsWithGroups = rows.map(function (row) {
                 return Object.assign({}, row, { groupsOf: ownerOf.get(row.id) || [] });
               });
-              return { rows: rowsWithGroups, bodies: bodies, groups: list };
+              /* 顺带读当前组（同目录的 current.json）。
+               *
+               * 用户要求把「看」和「切」分开，所以面板得知道宿主那边的当前组
+               * 是哪个——这样才能在分组条上标 ★、并只在必要时显示「设为当前」。
+               * 纯读，不写。 */
+              const currentPath = String(paths.store || '').replace(/[\\/][^\\/]+$/u, '') + '\\current.json';
+              return Promise.resolve(files.read(sessionId, currentPath, undefined, undefined))
+                .then(function (currentRaw) {
+                  let current = '';
+                  if (currentRaw && currentRaw.ok === true) {
+                    try {
+                      const parsed = JSON.parse(String(currentRaw.value.text || '{}'));
+                      /* 新格式 {sessions:{…}}，旧格式 {group}。 */
+                      const sessions = parsed && typeof parsed.sessions === 'object' ? parsed.sessions : null;
+                      current = String(
+                        (sessions !== null ? sessions[sessionId] ?? sessions._default : parsed?.group) ?? '',
+                      ).trim();
+                    } catch (failure) {
+                      current = '';
+                    }
+                  }
+                  return { rows: rowsWithGroups, bodies: bodies, groups: list, current: current };
+                })
+                .catch(function () {
+                  return { rows: rowsWithGroups, bodies: bodies, groups: list, current: '' };
+                });
             })
             .catch(function () {
               return { rows: rows, bodies: bodies, groups: [] };
@@ -3051,14 +3076,21 @@ window.__ModuleLoader__.load({
             setData({ tasks: result.rows.map(fromApi), bodies: result.bodies, live: true, error: '' });
             const loaded = result.groups || [];
             setGroups(loaded);
+            /* 宿主的当前组（AI 工具默认范围）。只读，不改。 */
+            setCurrentGroup(result.current || '');
             /* 分组条已经**没有「全部」**（用户要求），所以必须始终选中一个。
-             * 当前选的那个没了（被删/首次加载）就落到第一个非归档组上。
+             *
+             * 优先落到宿主的当前组上——那通常就是"我手头在做的事"。
+             * 当前组没了（被删/归档/首次）就落到第一个非归档组。
              * 不自动选的话列表会空着，看起来像数据丢了。 */
             setGroupPick(function (previous) {
-              const still = loaded.some(function (group) {
-                return group.id === previous && !group.archived;
-              });
-              if (still) return previous;
+              const usable = function (id) {
+                return loaded.some(function (group) {
+                  return group.id === id && !group.archived;
+                });
+              };
+              if (usable(previous)) return previous;
+              if (usable(result.current)) return result.current;
               const first = loaded.find(function (group) {
                 return !group.archived;
               });
@@ -3256,13 +3288,12 @@ window.__ModuleLoader__.load({
             } catch (failure) {
               saved = null;
             }
-            if (saved !== null && typeof saved.id === 'string') {
-              setGroupPick(saved.id);
-              return runCommand(
-                '/task-group-select ' + JSON.stringify({ group: saved.id, session: sessionId }),
-                sessionId,
-              ).catch(function () {});
-            }
+            /* **建完只是切过去看，不动宿主的当前组**。
+             *
+             * 用户要求把「看」和「切」分开：「切换当前组是另一个操作。」
+             * 新建一个空分组多半是想马上往里放东西，看过去就够了；
+             * 要不要让 AI 也改到这一组，用户自己点「设为当前」。 */
+            if (saved !== null && typeof saved.id === 'string') setGroupPick(saved.id);
             return null;
           })
           .then(function () {
@@ -3364,6 +3395,14 @@ window.__ModuleLoader__.load({
       const newGroupState = React.useState('');
       const newGroupName = newGroupState[0];
       const setNewGroupName = newGroupState[1];
+      /* 宿主的「当前组」= AI 工具默认工作的范围。
+       *
+       * 和 groupPick（我正在看哪组）**不是一回事**，用户要求分开：
+       * 「面板换组是仅查看」「切换当前组是另一个操作」。
+       * 这个值只反映服务端状态，点位「设为当前」才变。 */
+      const currentGroupState = React.useState('');
+      const currentGroup = currentGroupState[0];
+      const setCurrentGroup = currentGroupState[1];
       const filterState = React.useState('');
       const groupFilter = filterState[0];
       const setGroupFilter = filterState[1];
@@ -3675,6 +3714,11 @@ window.__ModuleLoader__.load({
                 return Array.isArray(item.groupsOf) && item.groupsOf.indexOf(group.id) !== -1;
               }).length;
               const active = groupPick === group.id;
+              /* 是不是宿主的「当前组」（= AI 工具默认工作的范围）。
+               *
+               * 和 `active`（我正在看哪组）是两件事，用户明确要求分开：
+               * 「面板换组是仅查看……切换当前组是另一个操作。」 */
+              const isCurrent = currentGroup === group.id;
               buttons.push(
                 h(
                   'span',
@@ -3685,14 +3729,16 @@ window.__ModuleLoader__.load({
                       type: 'button',
                       title: group.members.length + ' 条' + (group.archived ? '（已归档）' : ''),
                       onClick: function () {
-                        /* 点已归档的组也能看（只是默认不显示在列表里）。 */
+                        /* **只切换查看，不发命令**。
+                         *
+                         * 用户原话：「面板换组是仅查看。」
+                         * 「可以只读的看组列表，归档列表，然后选择了一个组
+                         *   可以看里面的东西，而不需要切当前组。
+                         *   切换当前组是另一个操作。」
+                         *
+                         * 所以这里是纯本地状态；要改工具的默认范围，
+                         * 得点旁边那个「设为当前组」。 */
                         setGroupPick(group.id);
-                        runCommand(
-                          '/task-group-select ' + JSON.stringify({ group: group.id, session: sessionId }),
-                          sessionId,
-                        ).catch(function () {
-                          /* 失败不影响界面筛选，只是工具的默认范围没跟着变。 */
-                        });
                       },
                       style: Object.assign({}, buttonBase(active), {
                         padding: '2px 10px',
@@ -3702,6 +3748,52 @@ window.__ModuleLoader__.load({
                     },
                     group.name + '（' + count + '）',
                   ),
+                  /* 「设为当前组」——**显式操作，跟查看分开**。
+                   *
+                   * 用户原话：「切换当前组是另一个操作。」
+                   *
+                   * 为什么必须分开：点分组只是"我想看看这组有什么"，
+                   * 不该顺手改变 AI 的工作范围。工具默认查哪一组是个有后果的决定，
+                   * 得用户明确点一下。
+                   *
+                   * 只在**正在看这一组、但它还不是当前组时**显示，
+                   * 避免一排按钮满天飞。 */
+                  active && !isCurrent
+                    ? h(
+                        'button',
+                        {
+                          type: 'button',
+                          title: '让 AI 的工具默认在这组里工作',
+                          onClick: function () {
+                            runCommand(
+                              '/task-group-select ' + JSON.stringify({ group: group.id, session: sessionId }),
+                              sessionId,
+                            )
+                              .then(function (settled) {
+                                const text = commandText(settled);
+                                let saved = null;
+                                try {
+                                  saved = JSON.parse(text);
+                                } catch (failure) {
+                                  saved = null;
+                                }
+                                if (saved !== null && typeof saved.group === 'string') {
+                                  setCurrentGroup(saved.group);
+                                }
+                              })
+                              .catch(function () {});
+                          },
+                          style: Object.assign({}, buttonBase(false), {
+                            padding: '0 6px',
+                            fontSize: 11,
+                            lineHeight: '18px',
+                          }),
+                        },
+                        '设为当前',
+                      )
+                    : null,
+                  /* 已标成当前组的，给一个小星号，不用按。 */
+                  active && isCurrent ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-brand-primary)' } }, '★') : null,
                   /* 归档 / 取回：**只在「显示已归档」打开时出现**。
                    * 用户原话：「在点开显示已归档后，要有按钮把分组进行归档。」
                    * 平时不显示，是为了让分组条保持干净——归档不是高频动作。 */

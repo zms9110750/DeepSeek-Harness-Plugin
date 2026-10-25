@@ -4417,7 +4417,24 @@
               const rowsWithGroups = rows.map(function(row) {
                 return Object.assign({}, row, { groupsOf: ownerOf.get(row.id) || [] });
               });
-              return { rows: rowsWithGroups, bodies, groups: list };
+              const currentPath = String(paths.store || "").replace(/[\\/][^\\/]+$/u, "") + "\\current.json";
+              return Promise.resolve(files.read(sessionId, currentPath, void 0, void 0)).then(function(currentRaw) {
+                let current = "";
+                if (currentRaw && currentRaw.ok === true) {
+                  try {
+                    const parsed = JSON.parse(String(currentRaw.value.text || "{}"));
+                    const sessions = parsed && typeof parsed.sessions === "object" ? parsed.sessions : null;
+                    current = String(
+                      (sessions !== null ? sessions[sessionId] ?? sessions._default : parsed?.group) ?? ""
+                    ).trim();
+                  } catch (failure) {
+                    current = "";
+                  }
+                }
+                return { rows: rowsWithGroups, bodies, groups: list, current };
+              }).catch(function() {
+                return { rows: rowsWithGroups, bodies, groups: list, current: "" };
+              });
             }).catch(function() {
               return { rows, bodies, groups: [] };
             });
@@ -4432,11 +4449,15 @@
             setData({ tasks: result.rows.map(fromApi), bodies: result.bodies, live: true, error: "" });
             const loaded = result.groups || [];
             setGroups(loaded);
+            setCurrentGroup(result.current || "");
             setGroupPick(function(previous) {
-              const still = loaded.some(function(group) {
-                return group.id === previous && !group.archived;
-              });
-              if (still) return previous;
+              const usable = function(id) {
+                return loaded.some(function(group) {
+                  return group.id === id && !group.archived;
+                });
+              };
+              if (usable(previous)) return previous;
+              if (usable(result.current)) return result.current;
               const first = loaded.find(function(group) {
                 return !group.archived;
               });
@@ -4563,14 +4584,7 @@
             } catch (failure) {
               saved = null;
             }
-            if (saved !== null && typeof saved.id === "string") {
-              setGroupPick(saved.id);
-              return runCommand(
-                "/task-group-select " + JSON.stringify({ group: saved.id, session: sessionId }),
-                sessionId
-              ).catch(function() {
-              });
-            }
+            if (saved !== null && typeof saved.id === "string") setGroupPick(saved.id);
             return null;
           }).then(function() {
             load();
@@ -4646,6 +4660,9 @@
         const newGroupState = React.useState("");
         const newGroupName = newGroupState[0];
         const setNewGroupName = newGroupState[1];
+        const currentGroupState = React.useState("");
+        const currentGroup = currentGroupState[0];
+        const setCurrentGroup = currentGroupState[1];
         const filterState = React.useState("");
         const groupFilter = filterState[0];
         const setGroupFilter = filterState[1];
@@ -4909,6 +4926,7 @@
                   return Array.isArray(item.groupsOf) && item.groupsOf.indexOf(group.id) !== -1;
                 }).length;
                 const active = groupPick === group.id;
+                const isCurrent = currentGroup === group.id;
                 buttons.push(
                   h(
                     "span",
@@ -4920,11 +4938,6 @@
                         title: group.members.length + " \u6761" + (group.archived ? "\uFF08\u5DF2\u5F52\u6863\uFF09" : ""),
                         onClick: function() {
                           setGroupPick(group.id);
-                          runCommand(
-                            "/task-group-select " + JSON.stringify({ group: group.id, session: sessionId }),
-                            sessionId
-                          ).catch(function() {
-                          });
                         },
                         style: Object.assign({}, buttonBase(active), {
                           padding: "2px 10px",
@@ -4934,6 +4947,49 @@
                       },
                       group.name + "\uFF08" + count + "\uFF09"
                     ),
+                    /* 「设为当前组」——**显式操作，跟查看分开**。
+                     *
+                     * 用户原话：「切换当前组是另一个操作。」
+                     *
+                     * 为什么必须分开：点分组只是"我想看看这组有什么"，
+                     * 不该顺手改变 AI 的工作范围。工具默认查哪一组是个有后果的决定，
+                     * 得用户明确点一下。
+                     *
+                     * 只在**正在看这一组、但它还不是当前组时**显示，
+                     * 避免一排按钮满天飞。 */
+                    active && !isCurrent ? h(
+                      "button",
+                      {
+                        type: "button",
+                        title: "\u8BA9 AI \u7684\u5DE5\u5177\u9ED8\u8BA4\u5728\u8FD9\u7EC4\u91CC\u5DE5\u4F5C",
+                        onClick: function() {
+                          runCommand(
+                            "/task-group-select " + JSON.stringify({ group: group.id, session: sessionId }),
+                            sessionId
+                          ).then(function(settled) {
+                            const text = commandText(settled);
+                            let saved = null;
+                            try {
+                              saved = JSON.parse(text);
+                            } catch (failure) {
+                              saved = null;
+                            }
+                            if (saved !== null && typeof saved.group === "string") {
+                              setCurrentGroup(saved.group);
+                            }
+                          }).catch(function() {
+                          });
+                        },
+                        style: Object.assign({}, buttonBase(false), {
+                          padding: "0 6px",
+                          fontSize: 11,
+                          lineHeight: "18px"
+                        })
+                      },
+                      "\u8BBE\u4E3A\u5F53\u524D"
+                    ) : null,
+                    /* 已标成当前组的，给一个小星号，不用按。 */
+                    active && isCurrent ? h("span", { style: { fontSize: 11, color: "var(--dsw-alias-brand-primary)" } }, "\u2605") : null,
                     /* 归档 / 取回：**只在「显示已归档」打开时出现**。
                      * 用户原话：「在点开显示已归档后，要有按钮把分组进行归档。」
                      * 平时不显示，是为了让分组条保持干净——归档不是高频动作。 */
