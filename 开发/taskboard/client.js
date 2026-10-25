@@ -5446,14 +5446,116 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           open ? h(TaskBoard, { sessionId: props.sessionId }) : null
         );
       }
+      function TaskboardSettingsCard(props) {
+        const view = props.view;
+        if (view === "summary") return "\u4EFB\u52A1\u9762\u677F\uFF1A\u62BD\u5C49\u4E0E\u53F3\u4FA7\u680F\u4E24\u4E2A\u5165\u53E3";
+        const form = props.form;
+        const snapshot = React.useSyncExternalStore(
+          function(onChange) {
+            return form.subscribe(onChange);
+          },
+          function() {
+            return form.getSnapshot();
+          }
+        );
+        const valueOf = function(key) {
+          const document = snapshot && snapshot.value;
+          const ui = document && typeof document === "object" ? document.ui : void 0;
+          if (ui !== null && typeof ui === "object" && typeof ui[key] === "boolean") return ui[key];
+          return true;
+        };
+        const rowStyle = {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "10px 0",
+          borderTop: "0.5px solid var(--dsw-alias-border-l2)"
+        };
+        const labelStyle = { fontSize: 13, color: "var(--dsw-alias-label-primary)" };
+        const hintStyle = { fontSize: 12, color: "var(--dsw-alias-label-tertiary)", marginTop: 2 };
+        const toggle = function(key) {
+          const next = !valueOf(key);
+          form.set({ ui: Object.assign({}, snapshot && snapshot.value && snapshot.value.ui, { [key]: next }) });
+        };
+        const renderToggle = function(key, title, hint, id) {
+          const on2 = valueOf(key);
+          return h(
+            "div",
+            { key, style: rowStyle },
+            h(
+              "div",
+              null,
+              h("div", { style: labelStyle }, title),
+              h("div", { style: hintStyle }, hint)
+            ),
+            h(
+              "button",
+              {
+                id,
+                type: "button",
+                role: "switch",
+                "aria-checked": on2,
+                onClick: function() {
+                  toggle(key);
+                },
+                style: {
+                  width: 40,
+                  height: 22,
+                  flex: "none",
+                  borderRadius: 11,
+                  border: "none",
+                  cursor: "pointer",
+                  position: "relative",
+                  background: on2 ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)",
+                  transition: "background 120ms"
+                }
+              },
+              h("span", {
+                style: {
+                  position: "absolute",
+                  top: 2,
+                  left: on2 ? 20 : 2,
+                  width: 18,
+                  height: 18,
+                  borderRadius: "50%",
+                  background: "#fff",
+                  transition: "left 120ms"
+                }
+              })
+            )
+          );
+        };
+        return h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: 4, maxWidth: 760 } },
+          h("h3", { style: { margin: "0 0 4px", fontSize: 18, fontWeight: 600 } }, "\u754C\u9762\u5165\u53E3"),
+          h(
+            "p",
+            { style: { margin: "0 0 8px", fontSize: 13, color: "var(--dsw-alias-label-tertiary)" } },
+            "\u4E24\u4E2A\u5165\u53E3\u753B\u7684\u662F\u540C\u4E00\u4E2A\u89C6\u56FE\uFF0C\u53EF\u4EE5\u5206\u522B\u5F00\u5173\u3002"
+          ),
+          renderToggle("drawer", "\u62BD\u5C49", "\u8F93\u5165\u6846\u65C1\u8FB9\u7684\u7BAD\u5934\u6309\u94AE", "taskboard-ui-drawer"),
+          renderToggle("sidebar", "\u53F3\u4FA7\u680F", "\u53F3\u4FA7\u5DE5\u4F5C\u533A\u7684\u300C\u4EFB\u52A1\u300D\u6807\u7B7E\u9875", "taskboard-ui-sidebar")
+        );
+      }
       return {
         /* `sidebarRightTabs` 必须在 inject 里——它是**客户端服务**，
          * 不声明就拿不到（ctx.sidebarRightTabs 会是 undefined），
          * 右侧栏的整个注册会被静默跳过。这就是之前右侧栏从未出现的原因。
          *
          * 参照 @local/bookmarks-tab10（那个「收藏」tab）：
-         *   inject: ['slots', 'sidebarRightTabs'] */
-        inject: ["slots", "remote", "remote.commands", "remote.workspaceFiles", "sidebarRightTabs"],
+         *   inject: ['slots', 'sidebarRightTabs']
+         *
+         * `configForms` 同理：不声明就拿不到，设置页卡片注册不进去。 */
+        inject: [
+          "slots",
+          "remote",
+          "remote.commands",
+          "remote.workspaceFiles",
+          "sidebarRightTabs",
+          "configForms"
+        ],
         /* apply 的第二个参数是宿主下发的 Config（cordis-client-runner 会传）：
          *   apply: (ctx, config) => plugin.apply(guarded(ctx), config)
          * 所以这里的两个 bool 由 @local/taskboard 的 Config schema 决定。 */
@@ -5536,6 +5638,32 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               return h("span", null, t("panel.title"));
             });
           });
+          const SETTINGS_NS = "include:taskboard";
+          if (ctx.configForms && typeof ctx.configForms.get === "function") {
+            ctx.effect(
+              function() {
+                return ctx.configForms.whileServed([SETTINGS_NS], function() {
+                  const form = ctx.configForms.get(SETTINGS_NS);
+                  return ctx.slots.inject("plugins.item", function() {
+                    return ctx.slots.register(
+                      {
+                        name: "plugins.item",
+                        id: "taskboard",
+                        order: 40,
+                        label: function() {
+                          return t("panel.title");
+                        }
+                      },
+                      function(props) {
+                        return h(TaskboardSettingsCard, Object.assign({}, props, { form }));
+                      }
+                    );
+                  });
+                });
+              },
+              "taskboard: \u8BBE\u7F6E\u9875\u5361\u7247"
+            );
+          }
         }
       };
     }

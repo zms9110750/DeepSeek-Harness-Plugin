@@ -4321,14 +4321,147 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * 设置页里的「任务板」卡片。
+     *
+     * 用户要求：
+     *   「我要的是归属。因为他的插件有一级菜单和点进去的二级菜单。
+     *     我的整个事情是一个任务库。然后 ui 是任务库里面的东西。」
+     *   「那就做一个插件，然后把他的配置弄出来，开两个 bool。」
+     *
+     * 为什么之前「没有配置」：
+     * 导出 `Config` 只让宿主知道 schema（inspect 里 status 会是 "schema"），
+     * 但**设置页不会自动长表单**。要出现配置，必须有插件往
+     * `plugins.item` 注册一张卡片，并用 `ctx.configForms` 读写那个 namespace。
+     *
+     * 参照官方 @deepseek-ai/dsh-client-ui-settings-subagent：
+     *   inject 里加 'configForms'
+     *   ctx.configForms.get(entryId) 拿到表单控制器
+     *   ctx.configForms.whileServed([ns], () => ctx.slots.inject(...)) 让卡片
+     *   只在宿主真的服务这个 namespace 时出现
+     *
+     * `ConfigFormController` 的 API：getSnapshot / subscribe / set / unset / mutate。
+     */
+    function TaskboardSettingsCard(props) {
+      const view = props.view;
+      /* summary 视图：卡片列表里那一行说明。 */
+      if (view === 'summary') return '任务面板：抽屉与右侧栏两个入口';
+
+      const form = props.form;
+      const snapshot = React.useSyncExternalStore(
+        function (onChange) {
+          return form.subscribe(onChange);
+        },
+        function () {
+          return form.getSnapshot();
+        },
+      );
+
+      /* 当前值：从表单快照里取 ui.drawer / ui.sidebar，缺省 true。 */
+      const valueOf = function (key) {
+        const document = snapshot && snapshot.value;
+        const ui = document && typeof document === 'object' ? document.ui : undefined;
+        if (ui !== null && typeof ui === 'object' && typeof ui[key] === 'boolean') return ui[key];
+        return true;
+      };
+
+      const rowStyle = {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        padding: '10px 0',
+        borderTop: '0.5px solid var(--dsw-alias-border-l2)',
+      };
+      const labelStyle = { fontSize: 13, color: 'var(--dsw-alias-label-primary)' };
+      const hintStyle = { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', marginTop: 2 };
+
+      /* 一个开关：点一下写回宿主。 */
+      const toggle = function (key) {
+        const next = !valueOf(key);
+        form.set({ ui: Object.assign({}, snapshot && snapshot.value && snapshot.value.ui, { [key]: next }) });
+      };
+
+      const renderToggle = function (key, title, hint, id) {
+        const on = valueOf(key);
+        return h(
+          'div',
+          { key: key, style: rowStyle },
+          h(
+            'div',
+            null,
+            h('div', { style: labelStyle }, title),
+            h('div', { style: hintStyle }, hint),
+          ),
+          h(
+            'button',
+            {
+              id: id,
+              type: 'button',
+              role: 'switch',
+              'aria-checked': on,
+              onClick: function () {
+                toggle(key);
+              },
+              style: {
+                width: 40,
+                height: 22,
+                flex: 'none',
+                borderRadius: 11,
+                border: 'none',
+                cursor: 'pointer',
+                position: 'relative',
+                background: on ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)',
+                transition: 'background 120ms',
+              },
+            },
+            h('span', {
+              style: {
+                position: 'absolute',
+                top: 2,
+                left: on ? 20 : 2,
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: '#fff',
+                transition: 'left 120ms',
+              },
+            }),
+          ),
+        );
+      };
+
+      return h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 760 } },
+        h('h3', { style: { margin: '0 0 4px', fontSize: 18, fontWeight: 600 } }, '界面入口'),
+        h(
+          'p',
+          { style: { margin: '0 0 8px', fontSize: 13, color: 'var(--dsw-alias-label-tertiary)' } },
+          '两个入口画的是同一个视图，可以分别开关。',
+        ),
+        renderToggle('drawer', '抽屉', '输入框旁边的箭头按钮', 'taskboard-ui-drawer'),
+        renderToggle('sidebar', '右侧栏', '右侧工作区的「任务」标签页', 'taskboard-ui-sidebar'),
+      );
+    }
+
     return {
       /* `sidebarRightTabs` 必须在 inject 里——它是**客户端服务**，
        * 不声明就拿不到（ctx.sidebarRightTabs 会是 undefined），
        * 右侧栏的整个注册会被静默跳过。这就是之前右侧栏从未出现的原因。
        *
        * 参照 @local/bookmarks-tab10（那个「收藏」tab）：
-       *   inject: ['slots', 'sidebarRightTabs'] */
-      inject: ['slots', 'remote', 'remote.commands', 'remote.workspaceFiles', 'sidebarRightTabs'],
+       *   inject: ['slots', 'sidebarRightTabs']
+       *
+       * `configForms` 同理：不声明就拿不到，设置页卡片注册不进去。 */
+      inject: [
+        'slots',
+        'remote',
+        'remote.commands',
+        'remote.workspaceFiles',
+        'sidebarRightTabs',
+        'configForms',
+      ],
       /* apply 的第二个参数是宿主下发的 Config（cordis-client-runner 会传）：
        *   apply: (ctx, config) => plugin.apply(guarded(ctx), config)
        * 所以这里的两个 bool 由 @local/taskboard 的 Config schema 决定。 */
@@ -4451,6 +4584,45 @@ window.__ModuleLoader__.load({
             return h('span', null, t('panel.title'));
           });
         });
+
+        /* ── 设置页卡片（两个 UI 的开关）──────────────────────────────────
+         *
+         * 用户要求：「那就做一个插件，然后把他的配置弄出来，开两个 bool。」
+         *
+         * 光导出 `Config` 不够：那只让宿主知道 schema，设置页不会自动长表单。
+         * 必须有客户端插件往 `plugins.item` 注册一张卡片，并用 ctx.configForms
+         * 读写那个 namespace。
+         *
+         * namespace = **Host plugin entry id**（`include:taskboard`），
+         * 这是 ConfigFormController 的约定（@param entryId）。
+         *
+         * `whileServed` 保证：宿主没服务这个 namespace 时不注册任何东西。 */
+        const SETTINGS_NS = 'include:taskboard';
+        if (ctx.configForms && typeof ctx.configForms.get === 'function') {
+          ctx.effect(
+            function () {
+              return ctx.configForms.whileServed([SETTINGS_NS], function () {
+                const form = ctx.configForms.get(SETTINGS_NS);
+                return ctx.slots.inject('plugins.item', function () {
+                  return ctx.slots.register(
+                    {
+                      name: 'plugins.item',
+                      id: 'taskboard',
+                      order: 40,
+                      label: function () {
+                        return t('panel.title');
+                      },
+                    },
+                    function (props) {
+                      return h(TaskboardSettingsCard, Object.assign({}, props, { form: form }));
+                    },
+                  );
+                });
+              });
+            },
+            'taskboard: 设置页卡片',
+          );
+        }
       },
     };
   },

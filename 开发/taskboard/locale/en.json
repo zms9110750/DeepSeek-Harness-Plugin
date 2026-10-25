@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Task Board",
-    "description": "Plans as files with model tools and panel commands: the model only drafts, the user approves, then the model claims."
+    "title": "Taskboard",
+    "description": "Plans as files. The AI only submits drafts; you approve before it can claim."
   }
 }

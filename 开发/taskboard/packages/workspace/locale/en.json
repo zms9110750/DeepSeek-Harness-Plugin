@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sub-workspace",
+    "description": "Restricts the writable range. Extra workspaces can set their own read/write scope."
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Plan-scoped Permissions",
+    "description": "An extra permission preset: work with the permissions and workspace the claimed task grants."
+  }
+}

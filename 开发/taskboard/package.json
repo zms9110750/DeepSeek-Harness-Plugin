@@ -14,6 +14,10 @@
     "./client": "./client.js",
     "./icon": "./icon.svg",
     "./locale/*.json": "./locale/*.json",
+    "./core/locale/*.json": "./packages/core/locale/*.json",
+    "./templates/locale/*.json": "./packages/templates/locale/*.json",
+    "./plan-preset/locale/*.json": "./packages/plan-preset/locale/*.json",
+    "./workspace/locale/*.json": "./packages/workspace/locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [

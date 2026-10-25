@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Taskboard Backend",
+    "description": "Item storage, state machine, claim and cascade, plus the model tools and panel commands."
+  }
+}
