@@ -17,6 +17,7 @@
  */
 import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire, registerHooks } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
@@ -24,7 +25,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const PLUGIN_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
-const INDEX = join(PLUGIN_DIR, 'index.js');
+/* 包拆成六个之后，core 在 packages/core/。 */
+const INDEX = join(PLUGIN_DIR, 'packages', 'core', 'index.js');
 
 /* ── 1. 先把 dsh-tools 的裸导入接到 profile 里的真包 ─────────────────────── */
 
@@ -76,6 +78,15 @@ assert.match(
 	'index.js 的迁移源必须可被 TASKBOARD_ROOT 覆盖，测试不碰真实 任务\\ 目录',
 );
 
+/* 内置在 core 里的四个模板（packages/core/templates/）。 */
+const BUILTIN_TYPES = ['GU', 'WI', 'DP', 'RR'];
+/* 由 templates 插件提供的 23 个附加模板。 */
+const EXTRA_TYPES = [
+	'GO', 'GA', 'GV',
+	'DC', 'DQ', 'DI', 'DB', 'DT',
+	'RB', 'RF', 'RS', 'RD', 'RE', 'WX',
+	'WR', 'WT', 'WF', 'WV', 'WL', 'WC', 'WD', 'WE', 'WP',
+];
 const TMP_ROOT = mkdtempSync(join(tmpdir(), 'taskboard-test-'));
 process.env.TASKBOARD_ROOT = TMP_ROOT;
 process.env.TASKBOARD_STORE = join(TMP_ROOT, 'plans.jsonl');
@@ -93,6 +104,9 @@ const REAL_STORE = join(homedir(), '.dsh', 'taskboard', 'plans.jsonl');
 const REAL_LEGACY = 'X:\\temp\\dsh\\任务';
 
 const plugin = await import(pathToFileURL(INDEX).href);
+/* 权限与工作空间是独立包（用户要求拆成六个插件），测试里同样独立加载。 */
+const planPreset = await import(pathToFileURL(join(PLUGIN_DIR, 'packages', 'plan-preset', 'index.js')).href);
+const workspacePlugin = await import(pathToFileURL(join(PLUGIN_DIR, 'packages', 'workspace', 'index.js')).href);
 /* apply() 里有一次不 await 的 refreshClaims()，等它落定再开始用例，避免首条用例被插队。 */
 await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -142,7 +156,28 @@ function makeCtx() {
 			return services.get(name);
 		},
 	};
+	/* 预装 `templates` 插件的服务。
+	 *
+	 * 生产环境里它是独立插件（packages/templates）。测试里必须模拟"已安装"，
+	 * 否则只有 core 内置的 4 个模板，原本 27 个模板的用例会全红。
+	 * 「没装 templates 时只用内置」有单独的用例，它自己清掉这个服务。 */
+	services.set('taskboardTemplates', {
+		types: () => EXTRA_TYPES.slice(),
+		read: (type) =>
+			readFile(join(PLUGIN_DIR, 'packages', 'templates', 'templates', `${type}.yml`), 'utf8'),
+		list: async () => [],
+	});
+	/* 包拆成六个插件之后，core 不再自己装权限与工作空间——
+	 * 它们各自是独立包。测试里要把三块都装上，等价于生产环境
+	 * 三者都启用的默认组合。 */
+	/* plan-preset 需要 core 提供的 loader（读事项列表重建 claim 快取）。 */
+	planPreset.provideTaskLoader(() => [] /* 测试里由各用例自己 refresh */);
+	/* 每次 makeCtx 都清模板元数据缓存：它是模块级的，
+	 * 不清的话前一个用例缓存的模板表会污染后一个。 */
+	plugin.clearTemplateMetaCache();
 	plugin.apply(ctx);
+	planPreset.apply(ctx);
+	workspacePlugin.apply(ctx);
 	return { ctx, tools, commands, guards, effects, emitted };
 }
 

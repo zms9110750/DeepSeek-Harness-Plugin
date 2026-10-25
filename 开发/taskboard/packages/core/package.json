@@ -1,0 +1,14 @@
+{
+  "name": "@local/taskboard-core",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./shared": "./shared.js"
+  },
+  "files": ["index.js", "shared.js", "icon.svg"],
+  "peerDependencies": { "@deepseek-ai/dsh-tools": "*" },
+  "peerDependenciesMeta": { "@deepseek-ai/dsh-tools": { "optional": true } }
+}

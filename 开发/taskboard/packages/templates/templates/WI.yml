@@ -1,0 +1,61 @@
+name: WI · 实现
+default_kind: work
+behavior: execute
+description: 真正改代码；做完给出改动清单
+domain: code
+framed: true
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    实现类只有一件事要说清：**改了什么、怎么验证的**。
+    不要写"完成了 XXX 功能"——那不是清单，是口号。
+  fail: |
+    失败的实现要写清：卡在哪一步、一个原因、下一件该试的事。
+    不要罗列试过错的东西。
+
+    如果改到一半发现这事得拆成几份 → 把这条**升级成目标**，别硬做。
+
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 要改成什么样
+      description: |
+        先写验收：改完之后，怎么判断它对了？
+        写不出验收标准的实现，做出来也没法确认。
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: 改动清单
+      description: |
+        文件路径 + 改了什么。一行一个。
+        没动代码但改了配置/数据，也要列出来。
+    validations:
+      required: true
+  - type: textarea
+    id: verify
+    attributes:
+      label: 怎么验证的
+      description: |
+        跑了什么、看到什么结果。
+        "应该没问题"不算验证，写出实际执行的命令和输出。
+    validations:
+      required: true
+  - type: textarea
+    id: magic
+    attributes:
+      label: 拍脑袋定的东西
+      description: |
+        可以推翻的实现细节：阈值、超时、缓存上限、命名。
+        写出来，以后才知道这些不是深思熟虑的结果。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        和已有计划的顺序冲突，以及这次改动要不要同步改文档（WX 文档）。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

@@ -1,0 +1,73 @@
+name: DP · 方案
+default_kind: design
+behavior: propose
+description: 开放问题上的方案；给出做法、代价、替代方案，等用户采纳
+domain: general
+framed: true
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    AI 做的方案天然不可信，用户一定要过目。所以：
+    别写"建议这样做"就完事——要写"这样做会放弃什么"。
+  reject: |
+    方案被打回不是失败，是「拒绝」。打回时只写：打回的理由、我打算怎么改。
+    不要重写整个方案——先确认理解对了没有。
+  fail: |
+    方案几乎不会失败。真失败了写清：哪一步做不下去、缺什么。
+    真做不下去时只写：哪一步卡住 + 一个原因 + 下一件该试的事。不要罗列所有被否掉的方案。
+
+
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决什么
+      description: |
+        用一句话复述问题，然后自检：用户会认这句话吗？
+        如果会用"不是这个意思"回你，说明还没问清。
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: 打算怎么做
+      description: |
+        写到"另一个人照着能动手"的粒度：动哪个文件、加什么、按什么顺序。
+        写不出顺序，说明方案还停在方向层 —— 那就先别写这一节，回去把问题复述清楚。
+
+        不要写"重构一下""优化性能"这种动作名。动作名不是方案：
+        它没说改哪里、改成什么样、怎么知道改对了。
+    validations:
+      required: true
+  - type: textarea
+    id: cost
+    attributes:
+      label: 代价
+      description: |
+        必须写。包括：要改什么、会破坏什么、多久、以后谁维护。
+        写不出代价的方案不是方案，是想法。
+    validations:
+      required: true
+  - type: textarea
+    id: alternative
+    attributes:
+      label: 考虑过但没选的
+      description: |
+        至少一个。写清为什么不选。
+        如果只有一种做法可行，说明这不是决策，直接说明理由。
+  - type: textarea
+    id: risk
+    attributes:
+      label: 什么情况下这个方案会错
+      description: |
+        写出该放弃这个方案的条件。
+        日后这个字段就是"什么时候该回头"的判据。
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        迁移与回滚、要不要分几步上线、要不要先做一个小实验再全量。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

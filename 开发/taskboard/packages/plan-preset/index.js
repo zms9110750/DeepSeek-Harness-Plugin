@@ -12,8 +12,8 @@
  * 不依赖：面板。
  */
 
-import { text, CURRENT_SESSION, sessionIdOf, splitWorkspaces } from './shared.js';
-import { judgeCommand, within } from './workspace.js';
+import { text, CURRENT_SESSION, sessionIdOf, splitWorkspaces } from '../core/shared.js';
+import { judgeCommand, within } from '../workspace/index.js';
 const PLAN_PRESET = 'plan';
 const PLAN_SPEC = {
 	sandbox: 'danger-full-access',
@@ -393,6 +393,16 @@ export {
 	toolNameOf,
 };
 
+/*
+ * ── 插件入口 ───────────────────────────────────────────────────────────
+ *
+ * 这个包是**独立的插件**（用户要求「按计划的权限：一个新的权限，按任务给出的权限工作」）。
+ * 关掉它，「按计划」这个权限档就不存在了，其它插件照常工作——
+ * 只是任务里写的 workspace / permission 不再参与任何判定（它们仍然存着，面板照样显示）。
+ */
+export const name = 'taskboard-plan-preset';
 
-
-
+export function apply(ctx) {
+	installPlanPreset(ctx);
+	installGuard(ctx);
+}

@@ -1,24 +1,25 @@
 {
   "name": "@local/taskboard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
+  "description": "任务板：一个包，六个插件（后端 / 模板 / 按计划权限 / 子工作空间 / 抽屉 UI / 工作区 UI）",
   "exports": {
-    ".": "./index.js",
-    "./core": "./index.js",
-    "./plan-preset": "./lib/plan-preset.js",
-    "./workspace": "./lib/workspace.js",
-    "./shared": "./lib/shared.js",
-    "./locale/*.json": "./locale/*.json",
+    ".": "./packages/core/index.js",
+    "./core": "./packages/core/index.js",
+    "./templates": "./packages/templates/index.js",
+    "./plan-preset": "./packages/plan-preset/index.js",
+    "./workspace": "./packages/workspace/index.js",
+    "./ui-drawer": "./packages/ui-drawer/index.js",
+    "./ui-drawer/client": "./packages/ui-drawer/client.js",
+    "./ui-sidebar": "./packages/ui-sidebar/index.js",
+    "./ui-sidebar/client": "./packages/ui-sidebar/client.js",
     "./icon": "./icon.svg",
-    "./templates/*": "./templates/*"
+    "./package.json": "./package.json"
   },
   "files": [
-    "index.js",
-    "lib",
+    "packages",
     "cordis.patch.yml",
-    "templates",
-    "locale",
     "icon.svg",
     "README.md"
   ],

@@ -1,0 +1,13 @@
+{
+  "name": "@local/taskboard-templates",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./*.yml": "./templates/*.yml",
+    "./templates/*": "./templates/*"
+  },
+  "files": ["index.js", "templates", "icon.svg"]
+}

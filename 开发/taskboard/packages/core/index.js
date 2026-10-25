@@ -20,10 +20,12 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 /*
  * 这个包拆成四个插件（用户要求「一个包里面可以有多个插件」）：
  *
- *   core         index.js（本文件） —— 存储、事项模型、状态机、模板
- *   plan-preset  lib/plan-preset.js —— 「按计划」权限档 + 守卫
- *   workspace    lib/workspace.js   —— 子工作空间 / 额外工作区 + 路径判定
- *   panel        （客户端，composer-drawer 那个包）—— 只是显示
+ *   core         本文件 —— 存储、事项模型、状态机、AI 工具、命令
+ *   templates    附加模板（内置 4 个在 core/templates/，其余 23 个在这里）
+ *   plan-preset  「按计划」权限档 + 守卫
+ *   workspace    子工作空间 / 额外工作区 + 路径判定
+ *   ui-drawer    输入栏旁边的箭头抽屉
+ *   ui-sidebar   右侧栏的「任务」标签页
  *
  * 为什么要拆：权限是**限制**，面板是**显示**。以前混在一个插件里，
  * 导致"只想看面板"的人被迫接受权限注入，反之亦然。
@@ -41,7 +43,7 @@ import {
 	sessionIdOf,
 	actorLabel,
 	splitWorkspaces,
-} from './lib/shared.js';
+} from './shared.js';
 import {
 	PLAN_PRESET,
 	CLAIMS,
@@ -52,8 +54,8 @@ import {
 	provideTaskLoader,
 	refreshClaims,
 	parseDeny,
-} from './lib/plan-preset.js';
-import { within } from './lib/workspace.js';
+} from '../plan-preset/index.js';
+import { within } from '../workspace/index.js';
 
 export const name = 'taskboard';
 
@@ -94,6 +96,15 @@ const HEAD_FIELDS = [
  *
  * 为什么改用英文：模板字母本来就是英文缩写（Decision / Proposal / Fix…），
  * 旧方案混用拼音（M/S/J/G）和英文，`GD` 这种编号说不清是"工作+实现"还是别的。
+ */
+/*
+ * 全部模板编号（27 个）—— 这是**词表**，描述"可能存在哪些模板"，
+ * 不是"现在装了哪些"。
+ *
+ * 内置实际只有 4 个（见 BUILTIN_TYPES）。其余 23 个由 `templates` 插件提供。
+ * 分开的理由：`TYPE_NAMES` / `TYPE_TO_KIND` / 编号前缀这些映射表要对
+ * **所有可能的模板**都有答案，否则关掉 templates 插件后，读老数据时
+ * 连 `RB 阻碍` 都认不出来了。
  */
 const TYPES = [
 	// 目标 Goal
@@ -1632,21 +1643,90 @@ function registerCommands(ctx) {
 	});
 }
 
-/** 计划模板目录（GitHub issue forms 的 YAML）。 */
+/* 计划模板目录（GitHub issue forms 的 YAML）。
+ *
+ * ── 内置最小集 vs 附加模板 ──────────────────────────────────────────
+ *
+ * 用户原话：
+ *   > templates 是存在的。core 可以依赖他。内置有通用的最小需要的模板。
+ *   > 然后，附加的模板才是额外包。
+ *
+ * 所以这里是**内置那一份**：四个 kind 各一个通用模板，
+ *
+ *   GU 用户任务（goal）  WI 实现（work）  DP 方案（design）  RR 汇报（record）
+ *
+ * 装不装 `templates` 插件，core 都能完整工作——只是可选模板少一些。
+ * `templates` 插件提供的模板**叠加**在这四个之上（同编号时它覆盖内置，
+ * 这样想换掉内置模板的实现也能做到）。
+ */
 const TEMPLATE_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'templates');
+
+/** 内置模板编号。 */
+const BUILTIN_TYPES = ['GU', 'WI', 'DP', 'RR'];
+
+/**
+ * 读模板的附加来源，由 `templates` 插件注册。
+ *
+ * 拿不到就只用内置的——这是**可选依赖**该有的样子：
+ * 关掉 templates，core 不崩，只是模板少了。
+ *
+ * 为什么用模块级变量而不是层层传 ctx：模板读取是在 `templateMeta` /
+ * `dispatchOptions` / `loadTemplate` 之间反复互相调用的，一路传 ctx
+ * 要改十几个签名，而且这些函数本来就不该知道 ctx 长什么样。
+ * 一个进程只有一份模板服务，存在模块级就够。
+ */
+let TEMPLATES_SERVICE = undefined;
+
+/** core 的 apply 里调用，把服务绑上。 */
+function bindTemplates(ctx) {
+	try {
+		TEMPLATES_SERVICE = typeof ctx?.get === 'function' ? ctx.get('taskboardTemplates') : undefined;
+	} catch (failure) {
+		TEMPLATES_SERVICE = undefined;
+	}
+}
+
+/** 当前可用的全部模板编号（内置 + 附加）。
+ *
+ * 顺序按 `TYPES` 的声明顺序（目标 → 设计 → 记录 → 工作），
+ * 附加模板里不在 `TYPES` 中的追加在后面。
+ * **不排序**——界面和文档都按"大类"分组读，字母序会把四个大类搅在一起。
+ */
+function availableTypes() {
+	const added = TEMPLATES_SERVICE && typeof TEMPLATES_SERVICE.types === 'function' ? TEMPLATES_SERVICE.types() : [];
+	const known = TYPES.filter((type) => BUILTIN_TYPES.includes(type) || added.includes(type));
+	const unknown = added.filter((type) => !TYPES.includes(type));
+	return [...known, ...unknown];
+}
 
 async function loadTemplate(type) {
 	const wanted = String(type ?? '').trim().toUpperCase();
-	/* 只接受当前模板（TYPES）。H1–H8 已废除：它们是停止理由，不是模板，
+	const types = availableTypes();
+	/* 只接受当前模板（内置 + 附加）。H1–H8 已废除：它们是停止理由，不是模板，
 	   文件也删了。给老 type 一个清楚的报错，而不是"文件不存在"。 */
-	if (!TYPES.includes(wanted)) {
+	if (!types.includes(wanted)) {
 		if (LEGACY_TYPES.includes(wanted)) {
 			throw new Error(
 				`模板 ${wanted} 已废除：H1–H8 是"为什么停"的理由，不是模板。` +
 					'现在用记录类的「B · 阻碍」，它的 reason 小节就是这张词表。',
 			);
 		}
-		throw new Error(`模板类型必须是 ${TYPES.join('/')}，收到「${type}」`);
+		throw new Error(
+			`模板类型必须是 ${types.join('/')}，收到「${type}」` +
+				(BUILTIN_TYPES.includes(wanted) ? '' : '\n（装 `templates` 插件可以多出 23 个模板）'),
+		);
+	}
+	/* 附加来源优先：想用自定义模板覆盖内置同名模板也能做到。 */
+	const extra = TEMPLATES_SERVICE;
+	if (extra && typeof extra.read === 'function' && !BUILTIN_TYPES.includes(wanted)) {
+		return extra.read(wanted);
+	}
+	if (extra && typeof extra.read === 'function') {
+		try {
+			return await extra.read(wanted);
+		} catch (failure) {
+			/* 附加来源没有这个编号 → 回落到内置。 */
+		}
 	}
 	return readFile(join(TEMPLATE_DIR, `${wanted}.yml`), 'utf8');
 }
@@ -1706,7 +1786,10 @@ async function templateMeta(type) {
 	if (TEMPLATE_META_CACHE.has(wanted)) return TEMPLATE_META_CACHE.get(wanted);
 	let source = '';
 	try {
-		source = await readFile(join(TEMPLATE_DIR, `${wanted}.yml`), 'utf8');
+		/* 必须走 loadTemplate：它会先查 `templates` 插件的服务，
+		 * 只有内置那 4 个才从本地目录读。直接 readFile(TEMPLATE_DIR)
+		 * 会让附加的 23 个模板永远读不到——它们不在 core 目录里。 */
+		source = await loadTemplate(wanted);
 	} catch (failure) {
 		return null;
 	}
@@ -1716,7 +1799,7 @@ async function templateMeta(type) {
 }
 
 /** 清缓存：模板文件可能在运行期被改（开发时常见）。 */
-function clearTemplateMetaCache() {
+export function clearTemplateMetaCache() {
 	TEMPLATE_META_CACHE.clear();
 }
 
@@ -1743,7 +1826,7 @@ async function dispatchOptions(fromId) {
 
 	const allowed = [];
 	const blocked = [];
-	for (const type of TYPES) {
+	for (const type of availableTypes()) {
 		const meta = await templateMeta(type);
 		if (meta === null) continue;
 		const childKind = meta.defaultKind !== '' && Object.hasOwn(KINDS, meta.defaultKind)
@@ -2514,7 +2597,7 @@ function registerExtraCommands(ctx) {
 	ctx.effect(() => {
 		const writeIndex = async () => {
 			const out = [];
-			for (const type of TYPES) {
+			for (const type of availableTypes()) {
 				try {
 					out.push({ type, yaml: await loadTemplate(type) });
 				} catch (error) {
@@ -2683,7 +2766,7 @@ function registerExtraCommands(ctx) {
 			const out = [];
 			/* 只列 TYPES（当前模板）。H1–H8 已降级为停止原因，文件都删了，
 			   列出来只会让面板显示 8 个空模板。老数据靠 LEGACY_TYPES 兜住读取。 */
-			for (const type of TYPES) {
+			for (const type of availableTypes()) {
 				try {
 					out.push({ type: type, yaml: await loadTemplate(type) });
 				} catch (error) {
@@ -3354,8 +3437,21 @@ function planClaimsFor(ctx) {
  *   - insert: { id: taskboard-ws,     name: '@local/taskboard/workspace' }
  */
 
-/** ① core：存储、事项模型、状态机、模板、全部工具与命令。 */
-export function applyCore(ctx) {
+/*
+ * ── 插件入口 ───────────────────────────────────────────────────────────
+ *
+ * 用户要求：「任务板：有命令，ai 工具，后端实现。」
+ *
+ * 这个包只做**后端**：存储、事项模型、状态机、AI 工具、命令。
+ * UI 是另外两个包（ui-drawer / ui-sidebar），权限与工作空间也是。
+ *
+ * 模板：内置四个（GU 用户任务 / WI 实现 / DP 方案 / RR 汇报）在
+ * `./templates/`，够用。装 `templates` 插件会多出 23 个可选模板——
+ * 那是**可选**依赖，拿不到就只用内置的。
+ */
+export function apply(ctx) {
+	/* 先把模板服务找出来（可能还没注册 —— 插件加载顺序不保证）。 */
+	bindTemplates(ctx);
 	registerTools(ctx);
 	registerCommands(ctx);
 	registerExtraTools(ctx);
@@ -3366,31 +3462,6 @@ export function applyCore(ctx) {
 	} catch (failure) {
 		/* 没有 provide 能力时只是少一个口子 */
 	}
-}
-
-/** ② plan-preset：「按计划」权限档 + 守卫。 */
-export function applyPlanPreset(ctx) {
-	/* 把读事项的入口交给它——依赖方向只能 core → plan-preset，
-	   不能让 plan-preset 反过来 import core 的存储。 */
-	provideTaskLoader(() => listAll());
-	installPlanPreset(ctx);
-	installGuard(ctx);
-	refreshClaims().catch(() => {});
-}
-
-/** ③ workspace：子工作空间 / 额外工作区。纯数据 + 路径判定，没有 ctx 要做的事。 */
-export function applyWorkspace() {
-	/* 这个插件的作用是**导出**路径判定函数（splitWorkspaces / within /
-	   judgeCommand / extractPaths）。core 和 plan-preset 直接 import 用。
-	   它没有需要在 ctx 上注册的东西——字段本身就是数据，
-	   校验发生在 task_submit / task_update 里（core 调的）。 */
-}
-
-/** ④ 默认入口：按依赖顺序把上面三个装起来。 */
-export function apply(ctx) {
-	applyCore(ctx);
-	applyPlanPreset(ctx);
-	applyWorkspace(ctx);
 	try {
 		const prompts = ctx.get('systemPrompt');
 		if (prompts && typeof prompts.section === 'function') {

@@ -1,19 +1,37 @@
-# 一个包里的多个插件。
+# 任务板 —— 一个包，七个插件。
 #
-# 默认只挂 `taskboard` 一个条目——它是组合入口，内部依次装起
-# core / plan-preset / workspace 三个子插件（见 index.js 的 apply）。
+# 每个条目都是**独立插件**（独立的 row id），在设置页有自己的开关。
+# 这与官方「智能体团队」包的结构一样：一个 profile bundle 由多个 row 组成。
 #
-# 想**只要某一部分**时，把下面注释掉的条目打开、并把第一行注释掉：
+# 关掉某个 row 不会影响其它 —— 想只要右侧栏不要输入框抽屉，就关掉 ui-drawer。
 #
-#   - id: taskboard-core
-#     name: '@local/taskboard/core'          # 存储 + 事项模型 + 状态机 + 全部工具
-#   - id: taskboard-plan
-#     name: '@local/taskboard/plan-preset'   # 「按计划」权限档 + 守卫
-#   - id: taskboard-ws
-#     name: '@local/taskboard/workspace'     # 子工作空间 / 额外工作区 + 路径判定
+# 依赖顺序（下面的 insert 顺序就是加载顺序）：
+#   core → templates → plan-preset → workspace → 三个 UI
 #
-# 依赖顺序：core → plan-preset → workspace。
-# 面板（composer-drawer 那个包）依赖 core，但不依赖 plan-preset。
+# 每个 UI row 都是**客户端**插件（dsh.client），只负责显示；
+# 它们不依赖权限，权限也不依赖它们。
+
 - insert:
+    # ① 后端实现：存储、事项模型、状态机、AI 工具、命令
     - id: taskboard
-      name: '@local/taskboard'
+      name: '@local/taskboard/core'
+
+    # ② 默认任务模板：27 个模板的注册与读取
+    - id: taskboard-templates
+      name: '@local/taskboard/templates'
+
+    # ③ 按计划的权限：一个新的权限档，按任务给出的权限工作
+    - id: taskboard-plan-preset
+      name: '@local/taskboard/plan-preset'
+
+    # ④ 子工作空间：可写范围限制在里面（依赖 ③）
+    - id: taskboard-workspace
+      name: '@local/taskboard/workspace'
+
+    # ⑤ 抽屉 UI：输入栏旁边的箭头打开
+    - id: taskboard-ui-drawer
+      name: '@local/taskboard/ui-drawer'
+
+    # ⑥ 工作区 UI：在右边的工作区加入口
+    - id: taskboard-ui-sidebar
+      name: '@local/taskboard/ui-sidebar'

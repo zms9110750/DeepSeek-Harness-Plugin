@@ -1,6 +1,12 @@
 import dagre from '@dagrejs/dagre';
+/* 模块 id 和「装哪一半 UI」由构建时注入（见 build-client.mjs）：
+ * 同一份源码产出三个包 —— ui-drawer / ui-sidebar / 合集。
+ *
+ * 为什么这么干：两个 UI 共用同一个 TaskBoard 视图（用户要求「他们拥有相同的视图」），
+ * 抄成两份会立刻分叉。用一份源码 + 三个入口，既保证视图一致，
+ * 又让每个 UI 成为独立插件、在设置页有独立开关。 */
 window.__ModuleLoader__.load({
-  id: '@local/composer-drawer',
+  id: __TASKBOARD_MODULE_ID__,
   factory(require) {
     const React = require('react');
     const h = React.createElement;
@@ -4280,6 +4286,24 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'remote', 'remote.commands', 'remote.workspaceFiles'],
       apply(ctx) {
+        /* 这一个包提供**两个独立的 UI 插件**：
+         *   ui-drawer  —— 输入框旁边的箭头抽屉
+         *   ui-sidebar —— 右侧栏的「任务」标签页
+         *
+         * 两者共用同一个 TaskBoard 视图（用户要求「他们拥有相同的视图」），
+         * 但注册是分开的——关掉抽屉不该影响右侧栏，反之亦然。
+         *
+         * 由入口文件告诉这里要装哪一半：
+         *   client.drawer.src.js  →  __TASKBOARD_UI_PARTS__ = ['drawer']
+         *   client.sidebar.src.js →  __TASKBOARD_UI_PARTS__ = ['sidebar']
+         *   client.src.js         →  两半都装（兼容旧的单包用法）
+         */
+        const parts = Array.isArray(window.__TASKBOARD_UI_PARTS__)
+          ? window.__TASKBOARD_UI_PARTS__
+          : ['drawer', 'sidebar'];
+        const wantDrawer = parts.indexOf('drawer') !== -1;
+        const wantSidebar = parts.indexOf('sidebar') !== -1;
+
         pluginRuntime = ctx;
         try {
           localeFace = typeof ctx.get === 'function' ? ctx.get('locale') : null;
@@ -4312,18 +4336,22 @@ window.__ModuleLoader__.load({
           };
         });
 
-        ctx.slots.inject('conversation.input.dock', function () {
-          return ctx.slots.register(
-            {
-              name: 'conversation.input.dock',
-              id: 'composer-drawer',
-              /* Last row of the dock: rows above it (todo / goal / queue) then
-                 grow upward without pushing the button off the card's corner. */
-              order: 999,
-            },
-            ComposerDrawer,
-          );
-        });
+        if (wantDrawer) {
+          ctx.slots.inject('conversation.input.dock', function () {
+            return ctx.slots.register(
+              {
+                name: 'conversation.input.dock',
+                id: 'composer-drawer',
+                /* Last row of the dock: rows above it (todo / goal / queue) then
+                   grow upward without pushing the button off the card's corner. */
+                order: 999,
+              },
+              ComposerDrawer,
+            );
+          });
+        }
+
+        if (!wantSidebar) return;
 
         /* ── 右侧栏 tab（T-028）───────────────────────────────────────────
            两步走，与官方 sidebar-files / ui-plan 插件同一个套路：

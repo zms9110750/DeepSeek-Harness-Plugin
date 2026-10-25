@@ -1,0 +1,46 @@
+/** ① core：存储、事项模型、状态机、模板、全部工具与命令。 */
+export function applyCore(ctx) {
+	registerTools(ctx);
+	registerCommands(ctx);
+	registerExtraTools(ctx);
+	registerExtraCommands(ctx);
+	registerUpdate(ctx);
+	try {
+		ctx.provide('planClaims', planClaimsFor(ctx));
+	} catch (failure) {
+		/* 没有 provide 能力时只是少一个口子 */
+	}
+}
+
+/** ② plan-preset：「按计划」权限档 + 守卫。 */
+export function applyPlanPreset(ctx) {
+	/* 把读事项的入口交给它——依赖方向只能 core → plan-preset，
+	   不能让 plan-preset 反过来 import core 的存储。 */
+	provideTaskLoader(() => listAll());
+	installPlanPreset(ctx);
+	installGuard(ctx);
+	refreshClaims().catch(() => {});
+}
+
+/** ③ workspace：子工作空间 / 额外工作区。纯数据 + 路径判定，没有 ctx 要做的事。 */
+export function applyWorkspace() {
+	/* 这个插件的作用是**导出**路径判定函数（splitWorkspaces / within /
+	   judgeCommand / extractPaths）。core 和 plan-preset 直接 import 用。
+	   它没有需要在 ctx 上注册的东西——字段本身就是数据，
+	   校验发生在 task_submit / task_update 里（core 调的）。 */
+}
+
+/** ④ 默认入口：按依赖顺序把上面三个装起来。 */
+export function apply(ctx) {
+	applyCore(ctx);
+	applyPlanPreset(ctx);
+	applyWorkspace(ctx);
+	try {
+		const prompts = ctx.get('systemPrompt');
+		if (prompts && typeof prompts.section === 'function') {
+			ctx.effect(() => prompts.section({ name: 'taskboard', order: 60, text: PROMPT_TEXT }));
+		}
+	} catch (failure) {
+		/* 没有 systemPrompt 服务时只是少一段约定，不影响工具 */
+	}
+}

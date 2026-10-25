@@ -12,7 +12,7 @@
  *
  * 依赖：\shared\（text / isAbsolutePath 等）。不依赖 core 的存储。
  */
-import { text, isAbsolutePath } from './shared.js';
+import { text, isAbsolutePath } from '../core/shared.js';
 function splitWorkspaces(raw) {
 	const parts = Array.isArray(raw)
 		? raw.map((entry) => String(entry ?? ''))
@@ -151,4 +151,19 @@ export {
 	normalizePath,
 };
 
+/*
+ * ── 插件入口 ───────────────────────────────────────────────────────────
+ *
+ * 这个包是**独立的插件**（用户要求「子工作空间：可写范围限制在里面」）。
+ *
+ * 它没有需要在 ctx 上注册的东西——工作空间是**数据字段**，
+ * 校验发生在 core 的 task_submit / task_update 里，判定发生在 plan-preset 的守卫里。
+ * 这个包的价值是**把那份判定逻辑变成可替换的一层**：
+ * 关掉它，plan-preset 就 import 不到 judgeCommand / within，
+ * 按计划档会退化成"不看路径、只看描述符"。
+ */
+export const name = 'taskboard-workspace';
 
+export function apply() {
+	/* 纯函数包，没有 ctx 副作用。 */
+}
