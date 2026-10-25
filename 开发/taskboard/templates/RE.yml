@@ -106,6 +106,21 @@ body:
 
         没有就写"没有"，不要编 —— 编出来的先例会让人去查一个不存在的东西。
   - type: textarea
+    id: deliver
+    attributes:
+      label: 交付
+      description: |
+        这一条**产出了什么**。记录的价值全在这里：写出来的东西本身，不是过程。
+
+        写清三样：
+          · 产物在哪（路径 / 链接 / 结论一句话）
+          · 别人拿它做什么（下一步、判断依据、还是照做）
+          · 它**过时了怎么知道**（改了什么之后这条就不准了）
+
+        「我把事情做完了」不是交付。交付是一个**别人能拿走用的东西**。
+    validations:
+      required: true
+  - type: textarea
     id: other
     attributes:
       label: 其他

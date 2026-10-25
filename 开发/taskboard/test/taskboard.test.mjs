@@ -314,7 +314,7 @@ after(() => {
 
 /* ── 7. 用例 ───────────────────────────────────────────────────────────── */
 
-test('apply 注册十一个工具、十四条面板命令、「按计划」预设、守卫和 planClaims', () => {
+test('apply 注册十一个工具、十五条面板命令、「按计划」预设、守卫和 planClaims', () => {
 	assert.deepEqual([...tools.keys()].sort(), [
 		'task_answer',
 		'task_claim',
@@ -331,6 +331,7 @@ test('apply 注册十一个工具、十四条面板命令、「按计划」预�
 	assert.deepEqual([...commands.keys()].sort(), [
 		'task-answer',
 		'task-approve',
+		'task-archive',
 		'task-create',
 		'task-dispatch',
 		'task-get',

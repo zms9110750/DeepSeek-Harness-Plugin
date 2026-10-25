@@ -1063,6 +1063,69 @@ async function setAnswer(id, question, answer) {
 }
 
 
+/*
+ * ---------------------------------------------------------------------------
+ * 归档（archived）
+ * ---------------------------------------------------------------------------
+ *
+ * 用户原话：
+ *   > 归档。分组。这个需要设计。否则之前没有用用户任务提出来的任务，
+ *   > 占据了太多的竖向高度。
+ *   > 归档以后界面不显示。但索引还在。可以显示已归档。
+ *   > 已经归档的，ai 仍然可以用工具查看。
+ *
+ * 所以 `archived` 是一个**独立的布尔**，不塞进九态：
+ *   · 九态是 A2A 对齐层，不能加新值
+ *   · 归档和生命周期正交——已归档的可以是完成、取消、甚至还在进行
+ *
+ * 归档**不影响 AI 用工具读取**：`task_list` / `task_get` 照样能看到。
+ * 只是面板默认不显示。这是用户明确要的："ai 仍然可以用工具查看"。
+ */
+async function setArchived(id, archived) {
+	return withWrite(async () => {
+		const task = await readTask(id);
+		if (task === undefined) throw new Error(`没有这份计划：${id}`);
+		const next = Object.assign({}, task, { archived: archived === true });
+		await saveTask(next);
+		return next;
+	});
+}
+
+/**
+ * 批量归档一棵子树：给一个父 id，它和所有后代一起归档。
+ *
+ * 用户要"归档直接对分组归档"，所以必须有批量。不做递归删除，
+ * 只是把 `archived` 打成 true —— 随时能取消，索引都还在。
+ */
+async function archiveSubtree(id, archived) {
+	return withWrite(async () => {
+		const all = await listAll();
+		const byParent = new Map();
+		for (const item of all) {
+			const parent = String(item.parent || '').trim();
+			if (parent === '') continue;
+			if (!byParent.has(parent)) byParent.set(parent, []);
+			byParent.get(parent).push(item);
+		}
+		const root = all.find((item) => item.id === String(id || '').trim());
+		if (root === undefined) throw new Error(`没有这份计划：${id}`);
+		const seen = new Set();
+		const queue = [root];
+		const touched = [];
+		while (queue.length > 0) {
+			const current = queue.shift();
+			if (seen.has(current.id)) continue;
+			seen.add(current.id);
+			const next = Object.assign({}, current, { archived: archived === true });
+			await saveTask(next);
+			touched.push(current.id);
+			for (const child of byParent.get(current.id) || []) queue.push(child);
+		}
+		return touched;
+	});
+}
+
+
 /** 只认识 `key: value` 行的极简头解析，够用且不怕正文里的冒号。 */
 function parseTask(raw, file) {
 	const lines = String(raw ?? '').split(/\r?\n/u);
@@ -1546,6 +1609,9 @@ function registerCommands(ctx) {
 							/* 目标：推导出来的样子（不落盘，只给面板显示）。 */
 							derived:
 								kindOf(head) === 'goal' ? deriveGoalStatus({ ...head, body }, tasks) : '',
+							/* 归档：面板默认不显示，但**照样返回**——
+							   用户明确要求"已经归档的，ai 仍然可以用工具查看"。 */
+							archived: head.archived === true,
 						});
 					}),
 				),
@@ -2284,6 +2350,67 @@ function registerExtraCommands(ctx) {
 					home: resolveDshHome(),
 				}),
 			};
+		},
+	});
+
+	/*
+	 * 模板索引文件：`templates/INDEX.json`。
+	 *
+	 * 为什么需要它：面板要拿模板清单，但**不能用命令通道**——
+	 * 命令通道每调用一次就往会话日志写一对 `command/run` + `command/done`，
+	 * 它们会渲染成聊天流里的系统消息。用户点一下「新建」就冒出一条
+	 * `>_ task-templates [{...}]`，非常干扰。
+	 *
+	 * 所以：宿主在启动时把清单落成**一个静态 JSON 文件**，
+	 * 面板用文件通道读它（纯读，不进日志）。清单里带 yaml 全文，
+	 * 面板读一次就够了，不用再逐个读 27 个 .yml。
+	 *
+	 * 文件在 `templates/` 里，所以模板目录是唯一真源这一点不变。
+	 */
+	ctx.effect(() => {
+		const writeIndex = async () => {
+			const out = [];
+			for (const type of TYPES) {
+				try {
+					out.push({ type, yaml: await loadTemplate(type) });
+				} catch (error) {
+					out.push({ type, yaml: '' });
+				}
+			}
+			try {
+				await writeFile(join(TEMPLATE_DIR, 'INDEX.json'), JSON.stringify(out), 'utf8');
+			} catch (error) {
+				ctx.logger?.warn?.(`写模板索引失败：${String(error)}`);
+			}
+		};
+		void writeIndex();
+		return () => {};
+	});
+
+
+	ctx.commands.register({
+		name: 'task-archive',
+		description: '归档 / 取消归档一个事项（连它的整棵子树）。面板调用；JSON：{id,archived}',
+		input: { hint: '{"id":"T-001","archived":true}' },
+		recordInput: false,
+		async handler(payload) {
+			let parsed = null;
+			try {
+				parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+			} catch (error) {
+				return { kind: 'error', text: '参数不是合法 JSON' };
+			}
+			const id = String(parsed?.id ?? '').trim();
+			if (id === '') return { kind: 'error', text: '要说明归档哪个事项' };
+			try {
+				const touched = await archiveSubtree(id, parsed?.archived === true);
+				return {
+					kind: 'success',
+					text: JSON.stringify({ archived: parsed?.archived === true, count: touched.length, ids: touched }),
+				};
+			} catch (error) {
+				return { kind: 'error', text: String((error && error.message) || error) };
+			}
 		},
 	});
 

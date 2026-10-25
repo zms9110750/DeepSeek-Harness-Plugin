@@ -2384,7 +2384,15 @@
           workspace: row.workspace || "",
           workspaces: row.workspaces || "",
           permission: row.permission || "",
-          note: row.note || ""
+          note: row.note || "",
+          /* 目标的推导状态（宿主 /tasks 算好的，不落盘）。
+             只有 kind=goal 才有值，其余是空串。 */
+          derived: row.derived || "",
+          /* 归档（DP-04）：默认不在树/列表里显示。 */
+          archived: row.archived === true,
+          /* 开放问题进度：树/列表上可以标「还差 2 条没答」。 */
+          questionCount: typeof row.questionCount === "number" ? row.questionCount : 0,
+          answeredCount: typeof row.answeredCount === "number" ? row.answeredCount : 0
         };
       }
       const cardStyle = clickableStyle({
@@ -2763,6 +2771,8 @@
       function DetailPane(props) {
         const node = props.node;
         const state = statusA2A(node.status);
+        const decidable = props.behavior === "decide" && ["\u672A\u6307\u5B9A", "\u63D0\u4EA4", "\u9700\u8981\u8865\u5145", "\u9700\u8981\u6388\u6743"].includes(node.status);
+        const choices = decidable ? optionsOf(props.body) : [];
         const children = props.tasks.filter(function(item) {
           return item.parent === node.id;
         }).map(function(item) {
@@ -2845,6 +2855,20 @@
             body
           );
         };
+        const paneInputStyle = {
+          width: "100%",
+          boxSizing: "border-box",
+          padding: "6px 8px",
+          borderRadius: 8,
+          border: "1px solid var(--dsw-alias-border-l1)",
+          background: "var(--dsw-alias-bg-layer-2)",
+          color: "var(--dsw-alias-label-primary)",
+          fontFamily: "inherit",
+          fontSize: 12,
+          lineHeight: 1.6,
+          outline: "none"
+        };
+        const paneHintStyle = { fontSize: 12, color: "var(--dsw-alias-label-secondary)" };
         const relationRows = [
           ["\u7236\u8BA1\u5212", node.parent ? [chip("\u7236", node.parent)] : []],
           ["\u5B50\u8BA1\u5212", children.map(function(id) {
@@ -2890,6 +2914,27 @@
               { style: { fontSize: 11, color: statusTone(node.status) } },
               "\u25CF " + node.status + " \xB7 " + state.code + " \xB7 " + groupLabel(node.status)
             ),
+            /* 目标：把**推导出来的样子**显示出来。
+             *
+             * 用户要求：「目标基于他的子任务决定状态」。
+             * 目标自己存的 `status` 只是"用户有没有采纳/放弃"，真正在推进到哪一步
+             * 要看下面那堆事。所以这里单独显示一个「推导：进行中」。
+             *
+             * 推导值不落盘（用户明确要求），由宿主 /tasks 的 `derived` 字段算好送过来。 */
+            node.kind === "goal" && node.derived ? h(
+              "span",
+              {
+                title: "\u76EE\u6807\u7684\u72B6\u6001\u7531\u5B50\u4E8B\u9879\u63A8\u5BFC\uFF0C\u4E0D\u80FD\u624B\u52A8\u8BBE\u3002\u8981\u63A8\u8FDB\u5B83\uFF0C\u53BB\u63A8\u8FDB\u5B50\u4E8B\u9879\u3002",
+                style: {
+                  fontSize: 11,
+                  padding: "1px 7px",
+                  borderRadius: 6,
+                  border: "1px dashed var(--dsw-alias-border-l1)",
+                  color: "var(--dsw-alias-label-secondary)"
+                }
+              },
+              "\u63A8\u5BFC\uFF1A" + node.derived
+            ) : null,
             h("span", { style: { flex: 1 } }),
             h(
               "button",
@@ -2899,6 +2944,22 @@
                 style: Object.assign({}, buttonBase(false), { padding: "2px 12px", marginRight: 8 })
               },
               props.canEdit === true ? "\u7F16\u8F91" : "\u5206\u652F"
+            ),
+            /* 归档（DP-04）：连整棵子树一起归档。
+             *
+             * 用户原话：「归档直接对分组归档。归档以后界面不显示。
+             * 但索引还在。可以显示已归档。」 */
+            h(
+              "button",
+              {
+                type: "button",
+                title: node.archived ? "\u4ECE\u5F52\u6863\u91CC\u53D6\u56DE\u6765\uFF08\u542B\u6240\u6709\u5B50\u4E8B\u9879\uFF09" : "\u5F52\u6863\u8FD9\u6761\u548C\u5B83\u4E0B\u9762\u6240\u6709\u4E8B\u9879\uFF08\u6570\u636E\u90FD\u8FD8\u5728\uFF09",
+                onClick: function() {
+                  if (typeof props.onArchive === "function") props.onArchive(node.archived !== true);
+                },
+                style: Object.assign({}, buttonBase(false), { padding: "2px 12px", marginRight: 8 })
+              },
+              node.archived ? "\u53D6\u6D88\u5F52\u6863" : "\u5F52\u6863"
             ),
             h(
               "button",
@@ -3055,7 +3116,7 @@
                         props.onAnswerDraft(key, event.target.value);
                       }
                     },
-                    style: Object.assign({}, formInputStyle, { resize: "vertical", fontSize: 12 })
+                    style: Object.assign({}, paneInputStyle, { resize: "vertical", fontSize: 12 })
                   }),
                   dirty ? h(
                     "div",
@@ -3076,6 +3137,95 @@
                   ) : null
                 );
               })
+            )
+          ) : null,
+          /* 选项卡：`behavior: decide` 的模板才有（DC · 决策）。
+           *
+           * 用户要的三件事全在这里：
+           *   1. 「可以选择」→ 一排选项按钮
+           *   2. 「可以用户自己在选择外再进行填空」→ 自定义答案输入框
+           *   3. 「可以拒绝选择，要求要更多信息才能选择」→ 拒绝 / 要更多信息
+           *
+           * 为什么不做成单选控件：选项是**从正文拆的**，数量不固定，
+           * 而且每条都带一句代价说明。按钮更直接，也不占竖向空间。 */
+          decidable ? section(
+            "\u9700\u8981\u4F60\u9009\uFF08" + choices.length + " \u4E2A\u9009\u9879\uFF09",
+            h(
+              "div",
+              { style: { display: "flex", flexDirection: "column", gap: 8 } },
+              choices.length === 0 ? h("div", { style: paneHintStyle }, "\u6B63\u6587\u91CC\u6CA1\u6709\u300C## \u9009\u9879\u300D\u5C0F\u8282\uFF0C\u6240\u4EE5\u5217\u4E0D\u51FA\u6309\u94AE\u3002\u53EF\u4EE5\u5728\u9009\u9879\u5C0F\u8282\u91CC\u7528 - \u6216 1. \u9010\u6761\u5199\u3002") : h(
+                "div",
+                { style: { display: "flex", flexDirection: "column", gap: 6 } },
+                choices.map(function(choice, index) {
+                  return h(
+                    "button",
+                    {
+                      key: "choice-" + index,
+                      type: "button",
+                      title: choice.detail,
+                      onClick: function() {
+                        if (typeof props.onChoose === "function") props.onChoose(choice.label);
+                      },
+                      style: Object.assign({}, buttonBase(false), {
+                        padding: "6px 12px",
+                        fontSize: 12,
+                        textAlign: "left",
+                        lineHeight: 1.5,
+                        whiteSpace: "normal"
+                      })
+                    },
+                    h("span", { style: { opacity: 0.5, marginRight: 6 } }, index + 1 + "."),
+                    choice.label
+                  );
+                })
+              ),
+              /* 自己填：用户可以在选项之外给答案 */
+              h("input", {
+                value: props.answerDraft && props.answerDraft.question === "choose" ? props.answerDraft.value : "",
+                placeholder: "\u6216\u8005\u81EA\u5DF1\u586B\u4E00\u4E2A\u7B54\u6848\uFF08\u4E0D\u5728\u8FD9\u51E0\u6761\u91CC\uFF09",
+                onChange: function(event) {
+                  if (typeof props.onAnswerDraft === "function") props.onAnswerDraft("choose", event.target.value);
+                },
+                style: Object.assign({}, paneInputStyle, { fontSize: 12 })
+              }),
+              h(
+                "div",
+                { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: function() {
+                      const draft = props.answerDraft && props.answerDraft.question === "choose" ? props.answerDraft.value : "";
+                      if (typeof props.onChoose === "function") props.onChoose(draft);
+                    },
+                    style: Object.assign({}, buttonBase(true, props.busy), { padding: "3px 12px", fontSize: 12 })
+                  },
+                  "\u6309\u6211\u586B\u7684\u9009"
+                ),
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: function() {
+                      if (typeof props.onMoreInfo === "function") props.onMoreInfo();
+                    },
+                    style: Object.assign({}, buttonBase(false), { padding: "3px 12px", fontSize: 12 })
+                  },
+                  "\u8981\u66F4\u591A\u4FE1\u606F"
+                ),
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: function() {
+                      if (typeof props.onRejectChoice === "function") props.onRejectChoice();
+                    },
+                    style: Object.assign({}, buttonBase(false), { padding: "3px 12px", fontSize: 12 })
+                  },
+                  "\u62D2\u7EDD\u8FD9\u4E2A\u51B3\u7B56"
+                )
+              )
             )
           ) : null,
           section(
@@ -3110,7 +3260,7 @@
                     props.onNoteDraft(event.target.value);
                   },
                   rows: 3,
-                  style: Object.assign({}, formInputStyle, {
+                  style: Object.assign({}, paneInputStyle, {
                     flex: 1,
                     resize: "vertical",
                     fontFamily: "inherit",
@@ -3190,7 +3340,7 @@
                   h("span", null, item.name)
                 );
               }),
-              (props.dispatch || []).length === 0 ? h("div", { style: lineStyle }, "\u8FD9\u4E00\u6761\u4E0B\u9762\u6D3E\u53D1\u4E0D\u4E86\u4EFB\u4F55\u6A21\u677F\u3002") : null
+              (props.dispatch || []).length === 0 ? h("div", { style: paneHintStyle }, "\u8FD9\u4E00\u6761\u4E0B\u9762\u6D3E\u53D1\u4E0D\u4E86\u4EFB\u4F55\u6A21\u677F\u3002") : null
             )
           ),
           section(
@@ -3224,6 +3374,29 @@
             ) : h("div", { style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" } }, "\u6CA1\u6709\u53EF\u8BFB\u7684\u5386\u53F2\u4E8B\u4EF6\u3002")
           )
         );
+      }
+      function optionsOf(body) {
+        const text = String(body || "");
+        const heading = /^#{2,4}\s*(选项|可选项|备选|方案选项).*$/gmu;
+        const found = heading.exec(text);
+        if (found === null) return [];
+        const rest = text.slice(found.index + found[0].length);
+        const nextHeading = /^#{1,4}\s+/mu.exec(rest);
+        const section = nextHeading === null ? rest : rest.slice(0, nextHeading.index);
+        const items = [];
+        const itemPattern = /^\s*(?:[-*]|\d+[.)]|[A-Za-z][.)])\s+(.+)$/gmu;
+        let match;
+        while ((match = itemPattern.exec(section)) !== null) {
+          const raw = match[1].trim();
+          const plain = raw.replace(/\*\*/gu, "").trim();
+          if (plain === "") continue;
+          const head = plain.split(/[。；;：:]/u)[0].trim();
+          items.push({
+            label: (head === "" ? plain : head).slice(0, 40),
+            detail: plain
+          });
+        }
+        return items;
       }
       function parseTemplateYaml(saw) {
         const lines = String(saw || "").split(/\r?\n/u);
@@ -3611,6 +3784,10 @@
         const match = /^domain:\s*(\w+)$/mu.exec(String(yaml || ""));
         return match ? match[1] : "general";
       }
+      function behaviorOf(yaml) {
+        const match = /^behavior:\s*(\w+)$/mu.exec(String(yaml || ""));
+        return match ? match[1] : "write";
+      }
       function isFramed(yaml) {
         const match = /^framed:\s*(\w+)$/mu.exec(String(yaml || ""));
         if (match) return match[1] !== "false";
@@ -3773,7 +3950,7 @@
             return h("option", { key: "opt-" + (item.id || "none"), value: item.id }, item.id === "" ? item.title : item.id + " \xB7 " + item.title);
           });
         };
-        const lineStyle2 = { fontSize: 12, color: "var(--dsw-alias-label-secondary)" };
+        const lineStyle = { fontSize: 12, color: "var(--dsw-alias-label-secondary)" };
         return h(
           "div",
           {
@@ -3920,7 +4097,7 @@
               h(
                 "div",
                 { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle2) }, "\u7236\u8BA1\u5212"),
+                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u7236\u8BA1\u5212"),
                 h(
                   "select",
                   {
@@ -3936,7 +4113,7 @@
               h(
                 "div",
                 { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle2) }, "\u5DE5\u4F5C\u7A7A\u95F4"),
+                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u5DE5\u4F5C\u7A7A\u95F4"),
                 h("input", {
                   value: workspace,
                   placeholder: "\u5B50\u5DE5\u4F5C\u7A7A\u95F4\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u7A7A = \u4F1A\u8BDD\u76EE\u5F55\uFF09",
@@ -3949,7 +4126,7 @@
               h(
                 "div",
                 { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle2) }, "\u989D\u5916"),
+                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u989D\u5916"),
                 h("input", {
                   value: workspaces,
                   placeholder: "\u989D\u5916\u5DE5\u4F5C\u533A\uFF0C\u9017\u53F7\u5206\u9694\u7684\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u8981\u8BFB\u5199\u7684\u5176\u5B83\u76EE\u5F55\uFF0C\u53EF\u7A7A\uFF09",
@@ -3962,7 +4139,7 @@
               h(
                 "div",
                 { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle2) }, "\u6743\u9650"),
+                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u6743\u9650"),
                 h(
                   "select",
                   {
@@ -3977,7 +4154,7 @@
                   })
                 )
               ),
-              h("span", { style: lineStyle2 }, "\u5173\u8054\uFF08\u7BAD\u5934\u4ECE\u5148\u51B3\u6307\u5411\u4F9D\u8D56\u65B9\uFF09"),
+              h("span", { style: lineStyle }, "\u5173\u8054\uFF08\u7BAD\u5934\u4ECE\u5148\u51B3\u6307\u5411\u4F9D\u8D56\u65B9\uFF09"),
               links.map(function(link, index) {
                 return h(
                   "div",
@@ -4037,7 +4214,7 @@
               "div",
               { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "auto", paddingRight: 6, borderLeft: "1px solid var(--dsw-alias-border-l1)", paddingLeft: 16 } },
               /* 模板的一句话说明留在顶部：让人知道"这一类该写什么"，但不占输入框。 */
-              template && type !== "" ? h("div", { style: lineStyle2 }, template.name + "\uFF1A" + template.description) : null,
+              template && type !== "" ? h("div", { style: lineStyle }, template.name + "\uFF1A" + template.description) : null,
               /* **两种形态**（用户两次纠正后的最终口径）：
                *
                *   `framed: false`（MG 用户任务）→ 一个空白正文框。
@@ -4232,6 +4409,7 @@
               open: true,
               busy: false,
               error: "",
+              key: String(Date.now()),
               initial: { parent: activeNodeId, type: "RB", kind: "record" },
               /* 交给 CreateForm 一句额外说明：建完这条再点失败 */
               hint: "\u5148\u5EFA\u8FD9\u6761\u300C\u963B\u788D\u300D\u628A\u539F\u56E0\u5199\u6E05\u695A\uFF1B\u5EFA\u5B8C\u4E4B\u540E\u518D\u70B9\u300C\u5931\u8D25\u300D\u3002"
@@ -4294,28 +4472,31 @@
           });
         };
         const loadTemplates = function(onError) {
-          runCommand("/task-templates", sessionId).then(function(settled) {
-            const text = commandText(settled);
-            const list = JSON.parse(text);
-            if (!Array.isArray(list)) throw new Error("/task-templates \u6CA1\u8FD4\u56DE\u6570\u7EC4");
+          if (Object.keys(templates).length > 0) return;
+          ensurePaths().then(function(paths) {
+            const files = fileRpc();
+            if (paths === null || files === null) throw new Error("\u6CA1\u6709\u6587\u4EF6\u901A\u9053");
+            const indexPath = String(paths.templates || "").replace(/[\\/]+$/u, "") + "\\INDEX.json";
+            return Promise.resolve(files.read(sessionId, indexPath, void 0, void 0));
+          }).then(function(result) {
+            if (!result || result.ok !== true) throw new Error("\u8BFB\u4E0D\u5230 templates/INDEX.json");
+            const list = JSON.parse(String(result.value.text || ""));
+            if (!Array.isArray(list)) throw new Error("INDEX.json \u4E0D\u662F\u6570\u7EC4");
             const map = {};
             list.forEach(function(item) {
               if (item && typeof item.type === "string" && item.type !== "" && item.yaml) {
                 map[item.type] = item.yaml;
               }
             });
-            if (Object.keys(map).length === 0) {
-              if (onError) onError("\u5BBF\u4E3B\u8FD4\u56DE\u4E86 0 \u4E2A\u6A21\u677F\uFF08\u68C0\u67E5 templates \u76EE\u5F55\uFF09");
-              return;
-            }
+            if (Object.keys(map).length === 0) throw new Error("INDEX.json \u91CC\u6CA1\u6709\u6A21\u677F");
             setTemplates(map);
           }).catch(function(error) {
-            if (onError) onError(String(error && error.message || error));
+            if (typeof onError === "function") onError(String(error && error.message || error));
           });
         };
         const openCreate = function() {
           setEditId("");
-          setCreate({ open: true, busy: false, error: "" });
+          setCreate({ open: true, busy: false, error: "", key: String(Date.now()) });
           if (Object.keys(templates).length > 0) return;
           loadTemplates(function(message) {
             setCreate({ open: true, busy: false, error: message });
@@ -4369,6 +4550,9 @@
         const viewState = React.useState("tree");
         const view = viewState[0];
         const setView = viewState[1];
+        const archivedState = React.useState(false);
+        const showArchived = archivedState[0];
+        const setShowArchived = archivedState[1];
         const filterState = React.useState("");
         const groupFilter = filterState[0];
         const setGroupFilter = filterState[1];
@@ -4376,10 +4560,15 @@
         const search = searchState[0];
         const setSearch = searchState[1];
         const allTasks = data.tasks;
+        const archivedCount = allTasks.filter(function(item) {
+          return item.archived === true;
+        }).length;
+        data.archivedCount = archivedCount;
         const tasks = React.useMemo(
           function() {
             const needle = search.trim().toLowerCase();
             return allTasks.filter(function(node) {
+              if (node.archived && !showArchived) return false;
               if (groupFilter !== "") {
                 const groups = groupsOf(node.status);
                 if (node.status === "\u672A\u6307\u5B9A") {
@@ -4395,7 +4584,7 @@
               return true;
             });
           },
-          [allTasks, groupFilter, search]
+          [allTasks, groupFilter, search, showArchived]
         );
         const graph = React.useMemo(
           function() {
@@ -4549,6 +4738,23 @@
             legendItem("parent", false, "\u7236\u5B50"),
             legendItem("link", true, "\u94FE\u63A5"),
             h("span", { style: { flex: 1 } }),
+            /* 显示已归档（DP-04）。
+             *
+             * 用户原话：「归档以后界面不显示。但索引还在。可以显示已归档。」
+             * 所以默认隐藏，这里给一个开关。归档的**数据全都还在**，
+             * AI 用工具照样能查到。 */
+            h(
+              "button",
+              {
+                type: "button",
+                title: "\u5F52\u6863\u7684\u4E8B\u9879\u9ED8\u8BA4\u4E0D\u663E\u793A\uFF1B\u8FD9\u91CC\u53EF\u4EE5\u7FFB\u51FA\u6765\u770B",
+                onClick: function() {
+                  setShowArchived(!showArchived);
+                },
+                style: buttonBase(showArchived)
+              },
+              showArchived ? "\u9690\u85CF\u5DF2\u5F52\u6863" : "\u663E\u793A\u5DF2\u5F52\u6863" + (data.archivedCount > 0 ? "\uFF08" + data.archivedCount + "\uFF09" : "")
+            ),
             /* 视图切换（T-020）：树看关系，列表看密度。 */
             h(
               "button",
@@ -4632,6 +4838,12 @@
             },
             onSubmit: submitUpdate
           }) : create.open ? h(CreateForm, {
+            /* key 让「每次打开都是新实例」。
+             *
+             * 不加的话 React 会复用上一次的 CreateForm，而 useState 的初始值
+             * 只在第一次计算——于是上次选了「记录」，下次点新建还是「记录」。
+             * 用户问的「这两个怎么变成记录了？」就是这个原因。 */
+            key: "create-" + String(create.key || ""),
             /* 派发按钮带过来的预填：parent + 模板 + 大类。
                这样用户点「派发：调研」后，只填标题和正文就能交。 */
             initial: create.initial,
@@ -4651,6 +4863,27 @@
             busy: action.busy,
             error: action.error,
             dispatch: dispatchInfo.id === activeNode.id ? dispatchInfo.items : [],
+            /* behavior：决定界面形态。decide 才有选项卡。 */
+            behavior: behaviorOf(templates[activeNode.typeCode] || ""),
+            /* 选项被点中时：把选项文字写进备注，然后把状态推到完成。 */
+            onChoose: function(choice) {
+              if (!choice || String(choice).trim() === "") return;
+              runCommand("/task-note " + activeNode.id + " \u9009\u5B9A\uFF1A" + String(choice), sessionId).then(function() {
+                return runCommand("/task-state " + activeNode.id + " \u5B8C\u6210", sessionId);
+              }).then(function() {
+                load();
+              }).catch(function(error) {
+                setAction({ busy: false, error: String(error && error.message || error) });
+              });
+            },
+            /* 要更多信息：状态推到「需要补充」，它会转向用户。 */
+            onMoreInfo: function() {
+              runState("\u9700\u8981\u8865\u5145");
+            },
+            /* 拒绝这个决策：拒绝是终态，表示"这个问法不对/不做了"。 */
+            onRejectChoice: function() {
+              runState("\u62D2\u7EDD");
+            },
             /* 开放问题：一问一答的卡片。 */
             questions: questionsOf(data.bodies[activeNode.id] || ""),
             answerDraft,
@@ -4684,6 +4917,26 @@
             history: historyInfo.id === activeNode.id ? historyInfo.entries : [],
             onNoteDraft: function(value) {
               setNote({ id: activeNode.id, draft: value, error: "" });
+            },
+            /* 归档：连整棵子树一起。 */
+            onArchive: function(archived) {
+              runCommand("/task-archive " + JSON.stringify({ id: activeNode.id, archived }), sessionId).then(function(settled) {
+                const text = commandText(settled);
+                let saved = null;
+                try {
+                  saved = JSON.parse(text);
+                } catch (failure) {
+                  saved = null;
+                }
+                if (saved === null || typeof saved.count !== "number") {
+                  setAction({ busy: false, error: text || "\u5F52\u6863\u6CA1\u6210\u529F" });
+                  return;
+                }
+                setSelected("");
+                load();
+              }).catch(function(error) {
+                setAction({ busy: false, error: String(error && error.message || error) });
+              });
             },
             onSaveNote: saveNote
           }) : null

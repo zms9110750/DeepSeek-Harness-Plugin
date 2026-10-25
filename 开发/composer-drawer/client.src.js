@@ -630,6 +630,14 @@ window.__ModuleLoader__.load({
         workspaces: row.workspaces || '',
         permission: row.permission || '',
         note: row.note || '',
+        /* 目标的推导状态（宿主 /tasks 算好的，不落盘）。
+           只有 kind=goal 才有值，其余是空串。 */
+        derived: row.derived || '',
+        /* 归档（DP-04）：默认不在树/列表里显示。 */
+        archived: row.archived === true,
+        /* 开放问题进度：树/列表上可以标「还差 2 条没答」。 */
+        questionCount: typeof row.questionCount === 'number' ? row.questionCount : 0,
+        answeredCount: typeof row.answeredCount === 'number' ? row.answeredCount : 0,
       };
     }
     const cardStyle = clickableStyle({
@@ -1063,6 +1071,18 @@ window.__ModuleLoader__.load({
     function DetailPane(props) {
       const node = props.node;
       const state = statusA2A(node.status);
+      /* 选项按钮：只有 `behavior: decide` 的模板才有。
+       *
+       * 用户原话：「用户决策，实际上跟 ask 一样。可以选择，
+       * 可以用户自己在选择外再进行填空。可以拒绝选择，要求要更多信息才能选择。」
+       *
+       * `behavior` 由面板从模板 YAML 读（`props.behavior`），宿主不用管；
+       * 选项本身从正文的「## 选项」小节拆。
+       *
+       * 注意：**仅在还需要用户拍板时显示**（未指定/提交/需要补充/需要授权）。
+       * 已经做完或取消的决策不该再显示按钮。 */
+      const decidable = props.behavior === 'decide' && ['未指定', '提交', '需要补充', '需要授权'].includes(node.status);
+      const choices = decidable ? optionsOf(props.body) : [];
 
       const children = props.tasks.filter(function (item) {
         return item.parent === node.id;
@@ -1164,6 +1184,28 @@ window.__ModuleLoader__.load({
         );
       };
 
+      /* DetailPane 自己的输入框样式。
+       *
+       * ⚠️ **不能借用 CreateForm 里的 `formInputStyle`**——它定义在 2091 行、
+       * 在另一个组件函数内部，这里访问会抛
+       * `ReferenceError: formInputStyle is not defined`，
+       * 结果是**整个详情面板渲染崩溃、界面上什么都没有**（踩过两次）。 */
+      const paneInputStyle = {
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '6px 8px',
+        borderRadius: 8,
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-label-primary)',
+        fontFamily: 'inherit',
+        fontSize: 12,
+        lineHeight: 1.6,
+        outline: 'none',
+      };
+      /* 同理：`lineStyle` 也定义在 CreateForm 里（2275 行），这里拿不到。 */
+      const paneHintStyle = { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' };
+
       const relationRows = [
         ['父计划', node.parent ? [chip('父', node.parent)] : []],
         ['子计划', children.map(function (id) { return chip('子', id); })],
@@ -1204,6 +1246,29 @@ window.__ModuleLoader__.load({
             { style: { fontSize: 11, color: statusTone(node.status) } },
             '● ' + node.status + ' · ' + state.code + ' · ' + groupLabel(node.status),
           ),
+          /* 目标：把**推导出来的样子**显示出来。
+           *
+           * 用户要求：「目标基于他的子任务决定状态」。
+           * 目标自己存的 `status` 只是"用户有没有采纳/放弃"，真正在推进到哪一步
+           * 要看下面那堆事。所以这里单独显示一个「推导：进行中」。
+           *
+           * 推导值不落盘（用户明确要求），由宿主 /tasks 的 `derived` 字段算好送过来。 */
+          node.kind === 'goal' && node.derived
+            ? h(
+                'span',
+                {
+                  title: '目标的状态由子事项推导，不能手动设。要推进它，去推进子事项。',
+                  style: {
+                    fontSize: 11,
+                    padding: '1px 7px',
+                    borderRadius: 6,
+                    border: '1px dashed var(--dsw-alias-border-l1)',
+                    color: 'var(--dsw-alias-label-secondary)',
+                  },
+                },
+                '推导：' + node.derived,
+              )
+            : null,
           h('span', { style: { flex: 1 } }),
           h(
             'button',
@@ -1213,6 +1278,22 @@ window.__ModuleLoader__.load({
               style: Object.assign({}, buttonBase(false), { padding: '2px 12px', marginRight: 8 }),
             },
             props.canEdit === true ? '编辑' : '分支',
+          ),
+          /* 归档（DP-04）：连整棵子树一起归档。
+           *
+           * 用户原话：「归档直接对分组归档。归档以后界面不显示。
+           * 但索引还在。可以显示已归档。」 */
+          h(
+            'button',
+            {
+              type: 'button',
+              title: node.archived ? '从归档里取回来（含所有子事项）' : '归档这条和它下面所有事项（数据都还在）',
+              onClick: function () {
+                if (typeof props.onArchive === 'function') props.onArchive(node.archived !== true);
+              },
+              style: Object.assign({}, buttonBase(false), { padding: '2px 12px', marginRight: 8 }),
+            },
+            node.archived ? '取消归档' : '归档',
           ),
           h(
             'button',
@@ -1384,7 +1465,7 @@ window.__ModuleLoader__.load({
                           props.onAnswerDraft(key, event.target.value);
                         }
                       },
-                      style: Object.assign({}, formInputStyle, { resize: 'vertical', fontSize: 12 }),
+                      style: Object.assign({}, paneInputStyle, { resize: 'vertical', fontSize: 12 }),
                     }),
                     dirty
                       ? h(
@@ -1409,6 +1490,101 @@ window.__ModuleLoader__.load({
                       : null,
                   );
                 }),
+              ),
+            )
+          : null,
+        /* 选项卡：`behavior: decide` 的模板才有（DC · 决策）。
+         *
+         * 用户要的三件事全在这里：
+         *   1. 「可以选择」→ 一排选项按钮
+         *   2. 「可以用户自己在选择外再进行填空」→ 自定义答案输入框
+         *   3. 「可以拒绝选择，要求要更多信息才能选择」→ 拒绝 / 要更多信息
+         *
+         * 为什么不做成单选控件：选项是**从正文拆的**，数量不固定，
+         * 而且每条都带一句代价说明。按钮更直接，也不占竖向空间。 */
+        decidable
+          ? section(
+              '需要你选（' + choices.length + ' 个选项）',
+              h(
+                'div',
+                { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+                choices.length === 0
+                  ? h('div', { style: paneHintStyle }, '正文里没有「## 选项」小节，所以列不出按钮。可以在选项小节里用 - 或 1. 逐条写。')
+                  : h(
+                      'div',
+                      { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+                      choices.map(function (choice, index) {
+                        return h(
+                          'button',
+                          {
+                            key: 'choice-' + index,
+                            type: 'button',
+                            title: choice.detail,
+                            onClick: function () {
+                              if (typeof props.onChoose === 'function') props.onChoose(choice.label);
+                            },
+                            style: Object.assign({}, buttonBase(false), {
+                              padding: '6px 12px',
+                              fontSize: 12,
+                              textAlign: 'left',
+                              lineHeight: 1.5,
+                              whiteSpace: 'normal',
+                            }),
+                          },
+                          h('span', { style: { opacity: 0.5, marginRight: 6 } }, index + 1 + '.'),
+                          choice.label,
+                        );
+                      }),
+                    ),
+                /* 自己填：用户可以在选项之外给答案 */
+                h('input', {
+                  value:
+                    props.answerDraft && props.answerDraft.question === 'choose' ? props.answerDraft.value : '',
+                  placeholder: '或者自己填一个答案（不在这几条里）',
+                  onChange: function (event) {
+                    if (typeof props.onAnswerDraft === 'function') props.onAnswerDraft('choose', event.target.value);
+                  },
+                  style: Object.assign({}, paneInputStyle, { fontSize: 12 }),
+                }),
+                h(
+                  'div',
+                  { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      onClick: function () {
+                        const draft =
+                          props.answerDraft && props.answerDraft.question === 'choose' ? props.answerDraft.value : '';
+                        if (typeof props.onChoose === 'function') props.onChoose(draft);
+                      },
+                      style: Object.assign({}, buttonBase(true, props.busy), { padding: '3px 12px', fontSize: 12 }),
+                    },
+                    '按我填的选',
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      onClick: function () {
+                        if (typeof props.onMoreInfo === 'function') props.onMoreInfo();
+                      },
+                      style: Object.assign({}, buttonBase(false), { padding: '3px 12px', fontSize: 12 }),
+                    },
+                    '要更多信息',
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      onClick: function () {
+                        if (typeof props.onRejectChoice === 'function') props.onRejectChoice();
+                      },
+                      style: Object.assign({}, buttonBase(false), { padding: '3px 12px', fontSize: 12 }),
+                    },
+                    '拒绝这个决策',
+                  ),
+                ),
               ),
             )
           : null,
@@ -1446,7 +1622,7 @@ window.__ModuleLoader__.load({
                   props.onNoteDraft(event.target.value);
                 },
                 rows: 3,
-                style: Object.assign({}, formInputStyle, {
+                style: Object.assign({}, paneInputStyle, {
                   flex: 1,
                   resize: 'vertical',
                   fontFamily: 'inherit',
@@ -1531,7 +1707,7 @@ window.__ModuleLoader__.load({
               );
             }),
             (props.dispatch || []).length === 0
-              ? h('div', { style: lineStyle }, '这一条下面派发不了任何模板。')
+              ? h('div', { style: paneHintStyle }, '这一条下面派发不了任何模板。')
               : null,
           ),
         ),
@@ -1572,6 +1748,44 @@ window.__ModuleLoader__.load({
         ),
       );
     }
+    /**
+     * 从正文里抠出「选项」小节，按行拆成按钮。
+     *
+     * 只给 `behavior: decide` 的模板用（`DC · 决策`）。
+     * 用户原话：「用户决策，实际上跟 ask 一样。可以选择，
+     * 可以用户自己在选择外再进行填空。可以拒绝选择，要求要更多信息才能选择。」
+     *
+     * 识别规则（宽进，宁可多列几个按钮）：
+     *   · 先找 `## 选项` / `## 可选项` / `## 备选` 小节
+     *   · 里面按 `- xxx` / `1. xxx` / `A) xxx` 拆条目
+     *   · 每条取第一行作为按钮文字（太长的截断）
+     */
+    function optionsOf(body) {
+      const text = String(body || '');
+      const heading = /^#{2,4}\s*(选项|可选项|备选|方案选项).*$/gmu;
+      const found = heading.exec(text);
+      if (found === null) return [];
+      const rest = text.slice(found.index + found[0].length);
+      const nextHeading = /^#{1,4}\s+/mu.exec(rest);
+      const section = nextHeading === null ? rest : rest.slice(0, nextHeading.index);
+      const items = [];
+      const itemPattern = /^\s*(?:[-*]|\d+[.)]|[A-Za-z][.)])\s+(.+)$/gmu;
+      let match;
+      while ((match = itemPattern.exec(section)) !== null) {
+        const raw = match[1].trim();
+        /* 去掉粗体标记，取第一句作为按钮文字 */
+        const plain = raw.replace(/\*\*/gu, '').trim();
+        if (plain === '') continue;
+        /* 按钮文字：到第一个句号/分号/冒号为止，最多 40 字 */
+        const head = plain.split(/[。；;：:]/u)[0].trim();
+        items.push({
+          label: (head === '' ? plain : head).slice(0, 40),
+          detail: plain,
+        });
+      }
+      return items;
+    }
+
     /** GitHub issue forms 的 YAML 子集：name / description / body[].type,id,attributes.*,validations.required */
     function parseTemplateYaml(saw) {
       const lines = String(saw || '').split(/\r?\n/u);
@@ -2011,6 +2225,12 @@ window.__ModuleLoader__.load({
     function templateDomain(yaml) {
       const match = /^domain:\s*(\w+)$/mu.exec(String(yaml || ''));
       return match ? match[1] : 'general';
+    }
+
+    /** 模板 YAML 里声明的 behavior；没写按 write。 */
+    function behaviorOf(yaml) {
+      const match = /^behavior:\s*(\w+)$/mu.exec(String(yaml || ''));
+      return match ? match[1] : 'write';
     }
 
     /**
@@ -2812,6 +3032,7 @@ window.__ModuleLoader__.load({
             open: true,
             busy: false,
             error: '',
+            key: String(Date.now()),
             initial: { parent: activeNodeId, type: 'RB', kind: 'record' },
             /* 交给 CreateForm 一句额外说明：建完这条再点失败 */
             hint: '先建这条「阻碍」把原因写清楚；建完之后再点「失败」。',
@@ -2895,38 +3116,50 @@ window.__ModuleLoader__.load({
        * 以前只在 openCreate 里加载，导致「直接点编辑」时 templates 是空的，
        * CreateForm 解析不出字段 → 界面显示「模板无法加载」（T-024 / T-035）。
        * 现在抽出来，两条路径都调；加载失败时返回空表，由 CreateForm 走纯文本兜底。
+       *
+       * ⚠️ **走文件，不走命令**。
+       *
+       * 以前调 `/task-templates`，而命令通道每调一次就往会话日志写一对
+       * `command/run` + `command/done`——它们渲染成聊天流里的系统消息。
+       * 于是「点一下新建」就在对话里冒出一条：
+       *   `>_ task-templates  [{"type":"GU","yaml":"name: GU · 用户任务…"}]`
+       *
+       * 现在改成读宿主生成的 `templates/INDEX.json`（纯读，不进日志）。
        */
       const loadTemplates = function (onError) {
-        /* **从宿主拿模板清单**，不再硬编码。
-           以前这里写死 A–F + H1–H8，宿主改成双字母编号 + 四类别后，
-           那些文件全不存在 → 下拉只剩「空模板」，右侧显示"模板还没加载出来"。
-           宿主的 /task-templates 是唯一真源（它遍历内核的 TYPES）。 */
-        runCommand('/task-templates', sessionId)
-          .then(function (settled) {
-            const text = commandText(settled);
-            const list = JSON.parse(text);
-            if (!Array.isArray(list)) throw new Error('/task-templates 没返回数组');
+        /* 已经加载过就不再读盘：切来切去不该反复 IO。 */
+        if (Object.keys(templates).length > 0) return;
+        ensurePaths()
+          .then(function (paths) {
+            const files = fileRpc();
+            if (paths === null || files === null) throw new Error('没有文件通道');
+            const indexPath = String(paths.templates || '').replace(/[\\/]+$/u, '') + '\\INDEX.json';
+            return Promise.resolve(files.read(sessionId, indexPath, undefined, undefined));
+          })
+          .then(function (result) {
+            if (!result || result.ok !== true) throw new Error('读不到 templates/INDEX.json');
+            const list = JSON.parse(String(result.value.text || ''));
+            if (!Array.isArray(list)) throw new Error('INDEX.json 不是数组');
             const map = {};
             list.forEach(function (item) {
               if (item && typeof item.type === 'string' && item.type !== '' && item.yaml) {
                 map[item.type] = item.yaml;
               }
             });
-            if (Object.keys(map).length === 0) {
-              if (onError) onError('宿主返回了 0 个模板（检查 templates 目录）');
-              return;
-            }
+            if (Object.keys(map).length === 0) throw new Error('INDEX.json 里没有模板');
             setTemplates(map);
           })
           .catch(function (error) {
-            if (onError) onError(String((error && error.message) || error));
+            if (typeof onError === 'function') onError(String((error && error.message) || error));
           });
       };
 
 
       const openCreate = function () {
         setEditId('');
-        setCreate({ open: true, busy: false, error: '' });
+        /* key 用时间戳：每次打开都换一个新实例，表单重置回默认值。
+           不加的话 React 复用旧组件，上次选的「记录」会留到下一次。 */
+        setCreate({ open: true, busy: false, error: '', key: String(Date.now()) });
         if (Object.keys(templates).length > 0) return;
         loadTemplates(function (message) {
           setCreate({ open: true, busy: false, error: message });
@@ -2996,6 +3229,11 @@ window.__ModuleLoader__.load({
       const viewState = React.useState('tree');
       const view = viewState[0];
       const setView = viewState[1];
+      /* 显示已归档（DP-04）：默认关。归档的事项不在树/列表里出现，
+         但数据还在——AI 用工具照样查得到。 */
+      const archivedState = React.useState(false);
+      const showArchived = archivedState[0];
+      const setShowArchived = archivedState[1];
       const filterState = React.useState('');
       const groupFilter = filterState[0];
       const setGroupFilter = filterState[1];
@@ -3004,12 +3242,20 @@ window.__ModuleLoader__.load({
       const setSearch = searchState[1];
 
       const allTasks = data.tasks;
+      /* 已归档数量：工具栏上显示「显示已归档（N）」 */
+      const archivedCount = allTasks.filter(function (item) {
+        return item.archived === true;
+      }).length;
+      data.archivedCount = archivedCount;
 
-      /** 过滤：按组（进行/搁置/完成/草稿）+ 搜索（id 或标题）。 */
+      /** 过滤：按组（进行/搁置/完成/草稿）+ 搜索（id 或标题）+ 归档。 */
       const tasks = React.useMemo(
         function () {
           const needle = search.trim().toLowerCase();
           return allTasks.filter(function (node) {
+            /* 归档：默认不显示。用户要求"归档以后界面不显示，
+               但索引还在，可以显示已归档"。 */
+            if (node.archived && !showArchived) return false;
             if (groupFilter !== '') {
               const groups = groupsOf(node.status);
               if (node.status === '未指定') {
@@ -3025,7 +3271,7 @@ window.__ModuleLoader__.load({
             return true;
           });
         },
-        [allTasks, groupFilter, search],
+        [allTasks, groupFilter, search, showArchived],
       );
 
       const graph = React.useMemo(
@@ -3213,6 +3459,23 @@ window.__ModuleLoader__.load({
           legendItem('parent', false, '父子'),
           legendItem('link', true, '链接'),
           h('span', { style: { flex: 1 } }),
+          /* 显示已归档（DP-04）。
+           *
+           * 用户原话：「归档以后界面不显示。但索引还在。可以显示已归档。」
+           * 所以默认隐藏，这里给一个开关。归档的**数据全都还在**，
+           * AI 用工具照样能查到。 */
+          h(
+            'button',
+            {
+              type: 'button',
+              title: '归档的事项默认不显示；这里可以翻出来看',
+              onClick: function () {
+                setShowArchived(!showArchived);
+              },
+              style: buttonBase(showArchived),
+            },
+            showArchived ? '隐藏已归档' : '显示已归档' + (data.archivedCount > 0 ? '（' + data.archivedCount + '）' : ''),
+          ),
           /* 视图切换（T-020）：树看关系，列表看密度。 */
           h(
             'button',
@@ -3301,6 +3564,12 @@ window.__ModuleLoader__.load({
             })
           : create.open
           ? h(CreateForm, {
+              /* key 让「每次打开都是新实例」。
+               *
+               * 不加的话 React 会复用上一次的 CreateForm，而 useState 的初始值
+               * 只在第一次计算——于是上次选了「记录」，下次点新建还是「记录」。
+               * 用户问的「这两个怎么变成记录了？」就是这个原因。 */
+              key: 'create-' + String(create.key || ''),
               /* 派发按钮带过来的预填：parent + 模板 + 大类。
                  这样用户点「派发：调研」后，只填标题和正文就能交。 */
               initial: create.initial,
@@ -3322,6 +3591,30 @@ window.__ModuleLoader__.load({
               busy: action.busy,
               error: action.error,
               dispatch: dispatchInfo.id === activeNode.id ? dispatchInfo.items : [],
+              /* behavior：决定界面形态。decide 才有选项卡。 */
+              behavior: behaviorOf(templates[activeNode.typeCode] || ''),
+              /* 选项被点中时：把选项文字写进备注，然后把状态推到完成。 */
+              onChoose: function (choice) {
+                if (!choice || String(choice).trim() === '') return;
+                runCommand('/task-note ' + activeNode.id + ' 选定：' + String(choice), sessionId)
+                  .then(function () {
+                    return runCommand('/task-state ' + activeNode.id + ' 完成', sessionId);
+                  })
+                  .then(function () {
+                    load();
+                  })
+                  .catch(function (error) {
+                    setAction({ busy: false, error: String((error && error.message) || error) });
+                  });
+              },
+              /* 要更多信息：状态推到「需要补充」，它会转向用户。 */
+              onMoreInfo: function () {
+                runState('需要补充');
+              },
+              /* 拒绝这个决策：拒绝是终态，表示"这个问法不对/不做了"。 */
+              onRejectChoice: function () {
+                runState('拒绝');
+              },
               /* 开放问题：一问一答的卡片。 */
               questions: questionsOf(data.bodies[activeNode.id] || ''),
               answerDraft: answerDraft,
@@ -3355,6 +3648,28 @@ window.__ModuleLoader__.load({
               history: historyInfo.id === activeNode.id ? historyInfo.entries : [],
               onNoteDraft: function (value) {
                 setNote({ id: activeNode.id, draft: value, error: '' });
+              },
+              /* 归档：连整棵子树一起。 */
+              onArchive: function (archived) {
+                runCommand('/task-archive ' + JSON.stringify({ id: activeNode.id, archived: archived }), sessionId)
+                  .then(function (settled) {
+                    const text = commandText(settled);
+                    let saved = null;
+                    try {
+                      saved = JSON.parse(text);
+                    } catch (failure) {
+                      saved = null;
+                    }
+                    if (saved === null || typeof saved.count !== 'number') {
+                      setAction({ busy: false, error: text || '归档没成功' });
+                      return;
+                    }
+                    setSelected('');
+                    load();
+                  })
+                  .catch(function (error) {
+                    setAction({ busy: false, error: String((error && error.message) || error) });
+                  });
               },
               onSaveNote: saveNote,
             })
