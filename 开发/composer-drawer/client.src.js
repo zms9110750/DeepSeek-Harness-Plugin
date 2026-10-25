@@ -4505,6 +4505,8 @@ window.__ModuleLoader__.load({
         const wantDrawer = ui.drawer !== false;
         const wantSidebar = ui.sidebar !== false;
 
+        /* ── 语言与运行时句柄 ──────────────────────────────────────────────
+         * 这两段必须在注册 UI **之前**完成：TaskBoard 里的 t() 依赖 translate。 */
         pluginRuntime = ctx;
         try {
           localeFace = typeof ctx.get === 'function' ? ctx.get('locale') : null;
@@ -4537,8 +4539,49 @@ window.__ModuleLoader__.load({
           };
         });
 
-        if (wantDrawer) {
-          ctx.slots.inject('conversation.input.dock', function () {
+        /*
+         * ── 为什么不能只用 apply 收到的 config ────────────────────────────
+         *
+         * `.volatile()` 的语义（dsh-settings 的 volatileForm 注释）：
+         *
+         *   "Select fields whose nearest volatile ancestor makes them
+         *    editable **without remounting**."
+         *
+         * 「不重新挂载」= config 改了之后 **apply 不会再被调用**。
+         * 所以只在 apply 里读一次 config，开关永远不生效——
+         * 用户实测「关掉抽屉，他没有消失」正是这个原因。
+         *
+         * 正确做法：订阅 form 的变化，用 ctx.effect 的返回值动态注销/重注册。
+         *
+         * `ctx.configForms.get(entryId)` 返回 ConfigFormController，
+         * 它的 `subscribe(listener)` 在**任何**配置写入后都会触发
+         * （底层 SettingsDescribeMirror 监听 settings/document-updated）。
+         *
+         * entryId 是 **Host plugin entry id**（`include:taskboard`），
+         * 这是 get() 的 @param 原文。
+         */
+        const FORMS_NS = 'include:taskboard';
+
+        /** 当前该显示哪些入口。读不到 form 就按 apply 收到的 config 走。 */
+        const readUiFlags = function () {
+          let document;
+          try {
+            const form = ctx.configForms.get(FORMS_NS);
+            const snapshot = form.getSnapshot();
+            document = snapshot && snapshot.value;
+          } catch (failure) {
+            document = undefined;
+          }
+          const live = document !== null && typeof document === 'object' ? document.ui : undefined;
+          return {
+            drawer: live !== null && typeof live === 'object' && typeof live.drawer === 'boolean' ? live.drawer : wantDrawer,
+            sidebar: live !== null && typeof live === 'object' && typeof live.sidebar === 'boolean' ? live.sidebar : wantSidebar,
+          };
+        };
+
+        /* 注册器：两个 UI 各一个函数，返回 disposer。 */
+        const mountDrawer = function () {
+          return ctx.slots.inject('conversation.input.dock', function () {
             return ctx.slots.register(
               {
                 name: 'conversation.input.dock',
@@ -4550,62 +4593,97 @@ window.__ModuleLoader__.load({
               ComposerDrawer,
             );
           });
-        }
+        };
 
-        if (!wantSidebar) return;
-
-        /* ── 右侧栏 tab ──────────────────────────────────────────────────
-           照 @local/bookmarks-tab10 那份能工作的样例写（它就在右边栏里）：
-
-             inject: ['slots', 'sidebarRightTabs']
-             ctx.effect(() => ctx.sidebarRightTabs.register({ id, kind, title, guide }))
-             ctx.slots.inject('sidebar.right.pane.tab', () =>
-               ctx.slots.register({ name: 'sidebar.right.pane.tab', key: id }, Panel))
-
-           ⚠️ 三处曾经全错，导致「右侧工作区 UI 自始从未出现」：
-             1. `sidebarRightTabs` 没写进 inject → 服务根本取不到
-             2. 用 `ctx.get('sidebarRightTabs')` 探测 → 同上，永远 undefined
-             3. `sidebar.right.pane.tab` 的 key 用的是 kind，官方示例用 **id**
-
-           没有第 3 点也不会崩，但 tab 内容永远不被 dispatch，
-           于是右侧栏只有 tab 类型、没有可渲染的内容 → 视觉上就是"没出现"。 */
-        const RIGHT_TAB_ID = 'taskboard';
-
-        ctx.effect(
-          function () {
-            return ctx.sidebarRightTabs.register({
-              id: RIGHT_TAB_ID,
-              kind: 'taskboard',
-              title: function () {
-                return t('panel.title');
-              },
-              /* guide 让右侧栏的引导页也能列出这个 tab。 */
-              guide: [
-                {
-                  id: 'taskboard',
-                  order: 60,
-                  title: function () {
-                    return t('panel.title');
-                  },
-                  description: function () {
-                    return t('panel.description');
-                  },
+        const mountSidebar = function () {
+          const offs = [];
+          offs.push(
+            ctx.effect(function () {
+              return ctx.sidebarRightTabs.register({
+                id: 'taskboard',
+                kind: 'taskboard',
+                title: function () {
+                  return t('panel.title');
                 },
-              ],
-            });
-          },
-          'taskboard: 注册右侧栏 tab 类型',
-        );
+                guide: [
+                  {
+                    id: 'taskboard',
+                    order: 60,
+                    title: function () {
+                      return t('panel.title');
+                    },
+                    description: function () {
+                      return t('panel.description');
+                    },
+                  },
+                ],
+              });
+            }, 'taskboard: 注册右侧栏 tab 类型'),
+          );
+          offs.push(
+            ctx.slots.inject('sidebar.right.pane.tab', function () {
+              return ctx.slots.register({ name: 'sidebar.right.pane.tab', key: 'taskboard' }, RightbarPanel);
+            }),
+          );
+          offs.push(
+            ctx.slots.inject('sidebar.right.pane.tab.title', function () {
+              return ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'taskboard' }, function () {
+                return h('span', null, t('panel.title'));
+              });
+            }),
+          );
+          return function () {
+            for (const off of offs) {
+              try {
+                if (typeof off === 'function') off();
+              } catch (failure) {
+                /* 注销失败不影响其它 */
+              }
+            }
+          };
+        };
 
-        /* 内容用 **id** 作为 key（与官方示例一致）。 */
-        ctx.slots.inject('sidebar.right.pane.tab', function () {
-          return ctx.slots.register({ name: 'sidebar.right.pane.tab', key: RIGHT_TAB_ID }, RightbarPanel);
-        });
-        ctx.slots.inject('sidebar.right.pane.tab.title', function () {
-          return ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: RIGHT_TAB_ID }, function () {
-            return h('span', null, t('panel.title'));
-          });
-        });
+        /* 按当前 flags 对齐两份注册：多了就注销，少了就注册。 */
+        let drawerOff = null;
+        let sidebarOff = null;
+
+        const syncEntries = function () {
+          const flags = readUiFlags();
+
+          if (flags.drawer && drawerOff === null) drawerOff = mountDrawer();
+          else if (!flags.drawer && drawerOff !== null) {
+            try {
+              drawerOff();
+            } catch (failure) {
+              /* ignore */
+            }
+            drawerOff = null;
+          }
+
+          if (flags.sidebar && sidebarOff === null) sidebarOff = mountSidebar();
+          else if (!flags.sidebar && sidebarOff !== null) {
+            try {
+              sidebarOff();
+            } catch (failure) {
+              /* ignore */
+            }
+            sidebarOff = null;
+          }
+        };
+
+        /* 先按当前值装一遍，再订阅后续变化。 */
+        syncEntries();
+
+        try {
+          const form = ctx.configForms.get(FORMS_NS);
+          ctx.effect(function () {
+            return form.subscribe(function () {
+              syncEntries();
+            });
+          }, 'taskboard: 跟随 config 变化重挂 UI');
+        } catch (failure) {
+          /* 没有 configForms 时退回"只在 mount 时按 config 装一次" */
+        }
 
         /* ── 设置页的行配置（两个 UI 的开关）─────────────────────────────
          *

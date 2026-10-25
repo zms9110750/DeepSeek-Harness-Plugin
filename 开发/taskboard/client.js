@@ -5586,8 +5586,24 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               localeFace = null;
             };
           });
-          if (wantDrawer) {
-            ctx.slots.inject("conversation.input.dock", function() {
+          const FORMS_NS = "include:taskboard";
+          const readUiFlags = function() {
+            let document;
+            try {
+              const form = ctx.configForms.get(FORMS_NS);
+              const snapshot = form.getSnapshot();
+              document = snapshot && snapshot.value;
+            } catch (failure) {
+              document = void 0;
+            }
+            const live = document !== null && typeof document === "object" ? document.ui : void 0;
+            return {
+              drawer: live !== null && typeof live === "object" && typeof live.drawer === "boolean" ? live.drawer : wantDrawer,
+              sidebar: live !== null && typeof live === "object" && typeof live.sidebar === "boolean" ? live.sidebar : wantSidebar
+            };
+          };
+          const mountDrawer = function() {
+            return ctx.slots.inject("conversation.input.dock", function() {
               return ctx.slots.register(
                 {
                   name: "conversation.input.dock",
@@ -5599,42 +5615,84 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 ComposerDrawer
               );
             });
-          }
-          if (!wantSidebar) return;
-          const RIGHT_TAB_ID = "taskboard";
-          ctx.effect(
-            function() {
-              return ctx.sidebarRightTabs.register({
-                id: RIGHT_TAB_ID,
-                kind: "taskboard",
-                title: function() {
-                  return t("panel.title");
-                },
-                /* guide 让右侧栏的引导页也能列出这个 tab。 */
-                guide: [
-                  {
-                    id: "taskboard",
-                    order: 60,
-                    title: function() {
-                      return t("panel.title");
-                    },
-                    description: function() {
-                      return t("panel.description");
+          };
+          const mountSidebar = function() {
+            const offs = [];
+            offs.push(
+              ctx.effect(function() {
+                return ctx.sidebarRightTabs.register({
+                  id: "taskboard",
+                  kind: "taskboard",
+                  title: function() {
+                    return t("panel.title");
+                  },
+                  guide: [
+                    {
+                      id: "taskboard",
+                      order: 60,
+                      title: function() {
+                        return t("panel.title");
+                      },
+                      description: function() {
+                        return t("panel.description");
+                      }
                     }
-                  }
-                ]
+                  ]
+                });
+              }, "taskboard: \u6CE8\u518C\u53F3\u4FA7\u680F tab \u7C7B\u578B")
+            );
+            offs.push(
+              ctx.slots.inject("sidebar.right.pane.tab", function() {
+                return ctx.slots.register({ name: "sidebar.right.pane.tab", key: "taskboard" }, RightbarPanel);
+              })
+            );
+            offs.push(
+              ctx.slots.inject("sidebar.right.pane.tab.title", function() {
+                return ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "taskboard" }, function() {
+                  return h("span", null, t("panel.title"));
+                });
+              })
+            );
+            return function() {
+              for (const off of offs) {
+                try {
+                  if (typeof off === "function") off();
+                } catch (failure) {
+                }
+              }
+            };
+          };
+          let drawerOff = null;
+          let sidebarOff = null;
+          const syncEntries = function() {
+            const flags = readUiFlags();
+            if (flags.drawer && drawerOff === null) drawerOff = mountDrawer();
+            else if (!flags.drawer && drawerOff !== null) {
+              try {
+                drawerOff();
+              } catch (failure) {
+              }
+              drawerOff = null;
+            }
+            if (flags.sidebar && sidebarOff === null) sidebarOff = mountSidebar();
+            else if (!flags.sidebar && sidebarOff !== null) {
+              try {
+                sidebarOff();
+              } catch (failure) {
+              }
+              sidebarOff = null;
+            }
+          };
+          syncEntries();
+          try {
+            const form = ctx.configForms.get(FORMS_NS);
+            ctx.effect(function() {
+              return form.subscribe(function() {
+                syncEntries();
               });
-            },
-            "taskboard: \u6CE8\u518C\u53F3\u4FA7\u680F tab \u7C7B\u578B"
-          );
-          ctx.slots.inject("sidebar.right.pane.tab", function() {
-            return ctx.slots.register({ name: "sidebar.right.pane.tab", key: RIGHT_TAB_ID }, RightbarPanel);
-          });
-          ctx.slots.inject("sidebar.right.pane.tab.title", function() {
-            return ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: RIGHT_TAB_ID }, function() {
-              return h("span", null, t("panel.title"));
-            });
-          });
+            }, "taskboard: \u8DDF\u968F config \u53D8\u5316\u91CD\u6302 UI");
+          } catch (failure) {
+          }
           ctx.slots.inject("plugins.row.config", function() {
             return ctx.slots.register(
               { name: "plugins.row.config", key: "@local/taskboard#taskboard" },
