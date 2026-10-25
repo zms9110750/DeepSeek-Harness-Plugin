@@ -5622,21 +5622,45 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               localeFace = null;
             };
           });
-          const FORMS_NS = "include:taskboard";
+          const FORMS_NS = "taskboard";
           const readUiFlags = function() {
-            let document;
+            const fromView = function(view) {
+              const value = view && typeof view === "object" ? view.value : void 0;
+              const ui2 = value !== null && typeof value === "object" ? value.ui : void 0;
+              if (ui2 === null || typeof ui2 !== "object") return null;
+              return {
+                drawer: typeof ui2.drawer === "boolean" ? ui2.drawer : void 0,
+                sidebar: typeof ui2.sidebar === "boolean" ? ui2.sidebar : void 0
+              };
+            };
+            try {
+              const mirror = ctx.configForms.describe();
+              const snapshot = mirror.getSnapshot();
+              const namespaces = snapshot && snapshot.view && Array.isArray(snapshot.view.namespaces) ? snapshot.view.namespaces : [];
+              const hit = namespaces.find(function(view) {
+                return view && view.ns === FORMS_NS;
+              });
+              const fromMirror = fromView(hit);
+              if (fromMirror !== null) {
+                return {
+                  drawer: fromMirror.drawer === void 0 ? wantDrawer : fromMirror.drawer,
+                  sidebar: fromMirror.sidebar === void 0 ? wantSidebar : fromMirror.sidebar
+                };
+              }
+            } catch (failure) {
+            }
             try {
               const form = ctx.configForms.get(FORMS_NS);
-              const snapshot = form.getSnapshot();
-              document = snapshot && snapshot.value;
+              const fromForm = fromView(form.getSnapshot());
+              if (fromForm !== null) {
+                return {
+                  drawer: fromForm.drawer === void 0 ? wantDrawer : fromForm.drawer,
+                  sidebar: fromForm.sidebar === void 0 ? wantSidebar : fromForm.sidebar
+                };
+              }
             } catch (failure) {
-              document = void 0;
             }
-            const live = document !== null && typeof document === "object" ? document.ui : void 0;
-            return {
-              drawer: live !== null && typeof live === "object" && typeof live.drawer === "boolean" ? live.drawer : wantDrawer,
-              sidebar: live !== null && typeof live === "object" && typeof live.sidebar === "boolean" ? live.sidebar : wantSidebar
-            };
+            return { drawer: wantDrawer, sidebar: wantSidebar };
           };
           ctx.slots.inject("conversation.input.dock", function() {
             return ctx.slots.register(
@@ -5680,6 +5704,16 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             });
           });
           setLiveUi(readUiFlags());
+          try {
+            const mirror = ctx.configForms.describe();
+            ctx.effect(function() {
+              return mirror.subscribe(function() {
+                setLiveUi(readUiFlags());
+              });
+            }, "taskboard: describe mirror \u53D8\u5316\u540C\u6B65\u5230 UI store");
+            if (typeof mirror.ensure === "function") mirror.ensure();
+          } catch (failure) {
+          }
           try {
             const form = ctx.configForms.get(FORMS_NS);
             ctx.effect(function() {

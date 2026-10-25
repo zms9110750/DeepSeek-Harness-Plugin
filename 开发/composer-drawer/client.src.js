@@ -4617,23 +4617,68 @@ window.__ModuleLoader__.load({
          * entryId 是 **Host plugin entry id**（`include:taskboard`），
          * 这是 get() 的 @param 原文。
          */
-        const FORMS_NS = 'include:taskboard';
+        const FORMS_NS = 'taskboard';
 
-        /* 读开关的当前值：先看 form 快照，读不到就用 apply 收到的 config。 */
+        /*
+         * 读开关当前值。三条路依次试：
+         *
+         *   1. `configForms.describe()` 的 mirror —— 宿主下发的全部 namespace 视图，
+         *      `view.namespaces[].ns / value`。这是最直接的来源。
+         *   2. `configForms.get(ns).getSnapshot().value` —— 单 namespace 的表单快照。
+         *   3. apply 收到的 config（客户端可能拿到 undefined，见下）。
+         *
+         * 为什么不能只靠第 3 条：客户端 boot 的 graphRow 只有
+         * `{ id, url, rev, inject, immediately, external }` —— **没有 config 字段**。
+         * 所以 apply(ctx, config) 里的 config 拿不到 patch 里写的值。
+         */
         const readUiFlags = function () {
-          let document;
+          /** 从 namespace 视图里抠出 ui.drawer / ui.sidebar。 */
+          const fromView = function (view) {
+            const value = view && typeof view === 'object' ? view.value : undefined;
+            const ui = value !== null && typeof value === 'object' ? value.ui : undefined;
+            if (ui === null || typeof ui !== 'object') return null;
+            return {
+              drawer: typeof ui.drawer === 'boolean' ? ui.drawer : undefined,
+              sidebar: typeof ui.sidebar === 'boolean' ? ui.sidebar : undefined,
+            };
+          };
+
+          /* ① describe mirror */
+          try {
+            const mirror = ctx.configForms.describe();
+            const snapshot = mirror.getSnapshot();
+            const namespaces =
+              snapshot && snapshot.view && Array.isArray(snapshot.view.namespaces) ? snapshot.view.namespaces : [];
+            const hit = namespaces.find(function (view) {
+              return view && view.ns === FORMS_NS;
+            });
+            const fromMirror = fromView(hit);
+            if (fromMirror !== null) {
+              return {
+                drawer: fromMirror.drawer === undefined ? wantDrawer : fromMirror.drawer,
+                sidebar: fromMirror.sidebar === undefined ? wantSidebar : fromMirror.sidebar,
+              };
+            }
+          } catch (failure) {
+            /* 走 ② */
+          }
+
+          /* ② 单 namespace 表单快照 */
           try {
             const form = ctx.configForms.get(FORMS_NS);
-            const snapshot = form.getSnapshot();
-            document = snapshot && snapshot.value;
+            const fromForm = fromView(form.getSnapshot());
+            if (fromForm !== null) {
+              return {
+                drawer: fromForm.drawer === undefined ? wantDrawer : fromForm.drawer,
+                sidebar: fromForm.sidebar === undefined ? wantSidebar : fromForm.sidebar,
+              };
+            }
           } catch (failure) {
-            document = undefined;
+            /* 走 ③ */
           }
-          const live = document !== null && typeof document === 'object' ? document.ui : undefined;
-          return {
-            drawer: live !== null && typeof live === 'object' && typeof live.drawer === 'boolean' ? live.drawer : wantDrawer,
-            sidebar: live !== null && typeof live === 'object' && typeof live.sidebar === 'boolean' ? live.sidebar : wantSidebar,
-          };
+
+          /* ③ 兜底 */
+          return { drawer: wantDrawer, sidebar: wantSidebar };
         };
 
         /*
@@ -4689,8 +4734,27 @@ window.__ModuleLoader__.load({
         });
 
         /* 把当前值推进 store，再订阅后续变化。
-         * store 变了组件就重渲染 —— 这就是"立刻生效"。 */
+         * store 变了组件就重渲染 —— 这就是"立刻生效"。
+         *
+         * **两个来源都要订阅**：
+         *   · describe mirror —— 宿主下发 namespace 视图，配置写入后必定刷新
+         *   · 单 namespace 表单 —— 兜底
+         * 只订阅其中一个的话，另一个路径上的变化就漏了。 */
         setLiveUi(readUiFlags());
+
+        try {
+          const mirror = ctx.configForms.describe();
+          ctx.effect(function () {
+            return mirror.subscribe(function () {
+              setLiveUi(readUiFlags());
+            });
+          }, 'taskboard: describe mirror 变化同步到 UI store');
+          /* ensure() 触发首次拉取；拉回来之后 subscribe 会被调用。 */
+          if (typeof mirror.ensure === 'function') mirror.ensure();
+        } catch (failure) {
+          /* 没有 describe 就只靠下面的表单订阅 */
+        }
+
         try {
           const form = ctx.configForms.get(FORMS_NS);
           ctx.effect(function () {
