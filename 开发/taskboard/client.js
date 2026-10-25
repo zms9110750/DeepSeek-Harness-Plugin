@@ -1,4 +1,4 @@
-window.__TASKBOARD_UI_PARTS__ = ["drawer"];
+window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
 (() => {
   // node_modules/.pnpm/@dagrejs+dagre@3.1.1/node_modules/@dagrejs/dagre/dist/dagre.esm.js
   var Te = Object.defineProperty;
@@ -1899,7 +1899,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer"];
 
   // client.src.js
   window.__ModuleLoader__.load({
-    id: "@local/taskboard-ui-drawer",
+    id: "@local/taskboard",
     factory(require2) {
       const React = require2("react");
       const h = React.createElement;
@@ -1909,6 +1909,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer"];
         "button.expand": "\u5C55\u5F00\u9762\u677F",
         "button.collapse": "\u6536\u8D77\u9762\u677F",
         "panel.title": "\u4EFB\u52A1",
+        "panel.description": "\u628A\u8BA1\u5212\u5F53\u6587\u4EF6\u5B58\uFF0CAI \u53EA\u80FD\u63D0\u4EA4\u8349\u7A3F\uFF0C\u7528\u6237\u901A\u8FC7\u540E\u624D\u80FD\u9886\u53D6\u3002",
         "panel.body": "\u8FD9\u91CC\u5C06\u6765\u653E\u9762\u677F\u5185\u5BB9\u3002",
         "panel.note": "\u9762\u677F\u4F1A\u4E00\u76F4\u4FDD\u6301\u6253\u5F00\uFF0C\u53EA\u6709\u518D\u6B21\u70B9\u51FB\u4E0A\u9762\u7684\u7BAD\u5934\u6309\u94AE\u624D\u4F1A\u6536\u8D77\u3002",
         "board.count": "\u5171 {n} \u6761 \xB7 \u5DF2\u542F\u7528 {on} \u6761",
@@ -1920,6 +1921,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer"];
         "button.expand": "\u5C55\u5F00\u9762\u677F",
         "button.collapse": "\u6536\u8D77\u9762\u677F",
         "panel.title": "\u4EFB\u52A1",
+        "panel.description": "\u628A\u8BA1\u5212\u5F53\u6587\u4EF6\u5B58\uFF0CAI \u53EA\u80FD\u63D0\u4EA4\u8349\u7A3F\uFF0C\u7528\u6237\u901A\u8FC7\u540E\u624D\u80FD\u9886\u53D6\u3002",
         "panel.body": "\u8FD9\u91CC\u5C06\u6765\u653E\u9762\u677F\u5185\u5BB9\u3002",
         "panel.note": "\u9762\u677F\u4F1A\u4E00\u76F4\u4FDD\u6301\u6253\u5F00\uFF0C\u53EA\u6709\u518D\u6B21\u70B9\u51FB\u4E0A\u9762\u7684\u7BAD\u5934\u6309\u94AE\u624D\u4F1A\u6536\u8D77\u3002",
         "board.count": "\u5171 {n} \u6761 \xB7 \u5DF2\u542F\u7528 {on} \u6761",
@@ -1931,6 +1933,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer"];
         "button.expand": "Expand panel",
         "button.collapse": "Collapse panel",
         "panel.title": "Tasks",
+        "panel.description": "Plans as files. The AI only submits drafts; you approve before claim.",
         "panel.body": "Panel content goes here.",
         "panel.note": "The panel stays open until you click the arrow button again.",
         "board.count": "{n} tasks \xB7 {on} enabled",
@@ -5444,11 +5447,21 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer"];
         );
       }
       return {
-        inject: ["slots", "remote", "remote.commands", "remote.workspaceFiles"],
-        apply(ctx) {
-          const parts = Array.isArray(window.__TASKBOARD_UI_PARTS__) ? window.__TASKBOARD_UI_PARTS__ : ["drawer", "sidebar"];
-          const wantDrawer = parts.indexOf("drawer") !== -1;
-          const wantSidebar = parts.indexOf("sidebar") !== -1;
+        /* `sidebarRightTabs` 必须在 inject 里——它是**客户端服务**，
+         * 不声明就拿不到（ctx.sidebarRightTabs 会是 undefined），
+         * 右侧栏的整个注册会被静默跳过。这就是之前右侧栏从未出现的原因。
+         *
+         * 参照 @local/bookmarks-tab10（那个「收藏」tab）：
+         *   inject: ['slots', 'sidebarRightTabs'] */
+        inject: ["slots", "remote", "remote.commands", "remote.workspaceFiles", "sidebarRightTabs"],
+        /* apply 的第二个参数是宿主下发的 Config（cordis-client-runner 会传）：
+         *   apply: (ctx, config) => plugin.apply(guarded(ctx), config)
+         * 所以这里的两个 bool 由 @local/taskboard 的 Config schema 决定。 */
+        apply(ctx, config) {
+          const settings = config !== null && typeof config === "object" ? config : {};
+          const ui = settings.ui !== null && typeof settings.ui === "object" ? settings.ui : {};
+          const wantDrawer = ui.drawer !== false;
+          const wantSidebar = ui.sidebar !== false;
           pluginRuntime = ctx;
           try {
             localeFace = typeof ctx.get === "function" ? ctx.get("locale") : null;
@@ -5489,44 +5502,40 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer"];
             });
           }
           if (!wantSidebar) return;
-          const RIGHT_TAB_ID = "@local/composer-drawer:taskboard";
-          const RIGHT_TAB_KIND = "taskboard";
-          const tabsFace = (function() {
-            try {
-              return typeof ctx.get === "function" ? ctx.get("sidebarRightTabs") : void 0;
-            } catch (failure) {
-              return void 0;
-            }
-          })();
-          if (tabsFace && typeof tabsFace.register === "function") {
-            try {
-              ctx.effect(function() {
-                return tabsFace.register({
-                  id: RIGHT_TAB_ID,
-                  kind: RIGHT_TAB_KIND,
-                  priority: "extension",
-                  title: function() {
-                    return t("panel.title");
+          const RIGHT_TAB_ID = "taskboard";
+          ctx.effect(
+            function() {
+              return ctx.sidebarRightTabs.register({
+                id: RIGHT_TAB_ID,
+                kind: "taskboard",
+                title: function() {
+                  return t("panel.title");
+                },
+                /* guide 让右侧栏的引导页也能列出这个 tab。 */
+                guide: [
+                  {
+                    id: "taskboard",
+                    order: 60,
+                    title: function() {
+                      return t("panel.title");
+                    },
+                    description: function() {
+                      return t("panel.description");
+                    }
                   }
-                });
-              }, "composer-drawer: \u6CE8\u518C\u53F3\u4FA7\u680F tab \u7C7B\u578B");
-            } catch (failure) {
-            }
-            ctx.slots.inject("sidebar.right.pane.tab", function() {
-              return ctx.slots.register(
-                { name: "sidebar.right.pane.tab", key: RIGHT_TAB_KIND },
-                RightbarPanel
-              );
+                ]
+              });
+            },
+            "taskboard: \u6CE8\u518C\u53F3\u4FA7\u680F tab \u7C7B\u578B"
+          );
+          ctx.slots.inject("sidebar.right.pane.tab", function() {
+            return ctx.slots.register({ name: "sidebar.right.pane.tab", key: RIGHT_TAB_ID }, RightbarPanel);
+          });
+          ctx.slots.inject("sidebar.right.pane.tab.title", function() {
+            return ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: RIGHT_TAB_ID }, function() {
+              return h("span", null, t("panel.title"));
             });
-            ctx.slots.inject("sidebar.right.pane.tab.title", function() {
-              return ctx.slots.register(
-                { name: "sidebar.right.pane.tab.title", key: RIGHT_TAB_KIND },
-                function() {
-                  return h("span", null, t("panel.title"));
-                }
-              );
-            });
-          }
+          });
         }
       };
     }

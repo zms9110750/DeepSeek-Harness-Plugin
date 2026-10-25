@@ -1,32 +1,38 @@
-# 任务板 —— 一个包，四个插件。
+# 任务板 —— 一个包，五个插件条目。
 #
-# 每个条目都是**独立插件**（独立的 row id），在设置页有自己的开关。
-# 结构与官方「智能体团队」一致：一个 profile bundle 由多个 row 组成。
+# 设置页看到的是一张「任务板」卡片，点进去能看到全部组件。
 #
-# 两个 UI 不在这里 —— 它们各自是**独立的包**：
-#   @local/taskboard-ui-drawer    从输入栏旁边的箭头打开
-#   @local/taskboard-ui-sidebar   在右侧栏加入口
+# 后端分四条 row（各自独立开关）：
+#   taskboard            ← 承载客户端与设置页（这条也是 UI 开关所在）
+#   taskboard-templates
+#   taskboard-plan-preset
+#   taskboard-workspace
 #
-# 为什么 UI 必须独立成包：客户端半边靠**包级** `dsh.client` 声明发现，
-# 而加载器扫的是 loader entry 模块名对应的那个 package.json。
-# 写在子目录里扫不到 —— 那正是之前 UI 消失的原因。
-#
-# 依赖顺序（下面的 insert 顺序就是加载顺序）：
-#   core → templates → plan-preset → workspace
+# ⚠️ `taskboard` 这条必须用**裸包名** `@local/taskboard`：
+# 客户端模块发现只接受两段式包名（exactPackageSpecifier），
+# 子路径 `@local/taskboard/core` 会让它直接放弃扫描 → 客户端不加载。
 
 - insert:
-    # ① 后端实现：存储、事项模型、状态机、AI 工具、命令
+    # ① 客户端与设置页（两个 UI 的开关在这个 row 的 config 里）
     - id: taskboard
+      name: '@local/taskboard'
+      config:
+        ui:
+          drawer: true
+          sidebar: true
+
+    # ② 后端实现：存储、事项模型、状态机、AI 工具、命令
+    - id: taskboard-core
       name: '@local/taskboard/core'
 
-    # ② 默认任务模板：附加的 23 个（内置 4 个在 core 里）
+    # ③ 默认任务模板：附加的 23 个（内置 4 个在 core 里）
     - id: taskboard-templates
       name: '@local/taskboard/templates'
 
-    # ③ 按计划的权限：一个新的权限档，按任务给出的权限工作
+    # ④ 按计划的权限：一个新的权限档，按任务给出的权限工作
     - id: taskboard-plan-preset
       name: '@local/taskboard/plan-preset'
 
-    # ④ 子工作空间：可写范围限制在里面（依赖 ③）
+    # ⑤ 子工作空间：可写范围限制在里面（依赖 ④）
     - id: taskboard-workspace
       name: '@local/taskboard/workspace'

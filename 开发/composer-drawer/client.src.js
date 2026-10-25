@@ -19,6 +19,7 @@ window.__ModuleLoader__.load({
       'button.expand': '展开面板',
       'button.collapse': '收起面板',
       'panel.title': '任务',
+      'panel.description': '把计划当文件存，AI 只能提交草稿，用户通过后才能领取。',
       'panel.body': '这里将来放面板内容。',
       'panel.note': '面板会一直保持打开，只有再次点击上面的箭头按钮才会收起。',
       'board.count': '共 {n} 条 · 已启用 {on} 条',
@@ -31,6 +32,7 @@ window.__ModuleLoader__.load({
       'button.expand': '展开面板',
       'button.collapse': '收起面板',
       'panel.title': '任务',
+      'panel.description': '把计划当文件存，AI 只能提交草稿，用户通过后才能领取。',
       'panel.body': '这里将来放面板内容。',
       'panel.note': '面板会一直保持打开，只有再次点击上面的箭头按钮才会收起。',
       'board.count': '共 {n} 条 · 已启用 {on} 条',
@@ -43,6 +45,7 @@ window.__ModuleLoader__.load({
       'button.expand': 'Expand panel',
       'button.collapse': 'Collapse panel',
       'panel.title': 'Tasks',
+      'panel.description': 'Plans as files. The AI only submits drafts; you approve before claim.',
       'panel.body': 'Panel content goes here.',
       'panel.note': 'The panel stays open until you click the arrow button again.',
       'board.count': '{n} tasks · {on} enabled',
@@ -4319,25 +4322,33 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'remote', 'remote.commands', 'remote.workspaceFiles'],
-      apply(ctx) {
-        /* 这一个包提供**两个独立的 UI 插件**：
-         *   ui-drawer  —— 输入框旁边的箭头抽屉
-         *   ui-sidebar —— 右侧栏的「任务」标签页
+      /* `sidebarRightTabs` 必须在 inject 里——它是**客户端服务**，
+       * 不声明就拿不到（ctx.sidebarRightTabs 会是 undefined），
+       * 右侧栏的整个注册会被静默跳过。这就是之前右侧栏从未出现的原因。
+       *
+       * 参照 @local/bookmarks-tab10（那个「收藏」tab）：
+       *   inject: ['slots', 'sidebarRightTabs'] */
+      inject: ['slots', 'remote', 'remote.commands', 'remote.workspaceFiles', 'sidebarRightTabs'],
+      /* apply 的第二个参数是宿主下发的 Config（cordis-client-runner 会传）：
+       *   apply: (ctx, config) => plugin.apply(guarded(ctx), config)
+       * 所以这里的两个 bool 由 @local/taskboard 的 Config schema 决定。 */
+      apply(ctx, config) {
+        /* 两个 UI 都在这一个包里（用户要求「我的整个事情是一个任务库」，
+         * 设置页要一张卡片点进去看全部），各自开关由 Config 的两个 bool 控制：
          *
-         * 两者共用同一个 TaskBoard 视图（用户要求「他们拥有相同的视图」），
-         * 但注册是分开的——关掉抽屉不该影响右侧栏，反之亦然。
+         *   ui.drawer   输入框旁边的箭头抽屉
+         *   ui.sidebar  右侧栏的「任务」标签页
          *
-         * 由入口文件告诉这里要装哪一半：
-         *   client.drawer.src.js  →  __TASKBOARD_UI_PARTS__ = ['drawer']
-         *   client.sidebar.src.js →  __TASKBOARD_UI_PARTS__ = ['sidebar']
-         *   client.src.js         →  两半都装（兼容旧的单包用法）
-         */
-        const parts = Array.isArray(window.__TASKBOARD_UI_PARTS__)
-          ? window.__TASKBOARD_UI_PARTS__
-          : ['drawer', 'sidebar'];
-        const wantDrawer = parts.indexOf('drawer') !== -1;
-        const wantSidebar = parts.indexOf('sidebar') !== -1;
+         * 两者共用同一个 TaskBoard 视图（用户要求「他们拥有相同的视图」）。
+         *
+         * 为什么不能用两个独立包：DSH 的客户端模块发现要求 row 的 name 是
+         * **裸包名**（exactPackageSpecifier 只接受两段），子路径形式
+         * `@local/taskboard/ui-drawer` 会直接放弃扫描、客户端永不加载。
+         * 所以一个包只能有一个客户端入口，两个 UI 只能合成一份产物。 */
+        const settings = config !== null && typeof config === 'object' ? config : {};
+        const ui = settings.ui !== null && typeof settings.ui === 'object' ? settings.ui : {};
+        const wantDrawer = ui.drawer !== false;
+        const wantSidebar = ui.sidebar !== false;
 
         pluginRuntime = ctx;
         try {
@@ -4388,53 +4399,58 @@ window.__ModuleLoader__.load({
 
         if (!wantSidebar) return;
 
-        /* ── 右侧栏 tab（T-028）───────────────────────────────────────────
-           两步走，与官方 sidebar-files / ui-plan 插件同一个套路：
-             1. 往 `sidebarRightTabs` 注册一个 tab **类型**（id + kind + 标题）
-             2. 往 `sidebar.right.pane.tab` 与 `.title` 注册该 type 的**内容**
-           两者都用 key，且都必须包在 ctx.effect 里才不会泄漏。 */
-        const RIGHT_TAB_ID = '@local/composer-drawer:taskboard';
-        const RIGHT_TAB_KIND = 'taskboard';
+        /* ── 右侧栏 tab ──────────────────────────────────────────────────
+           照 @local/bookmarks-tab10 那份能工作的样例写（它就在右边栏里）：
 
-        const tabsFace = (function () {
-          try {
-            return typeof ctx.get === 'function' ? ctx.get('sidebarRightTabs') : undefined;
-          } catch (failure) {
-            return undefined;
-          }
-        })();
+             inject: ['slots', 'sidebarRightTabs']
+             ctx.effect(() => ctx.sidebarRightTabs.register({ id, kind, title, guide }))
+             ctx.slots.inject('sidebar.right.pane.tab', () =>
+               ctx.slots.register({ name: 'sidebar.right.pane.tab', key: id }, Panel))
 
-        if (tabsFace && typeof tabsFace.register === 'function') {
-          try {
-            ctx.effect(function () {
-              return tabsFace.register({
-                id: RIGHT_TAB_ID,
-                kind: RIGHT_TAB_KIND,
-                priority: 'extension',
-                title: function () {
-                  return t('panel.title');
-                },
-              });
-            }, 'composer-drawer: 注册右侧栏 tab 类型');
-          } catch (failure) {
-            /* 注册失败不影响抽屉那一半 */
-          }
+           ⚠️ 三处曾经全错，导致「右侧工作区 UI 自始从未出现」：
+             1. `sidebarRightTabs` 没写进 inject → 服务根本取不到
+             2. 用 `ctx.get('sidebarRightTabs')` 探测 → 同上，永远 undefined
+             3. `sidebar.right.pane.tab` 的 key 用的是 kind，官方示例用 **id**
 
-          ctx.slots.inject('sidebar.right.pane.tab', function () {
-            return ctx.slots.register(
-              { name: 'sidebar.right.pane.tab', key: RIGHT_TAB_KIND },
-              RightbarPanel,
-            );
-          });
-          ctx.slots.inject('sidebar.right.pane.tab.title', function () {
-            return ctx.slots.register(
-              { name: 'sidebar.right.pane.tab.title', key: RIGHT_TAB_KIND },
-              function () {
-                return h('span', null, t('panel.title'));
+           没有第 3 点也不会崩，但 tab 内容永远不被 dispatch，
+           于是右侧栏只有 tab 类型、没有可渲染的内容 → 视觉上就是"没出现"。 */
+        const RIGHT_TAB_ID = 'taskboard';
+
+        ctx.effect(
+          function () {
+            return ctx.sidebarRightTabs.register({
+              id: RIGHT_TAB_ID,
+              kind: 'taskboard',
+              title: function () {
+                return t('panel.title');
               },
-            );
+              /* guide 让右侧栏的引导页也能列出这个 tab。 */
+              guide: [
+                {
+                  id: 'taskboard',
+                  order: 60,
+                  title: function () {
+                    return t('panel.title');
+                  },
+                  description: function () {
+                    return t('panel.description');
+                  },
+                },
+              ],
+            });
+          },
+          'taskboard: 注册右侧栏 tab 类型',
+        );
+
+        /* 内容用 **id** 作为 key（与官方示例一致）。 */
+        ctx.slots.inject('sidebar.right.pane.tab', function () {
+          return ctx.slots.register({ name: 'sidebar.right.pane.tab', key: RIGHT_TAB_ID }, RightbarPanel);
+        });
+        ctx.slots.inject('sidebar.right.pane.tab.title', function () {
+          return ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: RIGHT_TAB_ID }, function () {
+            return h('span', null, t('panel.title'));
           });
-        }
+        });
       },
     };
   },

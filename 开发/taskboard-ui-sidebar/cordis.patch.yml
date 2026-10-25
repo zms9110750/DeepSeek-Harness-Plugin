@@ -1,3 +1,0 @@
-- insert:
-    - id: taskboard-ui-sidebar
-      name: '@local/taskboard-ui-sidebar'
