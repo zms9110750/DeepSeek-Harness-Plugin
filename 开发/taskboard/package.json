@@ -1,16 +1,21 @@
 {
   "name": "@local/taskboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./index.js",
+    "./core": "./index.js",
+    "./plan-preset": "./lib/plan-preset.js",
+    "./workspace": "./lib/workspace.js",
+    "./shared": "./lib/shared.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
     "./templates/*": "./templates/*"
   },
   "files": [
     "index.js",
+    "lib",
     "cordis.patch.yml",
     "templates",
     "locale",

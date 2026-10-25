@@ -1,3 +1,19 @@
+# 一个包里的多个插件。
+#
+# 默认只挂 `taskboard` 一个条目——它是组合入口，内部依次装起
+# core / plan-preset / workspace 三个子插件（见 index.js 的 apply）。
+#
+# 想**只要某一部分**时，把下面注释掉的条目打开、并把第一行注释掉：
+#
+#   - id: taskboard-core
+#     name: '@local/taskboard/core'          # 存储 + 事项模型 + 状态机 + 全部工具
+#   - id: taskboard-plan
+#     name: '@local/taskboard/plan-preset'   # 「按计划」权限档 + 守卫
+#   - id: taskboard-ws
+#     name: '@local/taskboard/workspace'     # 子工作空间 / 额外工作区 + 路径判定
+#
+# 依赖顺序：core → plan-preset → workspace。
+# 面板（composer-drawer 那个包）依赖 core，但不依赖 plan-preset。
 - insert:
     - id: taskboard
       name: '@local/taskboard'

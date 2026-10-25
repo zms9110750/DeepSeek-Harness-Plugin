@@ -17,6 +17,43 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineTool } from '@deepseek-ai/dsh-tools';
+/*
+ * 这个包拆成四个插件（用户要求「一个包里面可以有多个插件」）：
+ *
+ *   core         index.js（本文件） —— 存储、事项模型、状态机、模板
+ *   plan-preset  lib/plan-preset.js —— 「按计划」权限档 + 守卫
+ *   workspace    lib/workspace.js   —— 子工作空间 / 额外工作区 + 路径判定
+ *   panel        （客户端，composer-drawer 那个包）—— 只是显示
+ *
+ * 为什么要拆：权限是**限制**，面板是**显示**。以前混在一个插件里，
+ * 导致"只想看面板"的人被迫接受权限注入，反之亦然。
+ *
+ * 依赖方向（单向，不成环）：
+ *   core → shared ← plan-preset
+ *   core → shared ← workspace
+ *   core → plan-preset（要 CLAIMS / resolveClaim / refreshClaims）
+ *   plan-preset → workspace（路径判定）
+ */
+import {
+	text,
+	CURRENT_ACTOR,
+	CURRENT_SESSION,
+	sessionIdOf,
+	actorLabel,
+	splitWorkspaces,
+} from './lib/shared.js';
+import {
+	PLAN_PRESET,
+	CLAIMS,
+	claimKey,
+	resolveClaim,
+	installPlanPreset,
+	installGuard,
+	provideTaskLoader,
+	refreshClaims,
+	parseDeny,
+} from './lib/plan-preset.js';
+import { within } from './lib/workspace.js';
 
 export const name = 'taskboard';
 
@@ -498,485 +535,6 @@ function isFinal(status) {
  * sandbox 取上限（danger-full-access）+ approval=never：这一档本身不做限制，
  * 真正收窄由下面的 guard 按"领取的任务"来做，否则计划里写「完全权限」也放不开。
  */
-const PLAN_PRESET = 'plan';
-const PLAN_SPEC = {
-	sandbox: 'danger-full-access',
-	approval: 'never',
-	name: '按计划',
-	description: '按领取的任务决定子工作空间与权限档位；没有领取任务时一切工具都被拒。',
-};
-
-/** 会话 id → 领取的任务（进程内快取）。 */
-const CLAIMS = new Map();
-
-/** 计划库里所有「处理中」的计划：进程重启后用它重建 claim。 */
-let CLAIM_CACHE = [];
-
-async function refreshClaims() {
-	try {
-		const tasks = await listAll();
-		CLAIM_CACHE = tasks.filter((task) => task.status === '处理中');
-	} catch (failure) {
-		CLAIM_CACHE = [];
-	}
-}
-
-/**
- * 解析这个会话当前该用哪份 claim。
- *
- * 只认**明确属于本会话**的：进程内快取，或 `claimed_by === 本会话 id`。
- *
- * 早期版本还有一条回落——「`claimed_by` 为空的处理中计划给任何会话用」。
- * 那是最危险的一处：两个会话会同时把同一份计划解析成自己的，于是
- * A 的 workspace + B 的 permission 在同一个进程里同时生效，等于**权限并集**。
- * 现在直接不回落：认不出来就是没有 claim，按「失败即关」拒绝，
- * 让模型先 `task_claim` 认领（领取会写 `claimed_by`）。
- */
-function resolveClaim(agent) {
-	const direct = CLAIMS.get(claimKey(agent));
-	if (direct !== undefined) return direct;
-	const id = claimKey(agent);
-	if (id === '') return undefined;
-	return CLAIM_CACHE.find((task) => (task.claimed_by || '') === id);
-}
-
-/*
- * ---------------------------------------------------------------------------
- * 工具描述符（T-023）
- * ---------------------------------------------------------------------------
- *
- * MCP 给工具四个描述：**写 / 破坏 / 外部 / 幂等**。本地工具也应该有，才能做细粒度开关。
- *
- * 为什么不挂在 `defineTool` 上：`defineTool()` 只挑它认识的字段（name / description /
- * parameters / output / deferTimeout…），自定义字段会被**静默丢弃**（读过 lib/index.js
- * 的 defineTool 实现确认）。所以描述符单独维护一张表，按工具名查。
- *
- * 四个描述符的语义：
- *
- *   write      改工作区的内容（写文件、改配置、跑命令）。
- *              只读档下必须拒。
- *   destructive 可能删/覆盖已有东西，且不可逆（delete、rm、清库）。
- *              就算给了写权限，也应该单独再要一次确认。
- *   external   会离开这台机器/这个进程（联网、调外部 API、起子进程、装包）。
- *              沙箱能挡文件，挡不了这个。
- *   idempotent 同样参数重复执行结果一样。false 表示重放有副作用。
- *              决定重试安不安全。
- *
- * 未知工具按最保守处理：write + destructive + external 全 true、idempotent false。
- */
-
-/** 描述符表：只列已知道具；没列的走 CONSERVATIVE。 */
-const DESCRIPTORS = {
-	// —— 只读 ——
-	read: { write: false, destructive: false, external: false, idempotent: true },
-	glob: { write: false, destructive: false, external: false, idempotent: true },
-	grep: { write: false, destructive: false, external: false, idempotent: true },
-	'screenshot': { write: false, destructive: false, external: false, idempotent: true },
-	'job_list': { write: false, destructive: false, external: false, idempotent: true },
-	'job_output': { write: false, destructive: false, external: false, idempotent: true },
-	'task_list': { write: false, destructive: false, external: false, idempotent: true },
-	'task_get': { write: false, destructive: false, external: false, idempotent: true },
-	'task_template': { write: false, destructive: false, external: false, idempotent: true },
-	'task_groups': { write: false, destructive: false, external: false, idempotent: true },
-	'task_history': { write: false, destructive: false, external: false, idempotent: true },
-
-	// —— 计划管理（只改计划库自己的文件）——
-	'task_submit': { write: true, destructive: false, external: false, idempotent: false },
-	'task_claim': { write: true, destructive: false, external: false, idempotent: false },
-	'task_state': { write: true, destructive: false, external: false, idempotent: false },
-	'task_update': { write: true, destructive: false, external: false, idempotent: false },
-	'task_note': { write: true, destructive: false, external: false, idempotent: true },
-
-	// —— 写工作区 ——
-	write: { write: true, destructive: false, external: false, idempotent: true },
-	edit: { write: true, destructive: false, external: false, idempotent: true },
-	'apply_patch': { write: true, destructive: false, external: false, idempotent: true },
-	delete: { write: true, destructive: true, external: false, idempotent: true },
-
-	// —— 命令执行：写 + 破坏 + 外部，且不幂等 ——
-	pwsh: { write: true, destructive: true, external: true, idempotent: false },
-	bash: { write: true, destructive: true, external: true, idempotent: false },
-	'terminal_open': { write: true, destructive: true, external: true, idempotent: false },
-	'terminal_write': { write: true, destructive: true, external: true, idempotent: false },
-	'job_kill': { write: true, destructive: true, external: false, idempotent: true },
-
-	// —— 能绕过权限模型的东西：全保守 ——
-	'plugin_manager': { write: true, destructive: true, external: true, idempotent: false },
-	'subagent': { write: false, destructive: false, external: true, idempotent: false },
-	'subagent_fork': { write: false, destructive: false, external: true, idempotent: false },
-	'subai': { write: false, destructive: false, external: true, idempotent: false },
-	'subai_fork': { write: false, destructive: false, external: true, idempotent: false },
-	'workflow': { write: false, destructive: false, external: true, idempotent: false },
-
-	// —— 外部 / 网络 ——
-	web_search: { write: false, destructive: false, external: true, idempotent: true },
-	web_fetch: { write: false, destructive: false, external: true, idempotent: true },
-};
-
-/** 未知工具的默认描述：按最危险算。 */
-const CONSERVATIVE_DESCRIPTOR = {
-	write: true,
-	destructive: true,
-	external: true,
-	idempotent: false,
-};
-
-/** 取某个工具的描述符。没登记过 → 保守默认。 */
-function descriptorOf(toolName) {
-	const name = String(toolName ?? '');
-	if (Object.prototype.hasOwnProperty.call(DESCRIPTORS, name)) return DESCRIPTORS[name];
-	/* MCP 工具命名不统一（mcp__server__tool），一律按外部 + 破坏处理。 */
-	if (name.startsWith('mcp__') || name.startsWith('mcp_')) {
-		return { write: true, destructive: true, external: true, idempotent: false };
-	}
-	return CONSERVATIVE_DESCRIPTOR;
-}
-
-/**
- * 计划的「描述符开关」：计划里可以显式关掉某一类能力，
- * 比整个「权限档位」细一档。
- *
- * 写法（计划字段 `deny`，逗号分隔）：`destructive, external`
- * 语义是「在权限档位之上再收窄」——只能收窄，不能放宽。
- */
-const DESCRIPTOR_KEYS = ['write', 'destructive', 'external', 'idempotent'];
-
-function parseDeny(raw) {
-	const out = new Set();
-	for (const part of String(raw ?? '').split(/[,，;；\s]+/u)) {
-		const key = part.trim().toLowerCase();
-		if (key !== '' && DESCRIPTOR_KEYS.includes(key)) out.add(key);
-	}
-	return out;
-}
-
-/** 按描述符判定是否要拦；返回原因或空串。 */
-function descriptorBlocker(toolName, denySet) {
-	const desc = descriptorOf(toolName);
-	if (desc.write && denySet.has('write')) return '计划关闭了「写」类能力（write）';
-	if (desc.destructive && denySet.has('destructive')) return '计划关闭了「破坏」类能力（destructive）';
-	if (desc.external && denySet.has('external')) return '计划关闭了「外部」类能力（external）';
-	if (desc.idempotent === false && denySet.has('idempotent')) return '计划关闭了「不幂等」类能力（idempotent）';
-	return '';
-}
-
-/**
- * 计划管理类工具：只读写计划库、不碰工作区。
- *
- * **在「按计划」档下永远放行**，与领取的计划写了什么权限无关、与有没有领取无关。
- * 这是防死锁的关键：AI 能自己完成任务、搁置、再领下一张，否则「工具全关」的计划
- * 会把它锁死在里面，连 `task_state` 都调不了。
- */
-const PLAN_TOOLS = new Set([
-	'task_list',
-	'task_get',
-	'task_claim',
-	'task_state',
-	'task_submit',
-	'task_update',
-	'task_template',
-	'task_note',
-	'task_groups',
-	'task_history',
-]);
-
-function claimKey(agent) {
-	return String(agent?.id ?? agent?.session?.id ?? '');
-}
-
-function argsOf(exec) {
-	const raw = exec?.arguments ?? exec?.args ?? exec?.input;
-	return typeof raw === 'object' && raw !== null ? raw : {};
-}
-
-function toolNameOf(exec) {
-	return exec?.tool?.name ?? exec?.name ?? '';
-}
-
-/** Windows 路径归一：统一分隔符、消掉 . 与 ..（不访问磁盘）。 */
-function normalizePath(raw) {
-	const text = String(raw ?? '').replace(/\//gu, '\\');
-	const parts = text.split('\\');
-	const out = [];
-	for (const part of parts) {
-		if (part === '' || part === '.') continue;
-		if (part === '..') {
-			out.pop();
-			continue;
-		}
-		out.push(part);
-	}
-	return out.join('\\').toLowerCase();
-}
-
-function within(root, target) {
-	const base = normalizePath(root);
-	const path = normalizePath(target);
-	if (base === '' || path === '') return false;
-	return path === base || path.startsWith(`${base}\\`);
-}
-
-function installPlanPreset(ctx) {
-	ctx.effect(() => {
-		const table = ctx.permissionPresets?.presets;
-		if (table === undefined || table === null) return undefined;
-		const had = Object.prototype.hasOwnProperty.call(table, PLAN_PRESET);
-		const previous = had ? table[PLAN_PRESET] : undefined;
-		table[PLAN_PRESET] = PLAN_SPEC;
-		ctx.emit('permission-presets/catalog-changed');
-		return () => {
-			if (had) table[PLAN_PRESET] = previous;
-			else delete table[PLAN_PRESET];
-			ctx.emit('permission-presets/catalog-changed');
-		};
-	}, 'taskboard: 注入按计划预设');
-}
-
-/**
- * 按计划的守卫：**只在会话档位是「按计划」时生效**。
- * 其它任何档位（仅可查看 / 工作区内修改 / 完全权限 / 工具全关）一律 return undefined，
- * 由宿主自己的档位说话——计划的附属权限不参与。
- */
-function installGuard(ctx) {
-	ctx.tools.guard((exec) => {
-		try {
-			const agent = exec?.agent;
-			/* 记下本次调用的会话 id：让「当前组」能跟随会话。
-			   注意这行必须在下面那些 `return undefined` 之前——
-			   低权限档位下也要能记住会话，否则切了档当前组就丢了。 */
-			CURRENT_SESSION.value = sessionIdOf(exec);
-			if (!agent) return undefined;
-			const session = agent.session ?? agent;
-			const state = ctx.sessionProjections?.stateOf?.(session, 'permissions');
-			if (state?.preset !== PLAN_PRESET) return undefined;
-
-			const toolName = toolNameOf(exec);
-			/* 计划管理类工具只读写计划库、不碰工作区：任何档位都放行，
-			   否则「按计划」档下连 task_list / task_claim 都被拒，永远领不到任务。 */
-			if (PLAN_TOOLS.has(toolName)) return undefined;
-
-			const claim = resolveClaim(agent);
-			if (claim === undefined) {
-				return (
-					'按计划：当前会话没有可用的领取（没有领取任务，或者任务不属于本会话）。\n' +
-					'先 task_list 找一份「提交」的计划，task_claim 领取，再动手。'
-				);
-			}
-
-			const permission = claim.permission || '工作区内修改';
-			/* 计划级描述符开关：比权限档位细一档，只能收窄。 */
-			const deny = parseDeny(claim.deny);
-
-			if (permission === '工具全关') {
-				return (
-					`按计划：任务 ${claim.id} 要求「工具全关」，本会话不能调用工作区类工具。\n` +
-					'但切任务不受限：用 task_state 把它改成「完成 / 失败 / 需要补充 / 需要授权」，' +
-					'再用 task_list + task_claim 领下一张。'
-				);
-			}
-			if (permission === '完全权限') {
-				/* 完全权限之上仍尊重计划自己写的 deny。 */
-				const blocked = descriptorBlocker(toolName, deny);
-				return blocked === '' ? undefined : `按计划：任务 ${claim.id} 的 ${toolName} 被拒——${blocked}。`;
-			}
-
-			const args = argsOf(exec);
-			const desc = descriptorOf(toolName);
-
-			if (permission === '仅可查看') {
-				/* 白名单口径（T-017）：按**描述符**判，不按名字清单判。
-				   以前是 WRITE_TOOLS 黑名单，只认 5 个名字，plugin_manager /
-				   subagent / mcp__* 全漏放行。现在只要带了 write 描述就拒，
-				   未知工具默认带 write，所以新装的插件也自动被挡。 */
-				if (desc.write) {
-					return (
-						`按计划：任务 ${claim.id} 只给「仅可查看」，${toolName} 会写东西（write=${desc.write}），不能调用。\n` +
-						'切任务不受限：先 task_state 结束或搁置这张计划，再领下一张。'
-					);
-				}
-				/* external 也挡：只读档不该联网、不该起子智能体。 */
-				if (desc.external) {
-					return `按计划：任务 ${claim.id} 只给「仅可查看」，${toolName} 是外部调用（external），不能调用。`;
-				}
-				const blocked = descriptorBlocker(toolName, deny);
-				return blocked === '' ? undefined : `按计划：任务 ${claim.id} 的 ${toolName} 被拒——${blocked}。`;
-			}
-
-			/* 「工作区内修改」：先过描述符，再过路径。 */
-			{
-				const blocked = descriptorBlocker(toolName, deny);
-				if (blocked !== '') return `按计划：任务 ${claim.id} 的 ${toolName} 被拒——${blocked}。`;
-				/* 读类工具不需要路径校验。 */
-				if (!desc.write) return undefined;
-			}
-
-			// 工作区内修改（也是没写权限时的默认）：计划没写子工作空间时，按会话 cwd 兜底
-			const root = claim.workspace || String(session?.header?.cwd || '');
-			/* 额外工作区：允许多个，与主工作区一起构成「可写范围」。 */
-			const extras = Array.isArray(claim.workspaces)
-				? claim.workspaces.filter((entry) => text(entry) !== '')
-				: splitWorkspaces(claim.workspaces);
-			const roots = (root === '' ? [] : [root]).concat(extras);
-
-			const allowed = () => roots.join('、') || '（计划没写工作区）';
-
-			const rawPath = String(args.file_path ?? args.path ?? '');
-			const command = String(args.command ?? args.cmd ?? args.script ?? '');
-			if (rawPath === '') {
-				if (roots.length === 0) {
-					return `按计划：任务 ${claim.id} 没有子工作空间，命令类工具一律拒绝。`;
-				}
-				if (command !== '') {
-					/* 命令判定（T-018 第 2 项）：
-					   以前是「命令里出现过允许目录的字符串就放行」，实测可以
-					   `Remove-Item C:\Windows\...; echo X:\temp\dsh` 绕过。
-					   现在按「每个分句里出现的路径都必须在允许目录内」判：
-					     · 按 ; && || | 换行切段
-					     · 每段里抽出形如 X:\... 的路径，逐个要求落在允许目录内
-					     · 一段都没抽到路径的（比如 `npm test`）→ 拒，因为看不出写哪
-					   仍然不是完备的（管道、重定向、cd + 相对路径都还能绕），
-					   T-029 正在研究更硬的方案；这里先把已知绕过堵掉。 */
-					const verdict = judgeCommand(command, roots);
-					if (verdict !== '') {
-						return `按计划：任务 ${claim.id} 只给「工作区内修改」，命令被拒——${verdict}。\n允许的目录：${allowed()}`;
-					}
-					return undefined;
-				}
-				return (
-					`按计划：任务 ${claim.id} 只给「工作区内修改」，但看不出要写哪个目录。\n` +
-					`写必须落在这些目录里：${allowed()}`
-				);
-			}
-			if (roots.length === 0) {
-				return `按计划：任务 ${claim.id} 没有子工作空间，也不知道会话目录，写操作一律拒绝。`;
-			}
-			if (roots.some((entry) => within(entry, rawPath))) return undefined;
-			return `按计划：任务 ${claim.id} 只给「工作区内修改」，${rawPath} 不在允许的目录内。\n允许：${allowed()}`;
-		} catch (failure) {
-			return `按计划：守卫内部出错（${String(failure?.message ?? failure)}），按失败即关处理：本次工具调用被拒。`;
-		}
-	});
-}
-
-/** 「额外工作区」解析：逗号分隔的绝对路径 → 数组（去空、去重、校验绝对路径）。 */
-function splitWorkspaces(raw) {
-	const parts = Array.isArray(raw)
-		? raw.map((entry) => String(entry ?? ''))
-		: String(raw ?? '').split(/[,，;；]/u);
-	const seen = new Set();
-	const out = [];
-	for (const part of parts) {
-		const value = part.trim();
-		if (value === '') continue;
-		if (!isAbsolutePath(value)) {
-			throw new Error(`额外工作区必须是绝对路径（含盘符或 UNC），收到「${value}」`);
-		}
-		const key = value.replace(/\//gu, '\\').toLowerCase();
-		if (seen.has(key)) continue;
-		seen.add(key);
-		out.push(value.replace(/\//gu, '\\'));
-	}
-	return out;
-}
-
-/** 绝对路径判定：`C:\…` / `\\server\share` / `/…`（不访问磁盘）。 */
-function isAbsolutePath(value) {
-	const text = String(value ?? '').trim();
-	if (text === '') return false;
-	if (/^[A-Za-z]:[\\/]/u.test(text)) return true;
-	if (/^\\\\/u.test(text)) return true;
-	if (text.startsWith('/')) return true;
-	return false;
-}
-
-/** 从一段命令里抽出绝对路径（Windows 盘符路径 / UNC），用于目录归属判定。 */
-function extractPaths(segment) {
-	const found = [];
-	for (const match of String(segment ?? '').matchAll(/[A-Za-z]:[\\/][^\s"'|;&]*/gu)) {
-		found.push(match[0]);
-	}
-	for (const match of String(segment ?? '').matchAll(/\\\\[^\s"'|;&]+/gu)) {
-		found.push(match[0]);
-	}
-	return found;
-}
-
-/**
- * 命令是不是只动允许目录（T-018 第 2 项）。
- *
- * 返回空串 = 放行；否则返回给模型看的原因。
- *
- * 判定口径（偏保守）：
- *   1. 按 `;` `&&` `||` `|` 与换行切成独立分句；
- *   2. 每个分句里抽出的每个绝对路径，都必须落在某个允许目录内；
- *   3. 一个路径都没抽到的分句 → 拒（看不出它写哪，宁可让模型拆成 write/edit）。
- *
- * 已知不完备：`cd` 后接相对路径、重定向 `>`、`node -e "..."` 里的字符串。
- * 真正完备需要按命令解析（T-029 在研究），这里先把已证实的绕过堵掉。
- */
-function judgeCommand(command, roots) {
-	const segments = String(command ?? '')
-		.split(/[;&|\r\n]+/u)
-		.map((part) => part.trim())
-		.filter((part) => part !== '');
-	if (segments.length === 0) return '命令是空的';
-
-	for (const segment of segments) {
-		const paths = extractPaths(segment);
-		if (paths.length === 0) {
-			/* 没写绝对路径：可能是纯粹的计算（echo hi / node --version），
-			   也可能是相对路径写入。分不清，只放行明显只读的形态。 */
-			if (isPlainReadOnlyCommand(segment)) continue;
-			return `分句「${segment.slice(0, 40)}」看不出要动哪个目录`;
-		}
-		for (const path of paths) {
-			if (!roots.some((root) => within(root, path))) {
-				return `路径 ${path} 不在允许目录内`;
-			}
-		}
-	}
-	return '';
-}
-
-/** 明显只读的命令形态（白名单）：只认真正无副作用的。 */
-const READONLY_COMMAND_PREFIXES = [
-	'echo ',
-	'echo"',
-	'Write-Output ',
-	'Get-ChildItem',
-	'Get-Content',
-	'Get-Item',
-	'Get-Location',
-	'Test-Path',
-	'Select-String',
-	'Measure-Object',
-	'node --version',
-	'node -v',
-	'pnpm --version',
-	'git status',
-	'git log',
-	'git diff',
-	'git branch',
-	'where ',
-	'which ',
-];
-
-function isPlainReadOnlyCommand(segment) {
-	const text = String(segment ?? '').trim().toLowerCase();
-	return READONLY_COMMAND_PREFIXES.some((prefix) => text.startsWith(prefix.toLowerCase()));
-}
-
-/**
- * 计划管理工具在「按计划」档下永不拦截的测试用钩子：
- * 判断某个工具名是否属于永不拦截的计划管理类。
- */
-function isPlanTool(name) {
-	return PLAN_TOOLS.has(String(name ?? ''));
-}
-
-function text(value) {
-	return typeof value === 'string' ? value : '';
-}
 
 /** 备注长度上限（字符）：够写清一段理由，又不至于让计划头变得无法展示。 */
 const NOTE_LIMIT = 4000;
@@ -1544,39 +1102,6 @@ async function appendEvent(event) {
 	/* actor：调用方没给就落到当前写入上下文（见 withActor），最后兜底 'unknown'。 */
 	if (enriched.actor === undefined) enriched.actor = CURRENT_ACTOR.value || 'unknown';
 	await appendFile(STORE_FILE, `${JSON.stringify(enriched)}\n`, 'utf8');
-}
-
-/**
- * 当前写入者（会话 id / 'user' / 'unknown'）。
- *
- * 用「最近一次 setState/saveTask 的上下文」而不是异步上下文传递：
- * 这个插件所有写入都在 withWrite 串行链里，同一时刻只有一个写入上下文，
- * 所以一个简单的「当前值」就够，不需要 AsyncLocalStorage。
- */
-const CURRENT_ACTOR = { value: '' };
-
-/*
- * 当前调用的会话 id。
- *
- * 「当前组」要**跟随会话**（用户要求），但工具 execute 拿不到稳定的 sessionId ——
- * 只有守卫那边的 exec.agent 有。所以用和 CURRENT_ACTOR 同样的办法：
- * 守卫在调用工具前把 agent id 记下来，工具执行时读。
- *
- * 不能跨会话共用，所以每次调用都要覆盖写。
- */
-const CURRENT_SESSION = { value: '' };
-
-/** 从执行上下文里抠出会话 id。 */
-function sessionIdOf(exec) {
-	const agent = exec?.agent;
-	return String(agent?.session?.id ?? agent?.id ?? '').trim();
-}
-
-
-function actorLabel(agent, byUser) {
-	if (byUser === true) return 'user';
-	const id = String(agent?.id ?? agent?.session?.id ?? '').trim();
-	return id === '' ? 'unknown' : id;
 }
 
 /** 老目录（任务\*.md）→ 一次性导入 JSONL。 */
@@ -3812,7 +3337,25 @@ function planClaimsFor(ctx) {
 	return service;
 }
 
-export function apply(ctx) {
+/*
+ * ---------------------------------------------------------------------------
+ * 四个插件（一个包里，各自可独立启停）
+ * ---------------------------------------------------------------------------
+ *
+ * 用户要求：「一个包里面可以有多个插件。以下内容放在一个包里，分插件：
+ *   箭头面板，计划面板，"按计划"的权限状态，"子工作空间"，额外工作空间。」
+ *
+ * `apply` 仍是默认入口，但它现在只做**组合**：按顺序启动四个子插件。
+ * 每个子插件也有自己的 apply，可以单独在 cordis.patch.yml 里挂：
+ *
+ *   - insert: { id: taskboard,        name: '@local/taskboard' }          ← core + 全部
+ *   - insert: { id: taskboard-core,   name: '@local/taskboard/core' }     ← 只有数据层
+ *   - insert: { id: taskboard-plan,   name: '@local/taskboard/plan-preset' }
+ *   - insert: { id: taskboard-ws,     name: '@local/taskboard/workspace' }
+ */
+
+/** ① core：存储、事项模型、状态机、模板、全部工具与命令。 */
+export function applyCore(ctx) {
 	registerTools(ctx);
 	registerCommands(ctx);
 	registerExtraTools(ctx);
@@ -3823,9 +3366,31 @@ export function apply(ctx) {
 	} catch (failure) {
 		/* 没有 provide 能力时只是少一个口子 */
 	}
+}
+
+/** ② plan-preset：「按计划」权限档 + 守卫。 */
+export function applyPlanPreset(ctx) {
+	/* 把读事项的入口交给它——依赖方向只能 core → plan-preset，
+	   不能让 plan-preset 反过来 import core 的存储。 */
+	provideTaskLoader(() => listAll());
 	installPlanPreset(ctx);
 	installGuard(ctx);
 	refreshClaims().catch(() => {});
+}
+
+/** ③ workspace：子工作空间 / 额外工作区。纯数据 + 路径判定，没有 ctx 要做的事。 */
+export function applyWorkspace() {
+	/* 这个插件的作用是**导出**路径判定函数（splitWorkspaces / within /
+	   judgeCommand / extractPaths）。core 和 plan-preset 直接 import 用。
+	   它没有需要在 ctx 上注册的东西——字段本身就是数据，
+	   校验发生在 task_submit / task_update 里（core 调的）。 */
+}
+
+/** ④ 默认入口：按依赖顺序把上面三个装起来。 */
+export function apply(ctx) {
+	applyCore(ctx);
+	applyPlanPreset(ctx);
+	applyWorkspace(ctx);
 	try {
 		const prompts = ctx.get('systemPrompt');
 		if (prompts && typeof prompts.section === 'function') {
