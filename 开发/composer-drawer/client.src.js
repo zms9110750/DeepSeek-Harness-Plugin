@@ -3612,7 +3612,7 @@ window.__ModuleLoader__.load({
                           setGroupPick(next);
                           /* 同步给宿主当「当前分组」：工具默认只看这一组。
                            * 用户原话：「需要有一个当前组。工具的查找是默认对当前组里面找的。」 */
-                          runCommand('/task-group-select ' + JSON.stringify({ group: next }), sessionId).catch(function () {
+                          runCommand('/task-group-select ' + JSON.stringify({ group: next, session: sessionId }), sessionId).catch(function () {
                             /* 失败不影响界面筛选，只是工具的默认范围没跟着变。 */
                           });
                         },

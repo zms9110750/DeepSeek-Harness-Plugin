@@ -741,6 +741,10 @@ function installGuard(ctx) {
 	ctx.tools.guard((exec) => {
 		try {
 			const agent = exec?.agent;
+			/* 记下本次调用的会话 id：让「当前组」能跟随会话。
+			   注意这行必须在下面那些 `return undefined` 之前——
+			   低权限档位下也要能记住会话，否则切了档当前组就丢了。 */
+			CURRENT_SESSION.value = sessionIdOf(exec);
 			if (!agent) return undefined;
 			const session = agent.session ?? agent;
 			const state = ctx.sessionProjections?.stateOf?.(session, 'permissions');
@@ -1293,23 +1297,58 @@ const GROUPS_FILE = process.env.TASKBOARD_GROUPS || join(STORE_DIR, 'groups.json
  */
 const CURRENT_FILE = process.env.TASKBOARD_CURRENT || join(STORE_DIR, 'current.json');
 
-async function readCurrentGroup() {
+/*
+ * ⚠️ 当前组**跟随会话**，不是全局。
+ *
+ * 用户原话：「"当前组"这个状态是有必要的。而且跟随会话。
+ * 这个不能跨会话了还同步。」
+ *
+ * 所以键是 sessionId：A 会话在看"开发任务板"时，B 会话可能在看别的，
+ * 默认查询范围互不影响。没有 sessionId 的调用回落到 `_default`。
+ */
+function currentKey(sessionId) {
+	const id = String(sessionId ?? '').trim();
+	return id === '' ? '_default' : id;
+}
+
+async function readCurrentMap() {
 	try {
 		const raw = await readFile(CURRENT_FILE, 'utf8');
 		const parsed = JSON.parse(raw);
-		const id = String(parsed?.group ?? '').trim();
-		if (id === '') return '';
-		/* 分组被删了就当没设过。 */
-		const groups = (await listGroups()).filter((entry) => entry.name !== '');
-		return groups.some((entry) => entry.id === id) ? id : '';
+		/* 兼容旧格式（{group:"g-1"}）→ 当成 _default。 */
+		if (parsed !== null && typeof parsed === 'object' && typeof parsed.group === 'string' && parsed.sessions === undefined) {
+			return { _default: parsed.group };
+		}
+		return parsed !== null && typeof parsed === 'object' && parsed.sessions !== null && typeof parsed.sessions === 'object'
+			? parsed.sessions
+			: {};
 	} catch (failure) {
-		return '';
+		return {};
 	}
 }
 
-async function writeCurrentGroup(id) {
+async function readCurrentGroup(sessionId) {
+	const map = await readCurrentMap();
+	const key = currentKey(sessionId);
+	/* 先按会话找；找不到再退回 `_default`（旧格式或没会话上下文的调用）。
+	 *
+	 * 这个回落是必要的：AI 在工具里调时，sessionId 可能拿不到；
+	 * 面板通过命令设当前组时也可能没有会话 id。不给回落的话，
+	 * 就会出现"设了当前组但新建仍然没归组"这种诡异现象。 */
+	const id = String(map[key] ?? map._default ?? '').trim();
+	if (id === '') return '';
+	const groups = (await listGroups()).filter((entry) => entry.name !== '');
+	return groups.some((entry) => entry.id === id) ? id : '';
+}
+
+async function writeCurrentGroup(id, sessionId) {
+	const map = await readCurrentMap();
+	const key = currentKey(sessionId);
+	const value = String(id ?? '').trim();
+	if (value === '') delete map[key];
+	else map[key] = value;
 	await mkdir(dirname(CURRENT_FILE), { recursive: true });
-	await writeFile(CURRENT_FILE, JSON.stringify({ group: String(id ?? '').trim() }), 'utf8');
+	await writeFile(CURRENT_FILE, JSON.stringify({ sessions: map }), 'utf8');
 }
 
 /** 读全部分组（追加式 JSONL，按 id fold 最后一次）。 */
@@ -1436,6 +1475,24 @@ async function appendEvent(event) {
  * 所以一个简单的「当前值」就够，不需要 AsyncLocalStorage。
  */
 const CURRENT_ACTOR = { value: '' };
+
+/*
+ * 当前调用的会话 id。
+ *
+ * 「当前组」要**跟随会话**（用户要求），但工具 execute 拿不到稳定的 sessionId ——
+ * 只有守卫那边的 exec.agent 有。所以用和 CURRENT_ACTOR 同样的办法：
+ * 守卫在调用工具前把 agent id 记下来，工具执行时读。
+ *
+ * 不能跨会话共用，所以每次调用都要覆盖写。
+ */
+const CURRENT_SESSION = { value: '' };
+
+/** 从执行上下文里抠出会话 id。 */
+function sessionIdOf(exec) {
+	const agent = exec?.agent;
+	return String(agent?.session?.id ?? agent?.id ?? '').trim();
+}
+
 
 function actorLabel(agent, byUser) {
 	if (byUser === true) return 'user';
@@ -1621,7 +1678,7 @@ function registerTools(ctx) {
 				if (args?.all === true || wanted === 'all') {
 					return { text: renderList(all) };
 				}
-				const current = wanted !== '' ? wanted : await readCurrentGroup();
+				const current = wanted !== '' ? wanted : await readCurrentGroup(CURRENT_SESSION.value);
 				if (current === '') {
 					/* 没设当前组：列全部，但要说明为什么，避免 AI 以为这就是一组的全部。 */
 					const head =
@@ -1701,33 +1758,38 @@ function registerTools(ctx) {
 				/* kind 先算：assertParent 要拿它判断"工作不能派工作"。 */
 				const kind = resolveKindArg(args.kind, type);
 				await assertParent(text(args.parent), kind, type);
-				/* 分组归属（用户要求：**不存在"未归组"**）。
+				/* 分组归属（**不存在「未归组」**，但也**不必每次指定**）。
 				 *
-				 * 用户原话：「元组是不能有未归组。因为闲聊是不会创建出来任务的。」
+				 * 用户原话：
+				 *   「元组是不能有未归组。因为闲聊是不会创建出来任务的。」
+				 *   「不需要必须指定分组。不指定就是用"当前组"。」
 				 *
-				 * 判定：给了 parent 就跟随父事项的分组；没给 parent 就用 args.group。
-				 * 两样都没有 → 拒绝，因为一条事项必须属于某次工作。 */
+				 * 判定顺序：
+				 *   1. 显式 args.group
+				 *   2. parent 的分组（子事项跟随父）
+				 *   3. **当前组**（跟随会话）
+				 *   4. 都没有 → 拒绝（说明怎么设当前组）
+				 */
 				const groups = (await listGroups()).filter((entry) => entry.name !== '');
 				const parentId = text(args.parent);
 				let groupId = text(args.group);
-				if (parentId !== '') {
-					const parentTask = await readTask(parentId);
+				if (groupId === '' && parentId !== '') {
 					const owner = groups.find((entry) => entry.members.includes(parentId));
 					if (owner !== undefined) groupId = owner.id;
-					else if (parentTask !== undefined && groupId === '') {
-						throw new Error(
-							`父事项 ${parentId} 本身没有归组，所以子事项也没法跟着归组。\n` +
-								'先给那条父事项指定分组（task_group action=add），或者用 group 参数显式指定。',
-						);
-					}
+				}
+				if (groupId === '') {
+					/* 回落到当前组。sessionId 由工具上下文给（agent.id），
+					   没有就用 _default。 */
+					groupId = await readCurrentGroup(CURRENT_SESSION.value);
 				}
 				if (groupId === '') {
 					throw new Error(
-						'task_submit: 必须指定所属分组（group）。\n' +
-							'每个分组 = 一件事 / 一个项目；"闲聊不会创建出任务"，所以不存在没归组的事项。\n' +
+						'task_submit: 没有分组可归属。\n' +
+							'每个分组 = 一件事 / 一个项目；"闲聊不会创建出任务"，所以事项必须有归属。\n' +
 							(groups.length === 0
 								? '现在一个分组都没有，先用 task_group action=create name=… 建一个。'
-								: `现有分组：${groups.map((entry) => `${entry.id}（${entry.name}）`).join(' / ')}`),
+								: '设一个「当前组」就不用每次指定了：task_group action=select group=…\n' +
+									`现有分组：${groups.map((entry) => `${entry.id}（${entry.name}）`).join(' / ')}`),
 					);
 				}
 				const target = groups.find((entry) => entry.id === groupId);
@@ -2511,7 +2573,7 @@ function registerExtraTools(ctx) {
 				const groups = await listGroups();
 				if (action === 'list') {
 					if (groups.length === 0) return { text: '还没有分组。用 task_group action=create name=… 建一个。' };
-					const current = await readCurrentGroup();
+					const current = await readCurrentGroup(CURRENT_SESSION.value);
 					const lines = groups.map((group) => {
 						const mark = group.id === current ? '★ ' : '  ';
 						const sample = group.members.slice(0, 6).join(', ');
@@ -2527,14 +2589,14 @@ function registerExtraTools(ctx) {
 					 * 用户原话：「需要有一个当前组。工具的查找是默认对当前组里面找的。」 */
 					const wanted = String(args.group ?? '').trim();
 					if (wanted === '') {
-						await writeCurrentGroup('');
+						await writeCurrentGroup('', CURRENT_SESSION.value);
 						return { text: '已清空当前分组（工具恢复为看全部）' };
 					}
 					const hit = groups.find((entry) => entry.id === wanted);
 					if (hit === undefined) {
 						throw new Error(`没有这个分组：${wanted}。现有：${groups.map((entry) => `${entry.id}（${entry.name}）`).join(' / ') || '（没有）'}`);
 					}
-					await writeCurrentGroup(hit.id);
+					await writeCurrentGroup(hit.id, CURRENT_SESSION.value);
 					return { text: `当前分组已设为 ${hit.id} · ${hit.name}（${hit.members.length} 条）` };
 				}
 				if (action === 'create') {
@@ -2767,10 +2829,10 @@ function registerExtraCommands(ctx) {
 		description: '归档 / 取消归档一个事项（连它的整棵子树）。面板调用；JSON：{id,archived}',
 		input: { hint: '{"id":"T-001","archived":true}' },
 		recordInput: false,
-		async handler(payload) {
+		async handler({ rawInput }) {
 			let parsed = null;
 			try {
-				parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+				parsed = JSON.parse(String(rawInput ?? '').trim() || '{}');
 			} catch (error) {
 				return { kind: 'error', text: '参数不是合法 JSON' };
 			}
@@ -2804,22 +2866,22 @@ function registerExtraCommands(ctx) {
 		description: '设置「当前分组」（面板切换分组时调用；JSON：{group}，空 = 清空）',
 		input: { hint: '{"group":"g-2"}' },
 		recordInput: false,
-		async handler(payload) {
+		async handler({ rawInput }) {
 			let parsed = null;
 			try {
-				parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+				parsed = JSON.parse(String(rawInput ?? '').trim() || '{}');
 			} catch (error) {
 				return { kind: 'error', text: '参数不是合法 JSON' };
 			}
 			const wanted = String(parsed?.group ?? '').trim();
 			if (wanted === '') {
-				await writeCurrentGroup('');
+				await writeCurrentGroup('', parsed?.session);
 				return { kind: 'success', text: JSON.stringify({ group: '' }) };
 			}
 			const groups = (await listGroups()).filter((entry) => entry.name !== '');
 			const hit = groups.find((entry) => entry.id === wanted);
 			if (hit === undefined) return { kind: 'error', text: `没有这个分组：${wanted}` };
-			await writeCurrentGroup(hit.id);
+			await writeCurrentGroup(hit.id, parsed?.session);
 			return { kind: 'success', text: JSON.stringify({ group: hit.id, name: hit.name }) };
 		},
 	});
@@ -2829,10 +2891,10 @@ function registerExtraCommands(ctx) {
 		description: '面板保存分组（JSON：{id?,name,members}；id 空 = 新建）',
 		input: { hint: '{"name":"插件开发","members":["WI-01"]}' },
 		recordInput: false,
-		async handler(payload) {
+		async handler({ rawInput }) {
 			let parsed = null;
 			try {
-				parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+				parsed = JSON.parse(String(rawInput ?? '').trim() || '{}');
 			} catch (error) {
 				return { kind: 'error', text: '参数不是合法 JSON' };
 			}
@@ -2858,10 +2920,10 @@ function registerExtraCommands(ctx) {
 		description: '列出某个事项下面允许派发的模板（面板读；JSON：{id} → {allowed,blocked}）',
 		input: { hint: '{"id":"WI-01"}' },
 		recordInput: false,
-		async handler(payload) {
+		async handler({ rawInput }) {
 			let id = '';
 			try {
-				const parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+				const parsed = JSON.parse(String(rawInput ?? '').trim() || '{}');
 				id = String(parsed?.id ?? '').trim();
 			} catch (error) {
 				return { kind: 'error', text: '参数不是合法 JSON' };
@@ -2957,10 +3019,10 @@ function registerExtraCommands(ctx) {
 		description: '回答某一条开放问题（面板调用；JSON：{id,question,answer}）',
 		input: { hint: '{"id":"DP-05","question":"1","answer":"…"}' },
 		recordInput: false,
-		async handler(payload) {
+		async handler({ rawInput }) {
 			let parsed = null;
 			try {
-				parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+				parsed = JSON.parse(String(rawInput ?? '').trim() || '{}');
 			} catch (error) {
 				return { kind: 'error', text: '参数不是合法 JSON' };
 			}

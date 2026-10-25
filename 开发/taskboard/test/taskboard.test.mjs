@@ -79,6 +79,11 @@ assert.match(
 const TMP_ROOT = mkdtempSync(join(tmpdir(), 'taskboard-test-'));
 process.env.TASKBOARD_ROOT = TMP_ROOT;
 process.env.TASKBOARD_STORE = join(TMP_ROOT, 'plans.jsonl');
+/* 分组、当前组也要隔离：它们的默认路径是 ~/.dsh/taskboard/，
+   不覆盖的话测试会读到真实的 groups.jsonl / current.json，
+   于是"当前组"指向一个测试里不存在的分组。 */
+process.env.TASKBOARD_GROUPS = join(TMP_ROOT, 'groups.jsonl');
+process.env.TASKBOARD_CURRENT = join(TMP_ROOT, 'current.json');
 
 const STORE_PATH = process.env.TASKBOARD_STORE;
 assert.ok(process.env.TASKBOARD_STORE.startsWith(TMP_ROOT), '存储必须在临时目录里');

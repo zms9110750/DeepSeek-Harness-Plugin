@@ -4864,7 +4864,7 @@
                       onClick: function() {
                         const next = active ? "" : group.id;
                         setGroupPick(next);
-                        runCommand("/task-group-select " + JSON.stringify({ group: next }), sessionId).catch(function() {
+                        runCommand("/task-group-select " + JSON.stringify({ group: next, session: sessionId }), sessionId).catch(function() {
                         });
                       },
                       style: Object.assign({}, buttonBase(active), {
