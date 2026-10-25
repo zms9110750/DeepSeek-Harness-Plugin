@@ -59,6 +59,15 @@ registerHooks({
 		if (specifier === '@deepseek-ai/dsh-tools') {
 			return { url: pathToFileURL(DSH_TOOLS).href, shortCircuit: true };
 		}
+		/* schemastery / cosmokit 必须用**和 DSH 同版本**的那份：
+		 * 旧版没有 .volatile()，而设置页表单完全依赖它（volatileForm）。
+		 * profile 里可能装着旧的，所以钉到包内 node_modules。 */
+		if (specifier === '@deepseek-ai/schemastery') {
+			return { url: pathToFileURL(join(PLUGIN_DIR, 'node_modules', '@deepseek-ai', 'schemastery', 'lib', 'index.mjs')).href, shortCircuit: true };
+		}
+		if (specifier === '@deepseek-ai/cosmokit') {
+			return { url: pathToFileURL(join(PLUGIN_DIR, 'node_modules', '@deepseek-ai', 'cosmokit', 'lib', 'index.js')).href, shortCircuit: true };
+		}
 		return nextResolve(specifier, context);
 	},
 });

@@ -40,11 +40,44 @@ export const name = 'taskboard';
  *
  * 关掉抽屉不影响右侧栏，反之亦然——它们是同一份 client.js 里的两段注册。
  */
+/*
+ * 设置页的配置。用户要求：「开两个 bool」。
+ *
+ *   ui.drawer   输入框旁边的箭头抽屉
+ *   ui.sidebar  右侧栏的「任务」标签页
+ *
+ * ## ⚠️ 每个字段都必须 `.volatile()`
+ *
+ * 这是设置页能渲染表单的**硬条件**。源码（dsh-settings 的 volatileForm）：
+ *
+ *     function volatileForm(schema) {
+ *       if (schema.meta.volatile) return plainSchema(schema);
+ *       if (schema.type === 'object') {
+ *         const dict = Object.fromEntries(Object.entries(schema.dict ?? {}).flatMap(([key, child]) => {
+ *           const field = volatileForm(child);
+ *           return field === undefined ? [] : [[key, field]];
+ *         }));
+ *         return Object.keys(dict).length === 0 ? undefined : z.object(dict);
+ *       }
+ *     }
+ *
+ * 没有 volatile 的字段会被整个丢掉；全都不是 volatile 就返回 undefined，
+ * 于是没有表单、`props.form` 是 undefined —— 这就是「没有 bool 开关」的原因。
+ *
+ * 「volatile」在这里的含义是：**改完立刻生效，不需要重新挂载插件**。
+ * 我们的两个开关正好是这种，改了就重注册 UI，不重启。
+ *
+ * 参照 @deepseek-ai/dsh-experimental-client-ui-cot-translation 的 Config：
+ *   static Config = z.object({
+ *     provider: z.union(...).default('bing').volatile(),
+ *     targetLanguage: z.string().pattern(...).default('auto').volatile(),
+ *   });
+ */
 export const Config = z.object({
 	ui: z
 		.object({
-			drawer: z.boolean().default(true).description('输入框旁边的箭头抽屉'),
-			sidebar: z.boolean().default(true).description('右侧栏的「任务」标签页'),
+			drawer: z.boolean().default(true).description('输入框旁边的箭头抽屉').volatile(),
+			sidebar: z.boolean().default(true).description('右侧栏的「任务」标签页').volatile(),
 		})
 		.description('界面入口')
 		.default({ drawer: true, sidebar: true }),
