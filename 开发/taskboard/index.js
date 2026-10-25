@@ -66,7 +66,7 @@ const TYPES = [
 	// 记录 Record
 	'RB', 'RR', 'RF', 'RS', 'RD', 'RE', 'WX',
 	// 工作 Work
-	'WR', 'WI', 'WT', 'WF', 'WV', 'WL', 'WC', 'WD', 'WE',
+	'WR', 'WI', 'WT', 'WF', 'WV', 'WL', 'WC', 'WD', 'WE', 'WP',
 ];
 /** 旧类型：只用于读老数据（第一代单字母 + 第二代拼音前缀）。 */
 const LEGACY_TYPES = [
@@ -165,6 +165,7 @@ const TYPE_NAMES = {
 	WC: '上色',
 	WD: '起草',
 	WE: '修改',
+	WP: '性能',
 	/* 老数据里的 H* 只用于显示 */
 	H1: '需要授权 · 代价过大',
 	H2: '需要授权 · 用户转移话题',
@@ -258,6 +259,7 @@ const TYPE_TO_KIND = {
 	WC: 'work',
 	WD: 'work',
 	WE: 'work',
+	WP: 'work',
 	/* 第二代拼音前缀（老数据） */
 	MG: 'goal',
 	MO: 'goal',
@@ -2177,7 +2179,7 @@ async function activeClaimOf(agent) {
  * 为什么"派另一件工作"必须禁止：两个都要占会话位，必然互相抢。
  * 而调研/记录不占位（或只在被领取时短暂占位），不会与父工作争。
  */
-const ENTITY_TYPES = new Set(['WT', 'WF', 'WI', 'WD', 'WE', 'WC']);
+const ENTITY_TYPES = new Set(['WT', 'WF', 'WI', 'WD', 'WE', 'WC', 'WP']);
 
 async function assertParent(parentId, childKind, childType) {
 	const id = String(parentId ?? '').trim();

@@ -456,7 +456,7 @@ test('task_submit 落「未指定」：JSONL 一行 upsert，正文/关联/附�
 test('task_submit 校验类型与标题，失败不落事件；type 留空 = 空模板', async () => {
 	await assert.rejects(
 		() => tool('task_submit').execute({ title: 'x', type: 'Z', body: '' }),
-		/type 必须留空或取 GU\/GO\/GA\/GV\/DC\/DP\/DQ\/DI\/DB\/DT\/RB\/RR\/RF\/RS\/RD\/RE\/WX\/WR\/WI\/WT\/WF\/WV\/WL\/WC\/WD\/WE/u,
+		/type 必须留空或取 GU\/GO\/GA\/GV\/DC\/DP\/DQ\/DI\/DB\/DT\/RB\/RR\/RF\/RS\/RD\/RE\/WX\/WR\/WI\/WT\/WF\/WV\/WL\/WC\/WD\/WE\/WP/u,
 	);
 	await assert.rejects(
 		() => tool('task_submit').execute({ title: '  ', type: 'DB', body: '' }),
@@ -792,8 +792,8 @@ test('/task-create 默认「未指定」，参数校验失败不落事件', asyn
 	assert.equal(events().length, before, '校验失败不应追加事件');
 });
 
-test('26 个模板都能读，且每个都声明了 kind 与 behavior', async () => {
-	const all = ['GU','GO','GA','GV','DC','DP','DQ','DI','DB','DT','RB','RR','RF','RS','RD','RE','WX','WR','WI','WT','WF','WV','WL','WC','WD','WE'];
+test('27 个模板都能读，且每个都声明了 kind 与 behavior', async () => {
+	const all = ['GU','GO','GA','GV','DC','DP','DQ','DI','DB','DT','RB','RR','RF','RS','RD','RE','WX','WR','WI','WT','WF','WV','WL','WC','WD','WE','WP'];
 	for (const type of all) {
 		const result = await tool('task_template').execute({ type });
 		assert.match(result.text, /^name: /mu, `${type}.yml 缺 name`);
@@ -846,6 +846,7 @@ test('模板的 kind 与大类表一致：G 是目标、B/W/F 是记录、R/D/I 
 		WC: 'work',
 		WD: 'work',
 		WE: 'work',
+		WP: 'work',
 	};
 	for (const [type, kind] of Object.entries(expected)) {
 		const yaml = (await tool('task_template').execute({ type })).text;
@@ -855,7 +856,7 @@ test('模板的 kind 与大类表一致：G 是目标、B/W/F 是记录、R/D/I 
 
 test('每个模板都至少有一个必填小节，且 hints 存在', async () => {
 	/* 没有必填小节的模板等于没问东西；没有 hints 的模板等于没给 AI 指引。 */
-	for (const type of ['GU','GO','GA','GV','DC','DP','DQ','DI','DB','DT','RB','RR','RF','RS','RD','RE','WX','WR','WI','WT','WF','WV','WL','WC','WD','WE']) {
+	for (const type of ['GU','GO','GA','GV','DC','DP','DQ','DI','DB','DT','RB','RR','RF','RS','RD','RE','WX','WR','WI','WT','WF','WV','WL','WC','WD','WE','WP']) {
 		const yaml = (await tool('task_template').execute({ type })).text;
 		assert.match(yaml, /required: true/u, `${type}.yml 至少要有一个必填小节`);
 		assert.match(yaml, /^hints:/mu, `${type}.yml 缺 hints`);

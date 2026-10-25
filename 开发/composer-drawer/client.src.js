@@ -1403,7 +1403,11 @@ window.__ModuleLoader__.load({
             { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-secondary)' } },
             node.summary,
             props.body
-              ? h('div', { style: { marginTop: 10, whiteSpace: 'pre-wrap', color: 'var(--dsw-alias-label-primary)' } }, props.body)
+              ? h(
+                  'div',
+                  { style: { marginTop: 10, color: 'var(--dsw-alias-label-primary)' } },
+                  renderMarkdown(props.body),
+                )
               : null,
           ),
         ),
@@ -1541,6 +1545,311 @@ window.__ModuleLoader__.load({
       flush();
       return out;
     }
+    /**
+     * 极简 Markdown 渲染器（**零依赖**）。
+     *
+     * 为什么自己写而不装 marked / markdown-it：
+     *   · 这个插件是 link 进 profile 的，多一个依赖就多一次"装不上"的风险；
+     *   · 只需要渲染**事项正文**这一种场景，不需要完整 CommonMark；
+     *   · 不用 dangerouslySetInnerHTML —— 全部走 React 元素，天然免疫 XSS。
+     *
+     * 支持的语法（够用就行，不追求完整）：
+     *   # 标题（1–4 级）、- / * / 1. 列表、> 引用、**粗体**、`行内代码`、
+     *   ```代码块```、--- 分隔线、| 表格 |、[链接](url)
+     *
+     * 不支持：嵌套列表、HTML 内联、脚注、任务列表。遇到不认识的原样显示。
+     */
+    function renderInline(text, keyPrefix) {
+      /* 行内元素：粗体、行内代码、链接。逐个切，不做嵌套。 */
+      const out = [];
+      const pattern = /(\*\*[^*]+\*\*)|(`[^`]+`)|(\[[^\]]+\]\([^)]+\))/gu;
+      let last = 0;
+      let match;
+      let index = 0;
+      while ((match = pattern.exec(text)) !== null) {
+        if (match.index > last) out.push(text.slice(last, match.index));
+        const token = match[0];
+        const key = keyPrefix + '-i' + index;
+        index += 1;
+        if (token.startsWith('**')) {
+          out.push(h('strong', { key, style: { color: 'var(--dsw-alias-label-primary)' } }, token.slice(2, -2)));
+        } else if (token.startsWith('`')) {
+          out.push(
+            h(
+              'code',
+              {
+                key,
+                style: {
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  fontSize: 12,
+                  padding: '1px 4px',
+                  borderRadius: 4,
+                  background: 'var(--dsw-alias-bg-layer-2)',
+                },
+              },
+              token.slice(1, -1),
+            ),
+          );
+        } else {
+          const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/u.exec(token);
+          out.push(
+            h(
+              'a',
+              {
+                key,
+                href: linkMatch ? linkMatch[2] : '#',
+                target: '_blank',
+                rel: 'noreferrer',
+                style: { color: 'var(--dsw-alias-brand-primary)', textDecoration: 'underline' },
+              },
+              linkMatch ? linkMatch[1] : token,
+            ),
+          );
+        }
+        last = match.index + token.length;
+      }
+      if (last < text.length) out.push(text.slice(last));
+      return out;
+    }
+
+    function renderMarkdown(source) {
+      const lines = String(source || '').split(/\r?\n/u);
+      const blocks = [];
+      let index = 0;
+
+      const flushParagraph = function (buffer, key) {
+        if (buffer.length === 0) return;
+        blocks.push(
+          h(
+            'p',
+            { key: 'p-' + key, style: { margin: '0 0 8px', lineHeight: 1.75 } },
+            renderInline(buffer.join(' '), 'p' + key),
+          ),
+        );
+        buffer.length = 0;
+      };
+
+      let paragraph = [];
+      while (index < lines.length) {
+        const line = lines[index];
+        const trimmed = line.trim();
+
+        /* 空行：结束当前段落 */
+        if (trimmed === '') {
+          flushParagraph(paragraph, index);
+          index += 1;
+          continue;
+        }
+
+        /* 代码块 ``` */
+        if (trimmed.startsWith('```')) {
+          flushParagraph(paragraph, index);
+          const body = [];
+          index += 1;
+          while (index < lines.length && !lines[index].trim().startsWith('```')) {
+            body.push(lines[index]);
+            index += 1;
+          }
+          index += 1;
+          blocks.push(
+            h(
+              'pre',
+              {
+                key: 'code-' + index,
+                style: {
+                  margin: '0 0 10px',
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: 'var(--dsw-alias-bg-layer-2)',
+                  overflow: 'auto',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                },
+              },
+              h('code', { style: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' } }, body.join('\n')),
+            ),
+          );
+          continue;
+        }
+
+        /* 标题 # */
+        const heading = /^(#{1,4})\s+(.*)$/u.exec(trimmed);
+        if (heading !== null) {
+          flushParagraph(paragraph, index);
+          const level = heading[1].length;
+          const size = [15, 14, 13, 13][level - 1];
+          blocks.push(
+            h(
+              'div',
+              {
+                key: 'h-' + index,
+                style: {
+                  fontSize: size,
+                  fontWeight: 600,
+                  margin: index === 0 ? '0 0 8px' : '14px 0 6px',
+                  color: 'var(--dsw-alias-label-primary)',
+                },
+              },
+              renderInline(heading[2], 'h' + index),
+            ),
+          );
+          index += 1;
+          continue;
+        }
+
+        /* 分隔线 */
+        if (/^(-{3,}|\*{3,}|_{3,})$/u.test(trimmed)) {
+          flushParagraph(paragraph, index);
+          blocks.push(
+            h('div', {
+              key: 'hr-' + index,
+              style: { margin: '10px 0', borderTop: '1px solid var(--dsw-alias-border-l1)' },
+            }),
+          );
+          index += 1;
+          continue;
+        }
+
+        /* 引用 > */
+        if (trimmed.startsWith('>')) {
+          flushParagraph(paragraph, index);
+          const quoted = [];
+          while (index < lines.length && lines[index].trim().startsWith('>')) {
+            quoted.push(lines[index].trim().replace(/^>\s?/u, ''));
+            index += 1;
+          }
+          blocks.push(
+            h(
+              'div',
+              {
+                key: 'q-' + index,
+                style: {
+                  margin: '0 0 10px',
+                  paddingLeft: 10,
+                  borderLeft: '2px solid var(--dsw-alias-border-l1)',
+                  color: 'var(--dsw-alias-label-secondary)',
+                  lineHeight: 1.7,
+                },
+              },
+              renderInline(quoted.join(' '), 'q' + index),
+            ),
+          );
+          continue;
+        }
+
+        /* 表格：|---| 那种 */
+        if (trimmed.startsWith('|') && index + 1 < lines.length && /^\|[\s:|-]+\|$/u.test(lines[index + 1].trim())) {
+          flushParagraph(paragraph, index);
+          const cellsOf = function (row) {
+            return row
+              .trim()
+              .replace(/^\|/u, '')
+              .replace(/\|$/u, '')
+              .split('|')
+              .map(function (cell) {
+                return cell.trim();
+              });
+          };
+          const header = cellsOf(lines[index]);
+          index += 2;
+          const rows = [];
+          while (index < lines.length && lines[index].trim().startsWith('|')) {
+            rows.push(cellsOf(lines[index]));
+            index += 1;
+          }
+          blocks.push(
+            h(
+              'div',
+              { key: 'tbl-' + index, style: { overflow: 'auto', margin: '0 0 10px' } },
+              h(
+                'table',
+                { style: { borderCollapse: 'collapse', fontSize: 12, width: '100%' } },
+                h(
+                  'thead',
+                  null,
+                  h(
+                    'tr',
+                    null,
+                    header.map(function (cell, cellIndex) {
+                      return h(
+                        'th',
+                        {
+                          key: 'th-' + cellIndex,
+                          style: {
+                            textAlign: 'left',
+                            padding: '4px 8px',
+                            borderBottom: '1px solid var(--dsw-alias-border-l1)',
+                            fontWeight: 600,
+                            color: 'var(--dsw-alias-label-primary)',
+                            whiteSpace: 'nowrap',
+                          },
+                        },
+                        renderInline(cell, 'th' + cellIndex),
+                      );
+                    }),
+                  ),
+                ),
+                h(
+                  'tbody',
+                  null,
+                  rows.map(function (row, rowIndex) {
+                    return h(
+                      'tr',
+                      { key: 'tr-' + rowIndex },
+                      row.map(function (cell, cellIndex) {
+                        return h(
+                          'td',
+                          {
+                            key: 'td-' + cellIndex,
+                            style: {
+                              padding: '4px 8px',
+                              borderBottom: '1px solid var(--dsw-alias-border-l2)',
+                              verticalAlign: 'top',
+                            },
+                          },
+                          renderInline(cell, 'td' + rowIndex + '-' + cellIndex),
+                        );
+                      }),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          );
+          continue;
+        }
+
+        /* 列表：- * 1. */
+        if (/^([-*]|\d+\.)\s+/u.test(trimmed)) {
+          flushParagraph(paragraph, index);
+          const items = [];
+          const ordered = /^\d+\./u.test(trimmed);
+          while (index < lines.length && /^([-*]|\d+\.)\s+/u.test(lines[index].trim())) {
+            items.push(lines[index].trim().replace(/^([-*]|\d+\.)\s+/u, ''));
+            index += 1;
+          }
+          blocks.push(
+            h(
+              ordered ? 'ol' : 'ul',
+              {
+                key: 'list-' + index,
+                style: { margin: '0 0 10px', paddingLeft: 20, lineHeight: 1.75 },
+              },
+              items.map(function (item, itemIndex) {
+                return h('li', { key: 'li-' + itemIndex }, renderInline(item, 'li' + itemIndex));
+              }),
+            ),
+          );
+          continue;
+        }
+
+        paragraph.push(trimmed);
+        index += 1;
+      }
+      flushParagraph(paragraph, lines.length);
+      return blocks;
+    }
+
     /**
      * 从模板 YAML 里抠出「编号 / 名称」，给下拉用。
      *
