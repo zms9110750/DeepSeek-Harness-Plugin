@@ -1,3 +1,4 @@
+window.__TASKBOARD_UI_PARTS__ = ["drawer","sidebar"];
 (() => {
   // node_modules/.pnpm/@dagrejs+dagre@3.1.1/node_modules/@dagrejs/dagre/dist/dagre.esm.js
   var Te = Object.defineProperty;
@@ -2294,7 +2295,8 @@
         return homes;
       }
       function templateDirCandidates() {
-        return ["X:\\temp\\dsh\\\u5F00\u53D1\\taskboard\\templates"];
+        const root = "X:\\temp\\dsh\\\u5F00\u53D1\\taskboard\\packages";
+        return [root + "\\core\\templates", root + "\\templates\\templates"];
       }
       async function ensurePaths() {
         if (PATHS !== null) return PATHS;
@@ -4554,18 +4556,36 @@
           ensurePaths().then(function(paths) {
             const files = fileRpc();
             if (paths === null || files === null) throw new Error("\u6CA1\u6709\u6587\u4EF6\u901A\u9053");
-            const indexPath = String(paths.templates || "").replace(/[\\/]+$/u, "") + "\\INDEX.json";
-            return Promise.resolve(files.read(sessionId, indexPath, void 0, void 0));
-          }).then(function(result) {
-            if (!result || result.ok !== true) throw new Error("\u8BFB\u4E0D\u5230 templates/INDEX.json");
-            const list = JSON.parse(String(result.value.text || ""));
-            if (!Array.isArray(list)) throw new Error("INDEX.json \u4E0D\u662F\u6570\u7EC4");
+            const dirs = templateDirCandidates();
+            return Promise.all(
+              dirs.map(function(dir) {
+                const indexPath = String(dir || "").replace(/[\\/]+$/u, "") + "\\INDEX.json";
+                return Promise.resolve(files.read(sessionId, indexPath, void 0, void 0)).then(
+                  function(result) {
+                    if (!result || result.ok !== true) return null;
+                    try {
+                      const parsed = JSON.parse(String(result.value.text || ""));
+                      return Array.isArray(parsed) ? { dir, list: parsed } : null;
+                    } catch (failure) {
+                      return null;
+                    }
+                  }
+                );
+              })
+            );
+          }).then(function(readings) {
             const map = {};
-            list.forEach(function(item) {
-              if (item && typeof item.type === "string" && item.type !== "" && item.yaml) {
-                map[item.type] = item.yaml;
-              }
+            let ok = 0;
+            (readings || []).forEach(function(reading) {
+              if (reading === null) return;
+              ok += 1;
+              reading.list.forEach(function(item) {
+                if (item && typeof item.type === "string" && item.type !== "" && item.yaml) {
+                  map[item.type] = item.yaml;
+                }
+              });
             });
+            if (ok === 0) throw new Error("\u8BFB\u4E0D\u5230 templates/INDEX.json");
             if (Object.keys(map).length === 0) throw new Error("INDEX.json \u91CC\u6CA1\u6709\u6A21\u677F");
             setTemplates(map);
           }).catch(function(error) {
@@ -5426,6 +5446,9 @@
       return {
         inject: ["slots", "remote", "remote.commands", "remote.workspaceFiles"],
         apply(ctx) {
+          const parts = Array.isArray(window.__TASKBOARD_UI_PARTS__) ? window.__TASKBOARD_UI_PARTS__ : ["drawer", "sidebar"];
+          const wantDrawer = parts.indexOf("drawer") !== -1;
+          const wantSidebar = parts.indexOf("sidebar") !== -1;
           pluginRuntime = ctx;
           try {
             localeFace = typeof ctx.get === "function" ? ctx.get("locale") : null;
@@ -5451,18 +5474,21 @@
               localeFace = null;
             };
           });
-          ctx.slots.inject("conversation.input.dock", function() {
-            return ctx.slots.register(
-              {
-                name: "conversation.input.dock",
-                id: "composer-drawer",
-                /* Last row of the dock: rows above it (todo / goal / queue) then
-                   grow upward without pushing the button off the card's corner. */
-                order: 999
-              },
-              ComposerDrawer
-            );
-          });
+          if (wantDrawer) {
+            ctx.slots.inject("conversation.input.dock", function() {
+              return ctx.slots.register(
+                {
+                  name: "conversation.input.dock",
+                  id: "composer-drawer",
+                  /* Last row of the dock: rows above it (todo / goal / queue) then
+                     grow upward without pushing the button off the card's corner. */
+                  order: 999
+                },
+                ComposerDrawer
+              );
+            });
+          }
+          if (!wantSidebar) return;
           const RIGHT_TAB_ID = "@local/composer-drawer:taskboard";
           const RIGHT_TAB_KIND = "taskboard";
           const tabsFace = (function() {

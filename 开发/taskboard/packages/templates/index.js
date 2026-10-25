@@ -22,6 +22,9 @@ import { fileURLToPath } from 'node:url';
 
 export const name = 'taskboard-templates';
 
+/* 只往 ctx 上 provide，不需要任何前置服务。 */
+export const inject = [];
+
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), 'templates');
 
 /** 当前可用的模板编号（扫描目录得到，不是硬编码）。 */

@@ -6,9 +6,21 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js",
-    "./shared": "./shared.js"
+    "./shared": "./shared.js",
+    "./locale/*.json": "./locale/*.json"
   },
-  "files": ["index.js", "shared.js", "icon.svg"],
-  "peerDependencies": { "@deepseek-ai/dsh-tools": "*" },
-  "peerDependenciesMeta": { "@deepseek-ai/dsh-tools": { "optional": true } }
+  "files": [
+    "index.js",
+    "shared.js",
+    "icon.svg",
+    "locale"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  }
 }

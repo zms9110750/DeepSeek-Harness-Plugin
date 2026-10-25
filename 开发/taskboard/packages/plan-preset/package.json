@@ -4,8 +4,21 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "exports": { ".": "./index.js" },
-  "files": ["index.js", "icon.svg"],
-  "peerDependencies": { "@deepseek-ai/dsh-tools": "*" },
-  "peerDependenciesMeta": { "@deepseek-ai/dsh-tools": { "optional": true } }
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "icon.svg",
+    "locale"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  }
 }

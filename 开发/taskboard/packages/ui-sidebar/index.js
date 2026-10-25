@@ -1,7 +1,9 @@
 /**
- * Host half —— 客户端 UI 插件的宿主侧空壳。
+ * ui-sidebar —— 独立插件（客户端）。
  *
- * 功能全在 client.js（浏览器里注册 Slot）。宿主这边注册一个 row
- * 只为了让它出现在插件列表里、并让客户端半边被加载。
+ * 功能全在 client.js。宿主这边**不需要任何服务**，
+ * 所以 inject 是空的：它只负责让客户端半边被加载。
  */
+export const name = 'taskboard-ui-sidebar';
+
 export function apply() {}

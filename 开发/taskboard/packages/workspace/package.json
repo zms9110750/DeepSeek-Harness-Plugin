@@ -4,6 +4,13 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "exports": { ".": "./index.js" },
-  "files": ["index.js", "icon.svg"]
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "icon.svg",
+    "locale"
+  ]
 }

@@ -164,6 +164,9 @@ export {
  */
 export const name = 'taskboard-workspace';
 
+/* 纯函数包：不注册任何东西，宿主侧没有要注入的服务。 */
+export const inject = [];
+
 export function apply() {
 	/* 纯函数包，没有 ctx 副作用。 */
 }

@@ -402,6 +402,10 @@ export {
  */
 export const name = 'taskboard-plan-preset';
 
+/* 它要用这些服务；不声明的话加载器可能在服务就绪前就挂载它，
+ * 于是 apply 里拿到的 ctx.tools / ctx.permissionPresets 是空的。 */
+export const inject = ['tools', 'permissionPresets', 'sessionProjections'];
+
 export function apply(ctx) {
 	installPlanPreset(ctx);
 	installGuard(ctx);

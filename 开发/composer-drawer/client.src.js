@@ -516,8 +516,21 @@ window.__ModuleLoader__.load({
       return homes;
     }
 
+    /*
+     * 模板目录——**两个**，要合并着读。
+     *
+     * 用户要求：「内置有通用的最小需要的模板。然后，附加的模板才是额外包。」
+     * 所以模板分两处放：
+     *
+     *   packages/core/templates/      内置 4 个（GU/WI/DP/RR）
+     *   packages/templates/templates/ 附加 23 个
+     *
+     * 面板要的是**全部 27 个**，所以两份 INDEX.json 都要读、合并、按类型去重
+     * （同编号时附加的覆盖内置的，与宿主 core 的 loadTemplate 口径一致）。
+     */
     function templateDirCandidates() {
-      return ['X:\\temp\\dsh\\开发\\taskboard\\templates'];
+      const root = 'X:\\temp\\dsh\\开发\\taskboard\\packages';
+      return [root + '\\core\\templates', root + '\\templates\\templates'];
     }
 
     /** 初始化路径：纯本地推导，不发任何命令。 */
@@ -3256,19 +3269,41 @@ window.__ModuleLoader__.load({
           .then(function (paths) {
             const files = fileRpc();
             if (paths === null || files === null) throw new Error('没有文件通道');
-            const indexPath = String(paths.templates || '').replace(/[\\/]+$/u, '') + '\\INDEX.json';
-            return Promise.resolve(files.read(sessionId, indexPath, undefined, undefined));
+            /* **两份 INDEX.json 都要读**：内置 4 个在 core，附加 23 个在 templates。
+             * 少读一份就只剩一部分模板——这正是之前那个 bug 的样子。 */
+            const dirs = templateDirCandidates();
+            return Promise.all(
+              dirs.map(function (dir) {
+                const indexPath = String(dir || '').replace(/[\\/]+$/u, '') + '\\INDEX.json';
+                return Promise.resolve(files.read(sessionId, indexPath, undefined, undefined)).then(
+                  function (result) {
+                    if (!result || result.ok !== true) return null;
+                    try {
+                      const parsed = JSON.parse(String(result.value.text || ''));
+                      return Array.isArray(parsed) ? { dir: dir, list: parsed } : null;
+                    } catch (failure) {
+                      return null;
+                    }
+                  },
+                );
+              }),
+            );
           })
-          .then(function (result) {
-            if (!result || result.ok !== true) throw new Error('读不到 templates/INDEX.json');
-            const list = JSON.parse(String(result.value.text || ''));
-            if (!Array.isArray(list)) throw new Error('INDEX.json 不是数组');
+          .then(function (readings) {
             const map = {};
-            list.forEach(function (item) {
-              if (item && typeof item.type === 'string' && item.type !== '' && item.yaml) {
-                map[item.type] = item.yaml;
-              }
+            let ok = 0;
+            (readings || []).forEach(function (reading) {
+              if (reading === null) return;
+              ok += 1;
+              reading.list.forEach(function (item) {
+                if (item && typeof item.type === 'string' && item.type !== '' && item.yaml) {
+                  /* 后读的覆盖先读的：附加模板可以替换同名内置模板，
+                   * 与宿主 core 的 loadTemplate 口径一致。 */
+                  map[item.type] = item.yaml;
+                }
+              });
             });
+            if (ok === 0) throw new Error('读不到 templates/INDEX.json');
             if (Object.keys(map).length === 0) throw new Error('INDEX.json 里没有模板');
             setTemplates(map);
           })
