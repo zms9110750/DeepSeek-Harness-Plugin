@@ -1,38 +1,69 @@
-# 任务板 —— 一个包，五个插件条目。
+# 任务板 —— 一个 bundle，八个插件条目。
 #
-# 设置页看到的是一张「任务板」卡片，点进去能看到全部组件。
+# 设置页看到的是一张「任务板」卡片，点进去能看到全部组件，各自独立开关。
+# 这个结构和官方「智能体团队」一致：
 #
-# 后端分四条 row（各自独立开关）：
-#   taskboard            ← 承载客户端与设置页（这条也是 UI 开关所在）
-#   taskboard-templates
-#   taskboard-plan-preset
-#   taskboard-workspace
+#   dsh-experimental-agent-team-profile          ← bundle 壳（本文件所在包）
+#   dsh-experimental-agent-team                  ← 协作
+#   dsh-experimental-tool-agent-team             ← 工具
+#   dsh-experimental-client-ui-agent-team        ← 面板（独立包！）
 #
-# ⚠️ `taskboard` 这条必须用**裸包名** `@local/taskboard`：
-# 客户端模块发现只接受两段式包名（exactPackageSpecifier），
-# 子路径 `@local/taskboard/core` 会让它直接放弃扫描 → 客户端不加载。
+# ## 关键规则
+#
+# 每个要带浏览器端代码（`dsh.client`）的包，**必须是独立的两段式包名**：
+#
+#   @local/taskboard-ui       ✅ 两段，可以带 client.js
+#   @local/taskboard/ui       ❌ 三段子路径，客户端永不加载
+#
+# 依据（dsh-client-modules）：
+#
+#   function exactPackageSpecifier(specifier) {
+#     if (specifier.startsWith('@')) {
+#       const parts = specifier.split('/');
+#       return parts.length === 2 && parts.every(Boolean) ? specifier : undefined;
+#     }
+#     ...
+#   }
+#
+# 宿主侧的包用独立包名也一样能跑，所以这里**统一全部用独立包名**，不再混用子路径。
 
 - insert:
-    # ① 客户端与设置页（两个 UI 的开关在这个 row 的 config 里）
-    - id: taskboard
-      name: '@local/taskboard'
-      config:
-        ui:
-          drawer: true
-          sidebar: true
+    # ① 持久化和提供者：处理从软件到磁盘
+    - id: taskboard-store
+      name: '@local/taskboard-store'
 
-    # ② 后端实现：存储、事项模型、状态机、AI 工具、命令
+    # ② 内存里的核心：业务规则 + 命令 / CLI 入口（不能关，其余都依赖它）
     - id: taskboard-core
-      name: '@local/taskboard/core'
+      name: '@local/taskboard-core'
 
-    # ③ 默认任务模板：附加的 23 个（内置 4 个在 core 里）
+    # ③ 给 agent 的工具面：十四个工具 + 面板命令
+    #    依赖 ②。不满意这套工具就关掉它，自己写一个接上 taskboardCore。
+    - id: taskboard-tools
+      name: '@local/taskboard-tools'
+
+    # ④ UI：抽屉 + 右侧栏「任务」两个入口（两个 bool 在这条 row 的 config 里）
+    #    两个都关掉再关这一行，UI 的提供设施就整个没了。
+    - id: taskboard-ui
+      name: '@local/taskboard-ui'
+      config:
+        drawer: true
+        sidebar: true
+
+    # ⑤ 额外的模板：领域模板（程序 / 项目 / 小说 / 绘画…）
+    #    空模板和「通用」分类始终在 ② 里提供，这条只管附加的那些。
     - id: taskboard-templates
-      name: '@local/taskboard/templates'
+      name: '@local/taskboard-templates'
+      config:
+        enabled: true
 
-    # ④ 按计划的权限：一个新的权限档，按任务给出的权限工作
+    # ⑥ 按计划的权限：一个新的权限档，按事项给出的权限干活
     - id: taskboard-plan-preset
-      name: '@local/taskboard/plan-preset'
+      name: '@local/taskboard-plan-preset'
 
-    # ⑤ 子工作空间：可写范围限制在里面（依赖 ④）
+    # ⑦ 子工作空间：把可写范围限制在里面（占位）
     - id: taskboard-workspace
-      name: '@local/taskboard/workspace'
+      name: '@local/taskboard-workspace'
+
+    # ⑧ 额外的工作空间：主战场之外的其它目录（占位）
+    - id: taskboard-extra-workspace
+      name: '@local/taskboard-extra-workspace'

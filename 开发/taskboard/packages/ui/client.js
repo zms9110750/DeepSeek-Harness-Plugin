@@ -1899,7 +1899,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
 
   // client.src.js
   window.__ModuleLoader__.load({
-    id: "@local/taskboard",
+    id: "@local/taskboard-ui",
     factory(require2) {
       const React = require2("react");
       const h = React.createElement;
@@ -2299,7 +2299,9 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       }
       function templateDirCandidates() {
         const root = "X:\\temp\\dsh\\\u5F00\u53D1\\taskboard\\packages";
-        return [root + "\\core\\templates", root + "\\templates\\templates"];
+        const dirs = [root + "\\core\\templates"];
+        if (readLiveUi().extras) dirs.push(root + "\\templates\\templates");
+        return dirs;
       }
       async function ensurePaths() {
         if (PATHS !== null) return PATHS;
@@ -4352,6 +4354,12 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const templatesState = React.useState({});
         const templates = templatesState[0];
         const setTemplates = templatesState[1];
+        React.useEffect(() => {
+          templatesReset = () => setTemplates({});
+          return () => {
+            templatesReset = null;
+          };
+        }, []);
         const groupsState = React.useState([]);
         const groups = groupsState[0];
         const setGroups = groupsState[1];
@@ -5376,14 +5384,21 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           return this.props.children;
         }
       }
-      let liveUi = { drawer: true, sidebar: true };
+      let liveUi = { drawer: true, sidebar: true, extras: true };
+      let templatesReset = null;
       const uiListeners = /* @__PURE__ */ new Set();
       function readLiveUi() {
         return liveUi;
       }
       function setLiveUi(next) {
-        const changed = next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar;
+        const changed = next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar || next.extras !== liveUi.extras;
         if (!changed) return;
+        if (next.extras !== liveUi.extras && templatesReset !== null) {
+          try {
+            templatesReset();
+          } catch (failure) {
+          }
+        }
         liveUi = next;
         for (const listener of [...uiListeners]) {
           try {
@@ -5594,9 +5609,9 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
          * 所以这里的两个 bool 由 @local/taskboard 的 Config schema 决定。 */
         apply(ctx, config) {
           const settings = config !== null && typeof config === "object" ? config : {};
-          const ui = settings.ui !== null && typeof settings.ui === "object" ? settings.ui : {};
-          const wantDrawer = ui.drawer !== false;
-          const wantSidebar = ui.sidebar !== false;
+          const wantDrawer = settings.drawer !== false;
+          const wantSidebar = settings.sidebar !== false;
+          const wantExtras = true;
           pluginRuntime = ctx;
           try {
             localeFace = typeof ctx.get === "function" ? ctx.get("locale") : null;
@@ -5622,15 +5637,37 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               localeFace = null;
             };
           });
-          const FORMS_NS = "taskboard";
+          const FORMS_NS = "taskboard-ui";
+          const TEMPLATES_NS = "taskboard-templates";
+          const readExtrasFromMirror = function(namespaces) {
+            try {
+              const hit = (namespaces || []).find(function(view) {
+                return view && view.ns === TEMPLATES_NS;
+              });
+              const value = hit && typeof hit === "object" ? hit.value : void 0;
+              if (value !== null && typeof value === "object" && typeof value.enabled === "boolean") return value.enabled;
+            } catch (failure) {
+            }
+            return wantExtras;
+          };
+          const readExtrasFromForm = function() {
+            try {
+              const form = ctx.configForms.get(TEMPLATES_NS);
+              const snapshot = form.getSnapshot();
+              const value = snapshot && snapshot.value;
+              if (value !== null && typeof value === "object" && typeof value.enabled === "boolean") return value.enabled;
+            } catch (failure) {
+            }
+            return wantExtras;
+          };
           const readUiFlags = function() {
             const fromView = function(view) {
               const value = view && typeof view === "object" ? view.value : void 0;
-              const ui2 = value !== null && typeof value === "object" ? value.ui : void 0;
-              if (ui2 === null || typeof ui2 !== "object") return null;
+              if (value === null || typeof value !== "object") return null;
               return {
-                drawer: typeof ui2.drawer === "boolean" ? ui2.drawer : void 0,
-                sidebar: typeof ui2.sidebar === "boolean" ? ui2.sidebar : void 0
+                drawer: typeof value.drawer === "boolean" ? value.drawer : void 0,
+                sidebar: typeof value.sidebar === "boolean" ? value.sidebar : void 0,
+                extras: typeof value.extras === "boolean" ? value.extras : void 0
               };
             };
             try {
@@ -5644,7 +5681,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               if (fromMirror !== null) {
                 return {
                   drawer: fromMirror.drawer === void 0 ? wantDrawer : fromMirror.drawer,
-                  sidebar: fromMirror.sidebar === void 0 ? wantSidebar : fromMirror.sidebar
+                  sidebar: fromMirror.sidebar === void 0 ? wantSidebar : fromMirror.sidebar,
+                  extras: readExtrasFromMirror(namespaces)
                 };
               }
             } catch (failure) {
@@ -5655,12 +5693,13 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               if (fromForm !== null) {
                 return {
                   drawer: fromForm.drawer === void 0 ? wantDrawer : fromForm.drawer,
-                  sidebar: fromForm.sidebar === void 0 ? wantSidebar : fromForm.sidebar
+                  sidebar: fromForm.sidebar === void 0 ? wantSidebar : fromForm.sidebar,
+                  extras: readExtrasFromForm()
                 };
               }
             } catch (failure) {
             }
-            return { drawer: wantDrawer, sidebar: wantSidebar };
+            return { drawer: wantDrawer, sidebar: wantSidebar, extras: wantExtras };
           };
           ctx.slots.inject("conversation.input.dock", function() {
             return ctx.slots.register(
@@ -5750,6 +5789,13 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             ctx.effect(function() {
               return form.subscribe(onConfigChanged);
             }, "taskboard: config \u53D8\u5316\u540C\u6B65\u5230 UI store");
+          } catch (failure) {
+          }
+          try {
+            const templateForm = ctx.configForms.get(TEMPLATES_NS);
+            ctx.effect(function() {
+              return templateForm.subscribe(onConfigChanged);
+            }, "taskboard: \u9886\u57DF\u6A21\u677F\u5F00\u5173\u540C\u6B65\u5230 UI store");
           } catch (failure) {
           }
           ctx.slots.inject("plugins.row.config", function() {

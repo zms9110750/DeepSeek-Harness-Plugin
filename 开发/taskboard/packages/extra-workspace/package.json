@@ -1,0 +1,19 @@
+{
+  "name": "@local/taskboard-extra-workspace",
+  "version": "0.0.1-a.0",
+  "private": true,
+  "type": "module",
+  "description": "任务板额外的工作空间（占位）：主战场之外的其它目录",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./icon": "./icon.svg",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "locale",
+    "icon.svg"
+  ]
+}

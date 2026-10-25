@@ -16,11 +16,30 @@
  * 依赖方向：templates →（无）。它是叶子。
  * 谁用我：core 的 `task_template` / `task_dispatch` 通过 `getTemplates()` 读。
  */
+import z from '@deepseek-ai/schemastery';
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const name = 'taskboard-templates';
+
+/*
+ * 领域模板开关。
+ *
+ * 用户要求：
+ *   > 5.额外的模板（空模板和你写的"通用"分类的始终在核心里面提供。
+ *   >   这里写"程序，项目"，"小说"，"绘画"这些特定领域的模板。
+ *   >   并且这些都要作为一个 ui 的 bool 可以开关。）
+ *
+ * 所以这个包只管**领域模板**（程序 / 项目 / 小说 / 绘画…）。
+ * 空模板和通用分类在 core 里，关掉这个包也还在。
+ *
+ * .volatile() 是设置页能渲染表单的硬条件（dsh-settings 的 volatileForm
+ * 会把非 volatile 字段整个丢掉）。改完立刻生效。
+ */
+export const Config = z.object({
+	enabled: z.boolean().default(true).description('领域模板（程序 / 项目 / 小说 / 绘画…）').volatile(),
+});
 
 /* 只往 ctx 上 provide，不需要任何前置服务。 */
 export const inject = [];
@@ -66,12 +85,18 @@ const service = {
 	list: listTemplates,
 };
 
-export function apply(ctx) {
+export function apply(ctx, config) {
+	const enabled = config === null || config === undefined || config.enabled !== false;
 	/* 扫目录拿 TYPES。放 ctx.effect 里是为了热重载时能重新扫。 */
 	ctx.effect(() => {
 		let alive = true;
 		void (async () => {
 			try {
+				/* 关掉时不扫目录：TYPES 空 → core 的 availableTypes() 只剩内置。 */
+				if (!enabled) {
+					if (alive) TYPES = [];
+					return;
+				}
 				const files = await readdir(TEMPLATE_DIR);
 				const found = files
 					.filter((file) => file.endsWith('.yml'))

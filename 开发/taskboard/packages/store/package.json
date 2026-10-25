@@ -7,9 +7,20 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json",
+    "./icon": "./icon.svg"
   },
-  "files": ["index.js", "locale"],
-  "peerDependencies": { "@deepseek-ai/dsh-tools": "*" },
-  "peerDependenciesMeta": { "@deepseek-ai/dsh-tools": { "optional": true } }
+  "files": [
+    "index.js",
+    "locale"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  }
 }

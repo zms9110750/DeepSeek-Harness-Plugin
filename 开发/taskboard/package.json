@@ -3,55 +3,25 @@
   "version": "0.1.0-a.1",
   "private": true,
   "type": "module",
-  "description": "任务板：一个包，一个设置页；后端分四个插件，界面上有两个入口",
+  "description": "任务板：管事项。一张卡片，八个独立组件。",
   "main": "index.js",
   "exports": {
     ".": "./index.js",
-    "./core": "./packages/core/index.js",
-    "./templates": "./packages/templates/index.js",
-    "./plan-preset": "./packages/plan-preset/index.js",
-    "./workspace": "./packages/workspace/index.js",
-    "./client": "./client.js",
     "./icon": "./icon.svg",
     "./locale/*.json": "./locale/*.json",
-    "./core/locale/*.json": "./packages/core/locale/*.json",
-    "./templates/locale/*.json": "./packages/templates/locale/*.json",
-    "./plan-preset/locale/*.json": "./packages/plan-preset/locale/*.json",
-    "./workspace/locale/*.json": "./packages/workspace/locale/*.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
-    "client.js",
-    "packages",
     "locale",
     "cordis.patch.yml",
     "icon.svg",
     "README.md"
   ],
-  "peerDependencies": {
-    "@deepseek-ai/dsh-tools": "*",
-    "@deepseek-ai/schemastery": "*"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-tools": {
-      "optional": true
-    },
-    "@deepseek-ai/schemastery": {
-      "optional": true
-    }
-  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "immediately": true,
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-sidebar-right"
-      ]
     }
   }
 }

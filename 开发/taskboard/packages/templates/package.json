@@ -1,6 +1,6 @@
 {
   "name": "@local/taskboard-templates",
-  "version": "0.1.0-a.1",
+  "version": "0.1.0-a.0",
   "private": true,
   "type": "module",
   "main": "index.js",
@@ -8,7 +8,9 @@
     ".": "./index.js",
     "./*.yml": "./templates/*.yml",
     "./templates/*": "./templates/*",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json",
+    "./icon": "./icon.svg"
   },
   "files": [
     "index.js",

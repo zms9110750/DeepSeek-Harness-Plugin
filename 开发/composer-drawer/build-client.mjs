@@ -40,10 +40,10 @@ await build({
   bundle: true,
   format: 'iife',
   platform: 'browser',
-  outfile: '../taskboard/client.js',
+  outfile: '../taskboard/packages/ui/client.js',
   logLevel: 'warning',
   define: {
-    __TASKBOARD_MODULE_ID__: JSON.stringify('@local/taskboard'),
+    __TASKBOARD_MODULE_ID__: JSON.stringify('@local/taskboard-ui'),
   },
   /* 两个 UI 都编译进同一份产物；运行时由 Config 决定注册哪一个。
    * banner 只是给调试看的标记。 */
@@ -52,4 +52,4 @@ await build({
   },
 });
 
-console.log('✅ ../taskboard/client.js  (@local/taskboard, parts=drawer+sidebar)');
+console.log('✅ ../taskboard/packages/ui/client.js  (@local/taskboard-ui, parts=drawer+sidebar)');

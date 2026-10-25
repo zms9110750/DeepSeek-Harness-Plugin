@@ -533,7 +533,16 @@ window.__ModuleLoader__.load({
      */
     function templateDirCandidates() {
       const root = 'X:\\temp\\dsh\\开发\\taskboard\\packages';
-      return [root + '\\core\\templates', root + '\\templates\\templates'];
+      const dirs = [root + '\\core\\templates'];
+      /*
+       * 附加模板由 UI 的 `extras` 开关控制（用户要求：
+       * 「这里写"程序，项目"，"小说"，"绘画"这些特定领域的模板。
+       *   并且这些都要作为一个 ui 的 bool 可以开关。」）。
+       *
+       * 关掉时**不读第二份 INDEX.json** —— 模板选择器里就只剩空模板和通用分类。
+       */
+      if (readLiveUi().extras) dirs.push(root + '\\templates\\templates');
+      return dirs;
     }
 
     /** 初始化路径：纯本地推导，不发任何命令。 */
@@ -2932,6 +2941,13 @@ window.__ModuleLoader__.load({
       const templatesState = React.useState({});
       const templates = templatesState[0];
       const setTemplates = templatesState[1];
+      /* 把自己挂到模块级的重置钩子上：extras 开关一变，清空缓存好重新读。 */
+      React.useEffect(() => {
+        templatesReset = () => setTemplates({});
+        return () => {
+          templatesReset = null;
+        };
+      }, []);
       /* 分组：命名的集合，与父子树正交、与九态正交。
        *
        * 用户原话：「肯定要分组啊。我这里打插件要这些任务。
@@ -4242,7 +4258,14 @@ window.__ModuleLoader__.load({
      * 值变了就返回 null（不渲染）。注册留着，渲染撤掉 —— 视觉上就是消失。
      * 这样不依赖任何重挂机制，也不用跟 slot 生命周期较劲。
      */
-    let liveUi = { drawer: true, sidebar: true };
+    let liveUi = { drawer: true, sidebar: true, extras: true };
+    /*
+     * 清空模板缓存。由 TaskBoard 组件挂上来 —— 模板是组件内状态，
+     * 模块级的 store 摸不到，只能留一个回调。
+     * extras 关掉时必须清：否则 loadTemplates 的"读过就不再读"短路
+     * 会让已加载的领域模板继续留在选择器里。
+     */
+    let templatesReset = null;
     const uiListeners = new Set();
 
     function readLiveUi() {
@@ -4250,8 +4273,18 @@ window.__ModuleLoader__.load({
     }
 
     function setLiveUi(next) {
-      const changed = next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar;
+      const changed =
+        next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar || next.extras !== liveUi.extras;
       if (!changed) return;
+      /* extras 变了要清模板缓存：loadTemplates 有"读过就不再读"的短路，
+       * 不清的话关掉开关模板还在。 */
+      if (next.extras !== liveUi.extras && templatesReset !== null) {
+        try {
+          templatesReset();
+        } catch (failure) {
+          /* 重置失败不影响开关本身 */
+        }
+      }
       liveUi = next;
       for (const listener of [...uiListeners]) {
         try {
@@ -4558,9 +4591,12 @@ window.__ModuleLoader__.load({
          * `@local/taskboard/ui-drawer` 会直接放弃扫描、客户端永不加载。
          * 所以一个包只能有一个客户端入口，两个 UI 只能合成一份产物。 */
         const settings = config !== null && typeof config === 'object' ? config : {};
-        const ui = settings.ui !== null && typeof settings.ui === 'object' ? settings.ui : {};
-        const wantDrawer = ui.drawer !== false;
-        const wantSidebar = ui.sidebar !== false;
+        /* Config 现在是平铺的三个 bool（不再嵌在 ui 下面）。 */
+        const wantDrawer = settings.drawer !== false;
+        const wantSidebar = settings.sidebar !== false;
+        /* 领域模板开关属于 templates 包（它才是模板的提供者），
+         * 所以在 readUiFlags 里单独从 taskboard-templates 的 namespace 读。 */
+        const wantExtras = true;
 
         /* ── 语言与运行时句柄 ──────────────────────────────────────────────
          * 这两段必须在注册 UI **之前**完成：TaskBoard 里的 t() 依赖 translate。 */
@@ -4617,7 +4653,10 @@ window.__ModuleLoader__.load({
          * entryId 是 **Host plugin entry id**（`include:taskboard`），
          * 这是 get() 的 @param 原文。
          */
-        const FORMS_NS = 'taskboard';
+        /* UI 自己那条 row 的 id（patch 里是 `id: taskboard-ui`）。 */
+        const FORMS_NS = 'taskboard-ui';
+        /* 领域模板开关属于 templates 包。 */
+        const TEMPLATES_NS = 'taskboard-templates';
 
         /*
          * 读开关当前值。三条路依次试：
@@ -4631,15 +4670,40 @@ window.__ModuleLoader__.load({
          * `{ id, url, rev, inject, immediately, external }` —— **没有 config 字段**。
          * 所以 apply(ctx, config) 里的 config 拿不到 patch 里写的值。
          */
+        /** 从 describe mirror 的 namespace 列表里读 templates 包的 enabled。 */
+        const readExtrasFromMirror = function (namespaces) {
+          try {
+            const hit = (namespaces || []).find(function (view) {
+              return view && view.ns === TEMPLATES_NS;
+            });
+            const value = hit && typeof hit === 'object' ? hit.value : undefined;
+            if (value !== null && typeof value === 'object' && typeof value.enabled === 'boolean') return value.enabled;
+          } catch (failure) {
+            /* 走下面的兜底 */
+          }
+          return wantExtras;
+        };
+        /** 从 templates 自己的 form 快照读 enabled。 */
+        const readExtrasFromForm = function () {
+          try {
+            const form = ctx.configForms.get(TEMPLATES_NS);
+            const snapshot = form.getSnapshot();
+            const value = snapshot && snapshot.value;
+            if (value !== null && typeof value === 'object' && typeof value.enabled === 'boolean') return value.enabled;
+          } catch (failure) {
+            /* 没用上 templates 包 */
+          }
+          return wantExtras;
+        };
         const readUiFlags = function () {
           /** 从 namespace 视图里抠出 ui.drawer / ui.sidebar。 */
           const fromView = function (view) {
             const value = view && typeof view === 'object' ? view.value : undefined;
-            const ui = value !== null && typeof value === 'object' ? value.ui : undefined;
-            if (ui === null || typeof ui !== 'object') return null;
+            if (value === null || typeof value !== 'object') return null;
             return {
-              drawer: typeof ui.drawer === 'boolean' ? ui.drawer : undefined,
-              sidebar: typeof ui.sidebar === 'boolean' ? ui.sidebar : undefined,
+              drawer: typeof value.drawer === 'boolean' ? value.drawer : undefined,
+              sidebar: typeof value.sidebar === 'boolean' ? value.sidebar : undefined,
+              extras: typeof value.extras === 'boolean' ? value.extras : undefined,
             };
           };
 
@@ -4657,6 +4721,7 @@ window.__ModuleLoader__.load({
               return {
                 drawer: fromMirror.drawer === undefined ? wantDrawer : fromMirror.drawer,
                 sidebar: fromMirror.sidebar === undefined ? wantSidebar : fromMirror.sidebar,
+                extras: readExtrasFromMirror(namespaces),
               };
             }
           } catch (failure) {
@@ -4671,6 +4736,7 @@ window.__ModuleLoader__.load({
               return {
                 drawer: fromForm.drawer === undefined ? wantDrawer : fromForm.drawer,
                 sidebar: fromForm.sidebar === undefined ? wantSidebar : fromForm.sidebar,
+                extras: readExtrasFromForm(),
               };
             }
           } catch (failure) {
@@ -4678,7 +4744,7 @@ window.__ModuleLoader__.load({
           }
 
           /* ③ 兜底 */
-          return { drawer: wantDrawer, sidebar: wantSidebar };
+          return { drawer: wantDrawer, sidebar: wantSidebar, extras: wantExtras };
         };
 
         /*
@@ -4814,6 +4880,16 @@ window.__ModuleLoader__.load({
           }, 'taskboard: config 变化同步到 UI store');
         } catch (failure) {
           /* 没有 configForms 时只按 apply 那一刻的 config 走 */
+        }
+
+        /* templates 包自己的开关也要订阅：它影响模板列表。 */
+        try {
+          const templateForm = ctx.configForms.get(TEMPLATES_NS);
+          ctx.effect(function () {
+            return templateForm.subscribe(onConfigChanged);
+          }, 'taskboard: 领域模板开关同步到 UI store');
+        } catch (failure) {
+          /* 没装 templates 包 */
         }
 
         /* ── 设置页的行配置（两个 UI 的开关）─────────────────────────────
