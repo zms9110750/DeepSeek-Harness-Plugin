@@ -4343,6 +4343,9 @@
         const templatesState = React.useState({});
         const templates = templatesState[0];
         const setTemplates = templatesState[1];
+        const groupsState = React.useState([]);
+        const groups = groupsState[0];
+        const setGroups = groupsState[1];
         const sessionId = props.sessionId;
         const loadViaFiles = function(paths) {
           const files = fileRpc();
@@ -4375,7 +4378,33 @@
             rows.forEach(function(row) {
               bodies[row.id] = row.body || "";
             });
-            return { rows, bodies };
+            const groupsPath = String(paths.store || "").replace(/[\\/][^\\/]+$/u, "") + "\\groups.jsonl";
+            return Promise.resolve(files.read(sessionId, groupsPath, { limit: 2e3 }, void 0)).then(function(grouped) {
+              const out = /* @__PURE__ */ new Map();
+              if (grouped && grouped.ok === true) {
+                String(grouped.value.text || "").split(/\r?\n/u).forEach(function(line) {
+                  if (line.trim() === "") return;
+                  let event = null;
+                  try {
+                    event = JSON.parse(line);
+                  } catch (failure) {
+                    return;
+                  }
+                  if (!event || event.op !== "upsert" || !event.group || !event.group.id) return;
+                  out.set(event.group.id, {
+                    id: event.group.id,
+                    name: String(event.group.name || ""),
+                    members: Array.isArray(event.group.members) ? event.group.members.map(String) : []
+                  });
+                });
+              }
+              const list = [...out.values()].filter(function(item) {
+                return item.name !== "";
+              });
+              return { rows, bodies, groups: list };
+            }).catch(function() {
+              return { rows, bodies, groups: [] };
+            });
           });
         };
         const load = React.useCallback(function() {
@@ -4385,6 +4414,7 @@
             return loadViaFiles(paths);
           }).then(function(result) {
             setData({ tasks: result.rows.map(fromApi), bodies: result.bodies, live: true, error: "" });
+            setGroups(result.groups || []);
           }).catch(function(error) {
             setData({
               tasks: SAMPLE_TASKS,
@@ -4553,6 +4583,9 @@
         const archivedState = React.useState(false);
         const showArchived = archivedState[0];
         const setShowArchived = archivedState[1];
+        const groupPickState = React.useState("");
+        const groupPick = groupPickState[0];
+        const setGroupPick = groupPickState[1];
         const filterState = React.useState("");
         const groupFilter = filterState[0];
         const setGroupFilter = filterState[1];
@@ -4569,11 +4602,19 @@
             const needle = search.trim().toLowerCase();
             return allTasks.filter(function(node) {
               if (node.archived && !showArchived) return false;
+              if (groupPick !== "") {
+                const own = Array.isArray(node.groupsOf) ? node.groupsOf : [];
+                if (groupPick === "__none__") {
+                  if (own.length > 0) return false;
+                } else if (own.indexOf(groupPick) === -1) {
+                  return false;
+                }
+              }
               if (groupFilter !== "") {
-                const groups = groupsOf(node.status);
+                const groups2 = groupsOf(node.status);
                 if (node.status === "\u672A\u6307\u5B9A") {
                   if (groupFilter !== "\u8349\u7A3F") return false;
-                } else if (groups.indexOf(groupFilter) === -1) {
+                } else if (groups2.indexOf(groupFilter) === -1) {
                   return false;
                 }
               }
@@ -4584,7 +4625,7 @@
               return true;
             });
           },
-          [allTasks, groupFilter, search, showArchived]
+          [allTasks, groupFilter, search, showArchived, groupPick]
         );
         const graph = React.useMemo(
           function() {
@@ -4778,6 +4819,82 @@
               busy ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0"
             )
           ),
+          /* 分组切换（真正的那个「分组」）。
+           *
+           * 用户原话：「肯定要分组啊。我这里打插件要这些任务。
+           * 等下我写程序还要这些任务干什么？」
+           *
+           * 所以这是**主筛选器**，放在最上面。切换分组 = 切换手头的项目。
+           * 分组是独立的命名集合（存在 groups.jsonl），**不是** workspace 字段——
+           * 那是"能读哪个目录"的权限，用户为了读别的项目把它设成了仓库根目录。 */
+          groups.length > 0 ? h(
+            "div",
+            { style: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" } },
+            h("span", { style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)", flex: "none" } }, "\u5206\u7EC4"),
+            (function() {
+              const buttons = [
+                h(
+                  "button",
+                  {
+                    key: "gp-all",
+                    type: "button",
+                    onClick: function() {
+                      setGroupPick("");
+                    },
+                    style: Object.assign({}, buttonBase(groupPick === ""), { padding: "2px 10px" })
+                  },
+                  "\u5168\u90E8"
+                )
+              ];
+              groups.forEach(function(group) {
+                const count = allTasks.filter(function(item) {
+                  return Array.isArray(item.groupsOf) && item.groupsOf.indexOf(group.id) !== -1;
+                }).length;
+                const active = groupPick === group.id;
+                buttons.push(
+                  h(
+                    "button",
+                    {
+                      key: "gp-" + group.id,
+                      type: "button",
+                      title: group.members.length + " \u6761",
+                      onClick: function() {
+                        setGroupPick(active ? "" : group.id);
+                      },
+                      style: Object.assign({}, buttonBase(active), {
+                        padding: "2px 10px",
+                        opacity: active ? 1 : 0.75
+                      })
+                    },
+                    group.name + "\uFF08" + count + "\uFF09"
+                  )
+                );
+              });
+              const loose = allTasks.filter(function(item) {
+                return !Array.isArray(item.groupsOf) || item.groupsOf.length === 0;
+              }).length;
+              if (loose > 0) {
+                buttons.push(
+                  h(
+                    "button",
+                    {
+                      key: "gp-none",
+                      type: "button",
+                      onClick: function() {
+                        setGroupPick(groupPick === "__none__" ? "" : "__none__");
+                      },
+                      style: Object.assign({}, buttonBase(groupPick === "__none__"), {
+                        padding: "2px 10px",
+                        opacity: groupPick === "__none__" ? 1 : 0.75
+                      })
+                    },
+                    "\u672A\u5F52\u7EC4\uFF08" + loose + "\uFF09"
+                  )
+                );
+              }
+              return buttons;
+            })()
+          ) : null,
           /* 过滤条（T-020）：按组 + 搜索。 */
           h(
             "div",

@@ -1217,6 +1217,80 @@ function resolveDshHome(configured) {
 
 const STORE_DIR = join(resolveDshHome(), 'taskboard');
 const STORE_FILE = process.env.TASKBOARD_STORE || join(STORE_DIR, 'plans.jsonl');
+/*
+ * ---------------------------------------------------------------------------
+ * 分组（groups）
+ * ---------------------------------------------------------------------------
+ *
+ * 用户原话：
+ *   > 肯定要分组啊。我这里打插件要这些任务。等下我写程序还要这些任务干什么？
+ *   > 我的工作空间是在仓库的根目录的。为了做工作的时候可以读别的程序。
+ *
+ * 关键澄清：**`workspace` 不是分组**。那是"能读哪个目录"的权限字段，
+ * 用户为了能读别的项目，把它设成了仓库根目录——所以按 workspace 分组
+ * 会把所有事项挤进同一堆。分组必须是**独立的概念**。
+ *
+ * 设计：一个分组就是一个**命名的集合**，事项可以属于任意多个分组。
+ *   · 与父子树正交（一条事项既可属于某分组，又在某棵树下）
+ *   · 与九态正交（分组不是状态）
+ *   · 存独立文件 `groups.jsonl`，不污染 `plans.jsonl` 的行格式
+ *     （用户明确要求过"不要随便改日志"；新建文件比改旧行安全）
+ *
+ * 记录格式（一行一个事件，追加式，同样按 id fold）：
+ *   {"op":"upsert","ts":"…","group":{"id":"g-1","name":"插件开发","members":["T-001",…]}}
+ */
+const GROUPS_FILE = process.env.TASKBOARD_GROUPS || join(STORE_DIR, 'groups.jsonl');
+
+/** 读全部分组（追加式 JSONL，按 id fold 最后一次）。 */
+async function listGroups() {
+	await mkdir(dirname(GROUPS_FILE), { recursive: true });
+	let raw = '';
+	try {
+		raw = await readFile(GROUPS_FILE, 'utf8');
+	} catch (failure) {
+		return [];
+	}
+	const byId = new Map();
+	for (const line of String(raw).split(/\r?\n/u)) {
+		const trimmed = line.trim();
+		if (trimmed === '') continue;
+		let event = null;
+		try {
+			event = JSON.parse(trimmed);
+		} catch (failure) {
+			continue;
+		}
+		if (event === null || event.op !== 'upsert') continue;
+		const group = event.group;
+		if (group === null || typeof group !== 'object') continue;
+		const id = String(group.id || '').trim();
+		if (id === '') continue;
+		byId.set(id, {
+			id,
+			name: String(group.name || id),
+			members: Array.isArray(group.members) ? group.members.map(String) : [],
+			createdAt: String(group.createdAt || ''),
+		});
+	}
+	return [...byId.values()];
+}
+
+/** 写一个分组（追加一行）。 */
+async function saveGroup(group) {
+	await mkdir(dirname(GROUPS_FILE), { recursive: true });
+	const event = {
+		op: 'upsert',
+		ts: new Date().toISOString(),
+		actor: 'user',
+		group: {
+			id: group.id,
+			name: group.name,
+			members: group.members,
+			createdAt: group.createdAt || new Date().toISOString(),
+		},
+	};
+	await appendFile(GROUPS_FILE, JSON.stringify(event) + '\n', 'utf8');
+}
 
 async function readStore() {
 	await mkdir(dirname(STORE_FILE), { recursive: true });
@@ -1586,6 +1660,15 @@ function registerCommands(ctx) {
 		recordInput: false,
 		async handler() {
 			const tasks = await listAll();
+			/* 每个事项属于哪些分组：反查一遍，别让面板自己拼。 */
+			const groups = (await listGroups()).filter((group) => group.name !== '');
+			const groupOfTask = new Map();
+			for (const group of groups) {
+				for (const member of group.members) {
+					if (!groupOfTask.has(member)) groupOfTask.set(member, []);
+					groupOfTask.get(member).push(group.id);
+				}
+			}
 			return {
 				kind: 'success',
 				text: JSON.stringify(
@@ -1612,6 +1695,8 @@ function registerCommands(ctx) {
 							/* 归档：面板默认不显示，但**照样返回**——
 							   用户明确要求"已经归档的，ai 仍然可以用工具查看"。 */
 							archived: head.archived === true,
+							/* 属于哪些分组（id 数组）。 */
+							groupsOf: groupOfTask.get(head.id) ?? [],
 						});
 					}),
 				),
@@ -2261,6 +2346,84 @@ function registerExtraTools(ctx) {
 
 	ctx.tools.register(
 		defineTool({
+			name: 'task_group',
+			description:
+				'管理「分组」：把事项按项目/主题分成集合，面板可以只看某一组。' +
+				'分组与父子树正交（一条事项可属于多个分组），也与九态正交（不是状态）。' +
+				'action：list 列出所有分组 / create 新建 / rename 改名 / add 加入成员 / ' +
+				'remove 移出成员 / delete 删除分组。',
+			parameters: {
+				action: { type: 'string', required: true, description: 'list/create/rename/add/remove/delete' },
+				group: { type: 'string', description: '分组 id（create 时可留空自动编号）' },
+				name: { type: 'string', description: '分组名字（create/rename 用）' },
+				ids: { type: 'string', description: '成员 id，逗号分隔（add/remove 用）' },
+			},
+			output: {
+				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
+				render: (_args, value) => [{ type: 'text', text: value.text }],
+			},
+			async execute(args) {
+				const action = String(args.action ?? '').trim();
+				const groups = await listGroups();
+				if (action === 'list') {
+					if (groups.length === 0) return { text: '还没有分组。用 task_group action=create name=… 建一个。' };
+					const lines = groups.map((group) => {
+						const sample = group.members.slice(0, 6).join(', ');
+						const more = group.members.length > 6 ? ` 等 ${group.members.length} 条` : '';
+						return `  ${group.id} · ${group.name}（${group.members.length} 条）${sample ? '：' + sample + more : ''}`;
+					});
+					return { text: `共 ${groups.length} 个分组：\n` + lines.join('\n') };
+				}
+				if (action === 'create') {
+					const name = String(args.name ?? '').trim();
+					if (name === '') throw new Error('create 需要 name');
+					/* 编号：g-1、g-2…取当前最大值 +1 */
+					const used = groups
+						.map((group) => Number(/^g-(\d+)$/u.exec(group.id)?.[1] ?? 0))
+						.filter((value) => Number.isFinite(value));
+					const id = `g-${used.length === 0 ? 1 : Math.max(...used) + 1}`;
+					await saveGroup({ id, name, members: [] });
+					return { text: `已建分组 ${id} · ${name}` };
+				}
+				const id = String(args.group ?? '').trim();
+				const found = groups.find((item) => item.id === id);
+				if (found === undefined) throw new Error(`没有这个分组：${id}`);
+				if (action === 'rename') {
+					const name = String(args.name ?? '').trim();
+					if (name === '') throw new Error('rename 需要 name');
+					await saveGroup({ id, name, members: found.members, createdAt: found.createdAt });
+					return { text: `分组 ${id} 改名为「${name}」` };
+				}
+				if (action === 'delete') {
+					/* 删除 = 把名字记成墓碑，面板会过滤掉。成员不删，事项本身还在。 */
+					await saveGroup({ id, name: '', members: [], createdAt: found.createdAt });
+					return { text: `已删除分组 ${id}（成员事项本身没动）` };
+				}
+				if (action === 'add' || action === 'remove') {
+					const wanted = String(args.ids ?? '')
+						.split(/[,，\s]+/u)
+						.map((part) => part.trim())
+						.filter((part) => part !== '');
+					if (wanted.length === 0) throw new Error(`${action} 需要 ids`);
+					const members = new Set(found.members);
+					for (const member of wanted) {
+						if (action === 'add') members.add(member);
+						else members.delete(member);
+					}
+					await saveGroup({ id, name: found.name, members: [...members], createdAt: found.createdAt });
+					return {
+						text:
+							`分组 ${id} · ${found.name} 现在有 ${members.size} 条` +
+							(action === 'add' ? `（加了 ${wanted.length} 条）` : `（移出 ${wanted.length} 条）`),
+					};
+				}
+				throw new Error(`不认识的 action：${action}`);
+			},
+		}),
+	);
+
+	ctx.tools.register(
+		defineTool({
 			name: 'task_answer',
 			description:
 				'回答设计类计划里的**某一个开放问题**（正文「要定的点 / 待定」小标题下编号的那些）。' +
@@ -2411,6 +2574,46 @@ function registerExtraCommands(ctx) {
 			} catch (error) {
 				return { kind: 'error', text: String((error && error.message) || error) };
 			}
+		},
+	});
+
+	ctx.commands.register({
+		name: 'task-group-list',
+		description: '输出全部分组（面板读；JSON：[{id,name,members}]）',
+		recordInput: false,
+		async handler() {
+			/* 名字为空 = 墓碑（已删除），不返回给面板。 */
+			const groups = (await listGroups()).filter((group) => group.name !== '');
+			return { kind: 'success', text: JSON.stringify(groups) };
+		},
+	});
+
+	ctx.commands.register({
+		name: 'task-group-save',
+		description: '面板保存分组（JSON：{id?,name,members}；id 空 = 新建）',
+		input: { hint: '{"name":"插件开发","members":["WI-01"]}' },
+		recordInput: false,
+		async handler(payload) {
+			let parsed = null;
+			try {
+				parsed = JSON.parse(String(payload ?? '').trim() || '{}');
+			} catch (error) {
+				return { kind: 'error', text: '参数不是合法 JSON' };
+			}
+			const name = String(parsed?.name ?? '').trim();
+			if (name === '') return { kind: 'error', text: '分组要有名字' };
+			const members = Array.isArray(parsed?.members) ? parsed.members.map(String) : [];
+			let id = String(parsed?.id ?? '').trim();
+			if (id === '') {
+				const groups = await listGroups();
+				const used = groups
+					.map((group) => Number(/^g-(\d+)$/u.exec(group.id)?.[1] ?? 0))
+					.filter((value) => Number.isFinite(value));
+				id = `g-${used.length === 0 ? 1 : Math.max(...used) + 1}`;
+			}
+			const existing = (await listGroups()).find((group) => group.id === id);
+			await saveGroup({ id, name, members, createdAt: existing?.createdAt });
+			return { kind: 'success', text: JSON.stringify({ id, name, members }) };
 		},
 	});
 

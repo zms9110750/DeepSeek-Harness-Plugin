@@ -2906,6 +2906,18 @@ window.__ModuleLoader__.load({
       const templatesState = React.useState({});
       const templates = templatesState[0];
       const setTemplates = templatesState[1];
+      /* 分组：命名的集合，与父子树正交、与九态正交。
+       *
+       * 用户原话：「肯定要分组啊。我这里打插件要这些任务。
+       * 等下我写程序还要这些任务干什么？」
+       *
+       * 注意：**不是按 workspace 分组**——那是"能读哪个目录"的权限字段，
+       * 用户为了读别的项目把它设成了仓库根目录，按它分组全挤一堆。
+       *
+       * 扁平数组：[{id, name, members:[任务 id]}] */
+      const groupsState = React.useState([]);
+      const groups = groupsState[0];
+      const setGroups = groupsState[1];
 
       const sessionId = props.sessionId;
 
@@ -2963,7 +2975,42 @@ window.__ModuleLoader__.load({
           rows.forEach(function (row) {
             bodies[row.id] = row.body || '';
           });
-          return { rows: rows, bodies: bodies };
+          /* 顺带读分组文件（同目录的 groups.jsonl）。
+           *
+           * **走文件不走命令**：命令通道会在会话里留痕。
+           * 文件不存在是正常情况（还没建过任何分组），静默当成空表。 */
+          const groupsPath = String(paths.store || '').replace(/[\\/][^\\/]+$/u, '') + '\\groups.jsonl';
+          return Promise.resolve(files.read(sessionId, groupsPath, { limit: 2000 }, undefined))
+            .then(function (grouped) {
+              const out = new Map();
+              if (grouped && grouped.ok === true) {
+                String(grouped.value.text || '')
+                  .split(/\r?\n/u)
+                  .forEach(function (line) {
+                    if (line.trim() === '') return;
+                    let event = null;
+                    try {
+                      event = JSON.parse(line);
+                    } catch (failure) {
+                      return;
+                    }
+                    if (!event || event.op !== 'upsert' || !event.group || !event.group.id) return;
+                    out.set(event.group.id, {
+                      id: event.group.id,
+                      name: String(event.group.name || ''),
+                      members: Array.isArray(event.group.members) ? event.group.members.map(String) : [],
+                    });
+                  });
+              }
+              /* 名字为空 = 墓碑（已删除），不显示。 */
+              const list = [...out.values()].filter(function (item) {
+                return item.name !== '';
+              });
+              return { rows: rows, bodies: bodies, groups: list };
+            })
+            .catch(function () {
+              return { rows: rows, bodies: bodies, groups: [] };
+            });
         });
       };
 
@@ -2979,6 +3026,7 @@ window.__ModuleLoader__.load({
           })
           .then(function (result) {
             setData({ tasks: result.rows.map(fromApi), bodies: result.bodies, live: true, error: '' });
+            setGroups(result.groups || []);
           })
           .catch(function (error) {
             /* 不再静默降级成样例数据冒充真数据：说清楚读不到，并保留样例做视觉占位。 */
@@ -3234,6 +3282,10 @@ window.__ModuleLoader__.load({
       const archivedState = React.useState(false);
       const showArchived = archivedState[0];
       const setShowArchived = archivedState[1];
+      /* 当前选中的分组：`''` = 全部，`__none__` = 没归组，其它是分组 id。 */
+      const groupPickState = React.useState('');
+      const groupPick = groupPickState[0];
+      const setGroupPick = groupPickState[1];
       const filterState = React.useState('');
       const groupFilter = filterState[0];
       const setGroupFilter = filterState[1];
@@ -3256,6 +3308,15 @@ window.__ModuleLoader__.load({
             /* 归档：默认不显示。用户要求"归档以后界面不显示，
                但索引还在，可以显示已归档"。 */
             if (node.archived && !showArchived) return false;
+            /* 分组筛选：`''` 不筛；`__none__` 只看没归组的。 */
+            if (groupPick !== '') {
+              const own = Array.isArray(node.groupsOf) ? node.groupsOf : [];
+              if (groupPick === '__none__') {
+                if (own.length > 0) return false;
+              } else if (own.indexOf(groupPick) === -1) {
+                return false;
+              }
+            }
             if (groupFilter !== '') {
               const groups = groupsOf(node.status);
               if (node.status === '未指定') {
@@ -3271,7 +3332,7 @@ window.__ModuleLoader__.load({
             return true;
           });
         },
-        [allTasks, groupFilter, search, showArchived],
+        [allTasks, groupFilter, search, showArchived, groupPick],
       );
 
       const graph = React.useMemo(
@@ -3499,6 +3560,84 @@ window.__ModuleLoader__.load({
             busy ? '刷新中…' : '刷新',
           ),
         ),
+        /* 分组切换（真正的那个「分组」）。
+         *
+         * 用户原话：「肯定要分组啊。我这里打插件要这些任务。
+         * 等下我写程序还要这些任务干什么？」
+         *
+         * 所以这是**主筛选器**，放在最上面。切换分组 = 切换手头的项目。
+         * 分组是独立的命名集合（存在 groups.jsonl），**不是** workspace 字段——
+         * 那是"能读哪个目录"的权限，用户为了读别的项目把它设成了仓库根目录。 */
+        groups.length > 0
+          ? h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+              h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', flex: 'none' } }, '分组'),
+              (function () {
+                const buttons = [
+                  h(
+                    'button',
+                    {
+                      key: 'gp-all',
+                      type: 'button',
+                      onClick: function () {
+                        setGroupPick('');
+                      },
+                      style: Object.assign({}, buttonBase(groupPick === ''), { padding: '2px 10px' }),
+                    },
+                    '全部',
+                  ),
+                ];
+                groups.forEach(function (group) {
+                  const count = allTasks.filter(function (item) {
+                    return Array.isArray(item.groupsOf) && item.groupsOf.indexOf(group.id) !== -1;
+                  }).length;
+                  const active = groupPick === group.id;
+                  buttons.push(
+                    h(
+                      'button',
+                      {
+                        key: 'gp-' + group.id,
+                        type: 'button',
+                        title: group.members.length + ' 条',
+                        onClick: function () {
+                          setGroupPick(active ? '' : group.id);
+                        },
+                        style: Object.assign({}, buttonBase(active), {
+                          padding: '2px 10px',
+                          opacity: active ? 1 : 0.75,
+                        }),
+                      },
+                      group.name + '（' + count + '）',
+                    ),
+                  );
+                });
+                const loose = allTasks.filter(function (item) {
+                  return !Array.isArray(item.groupsOf) || item.groupsOf.length === 0;
+                }).length;
+                if (loose > 0) {
+                  buttons.push(
+                    h(
+                      'button',
+                      {
+                        key: 'gp-none',
+                        type: 'button',
+                        onClick: function () {
+                          setGroupPick(groupPick === '__none__' ? '' : '__none__');
+                        },
+                        style: Object.assign({}, buttonBase(groupPick === '__none__'), {
+                          padding: '2px 10px',
+                          opacity: groupPick === '__none__' ? 1 : 0.75,
+                        }),
+                      },
+                      '未归组（' + loose + '）',
+                    ),
+                  );
+                }
+                return buttons;
+              })(),
+            )
+          : null,
         /* 过滤条（T-020）：按组 + 搜索。 */
         h(
           'div',
