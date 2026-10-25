@@ -1911,9 +1911,6 @@
         "panel.body": "\u8FD9\u91CC\u5C06\u6765\u653E\u9762\u677F\u5185\u5BB9\u3002",
         "panel.note": "\u9762\u677F\u4F1A\u4E00\u76F4\u4FDD\u6301\u6253\u5F00\uFF0C\u53EA\u6709\u518D\u6B21\u70B9\u51FB\u4E0A\u9762\u7684\u7BAD\u5934\u6309\u94AE\u624D\u4F1A\u6536\u8D77\u3002",
         "board.count": "\u5171 {n} \u6761 \xB7 \u5DF2\u542F\u7528 {on} \u6761",
-        "board.expandAll": "\u5168\u90E8\u5C55\u5F00",
-        "board.collapseAll": "\u5168\u90E8\u6536\u8D77",
-        "board.off": "\u672A\u542F\u7528",
         "board.empty": "\u8FD8\u6CA1\u6709\u4EFB\u52A1\u3002",
         "board.tree": "\u79D1\u6280\u6811",
         "board.list": "\u5217\u8868"
@@ -1925,9 +1922,6 @@
         "panel.body": "\u8FD9\u91CC\u5C06\u6765\u653E\u9762\u677F\u5185\u5BB9\u3002",
         "panel.note": "\u9762\u677F\u4F1A\u4E00\u76F4\u4FDD\u6301\u6253\u5F00\uFF0C\u53EA\u6709\u518D\u6B21\u70B9\u51FB\u4E0A\u9762\u7684\u7BAD\u5934\u6309\u94AE\u624D\u4F1A\u6536\u8D77\u3002",
         "board.count": "\u5171 {n} \u6761 \xB7 \u5DF2\u542F\u7528 {on} \u6761",
-        "board.expandAll": "\u5168\u90E8\u5C55\u5F00",
-        "board.collapseAll": "\u5168\u90E8\u6536\u8D77",
-        "board.off": "\u672A\u542F\u7528",
         "board.empty": "\u8FD8\u6CA1\u6709\u4EFB\u52A1\u3002",
         "board.tree": "\u79D1\u6280\u6811",
         "board.list": "\u5217\u8868"
@@ -1939,9 +1933,6 @@
         "panel.body": "Panel content goes here.",
         "panel.note": "The panel stays open until you click the arrow button again.",
         "board.count": "{n} tasks \xB7 {on} enabled",
-        "board.expandAll": "Expand all",
-        "board.collapseAll": "Collapse all",
-        "board.off": "Disabled",
         "board.empty": "No tasks yet.",
         "board.tree": "Tech tree",
         "board.list": "List"
@@ -2218,12 +2209,6 @@
         }
         return depth;
       }
-      const DEFAULT_COLLAPSED = {};
-      SAMPLE_TASKS.forEach(function(node) {
-        if ((TASK_CHILDREN[node.id] || []).length > 0 && taskDepth(node) >= 1) {
-          DEFAULT_COLLAPSED[node.id] = true;
-        }
-      });
       const STATUS_GROUPS = {
         "\u672A\u6307\u5B9A": [],
         "\u63D0\u4EA4": ["\u8FDB\u884C"],
@@ -2295,8 +2280,31 @@
       function statusTone(status) {
         return "var(--dsw-alias-" + statusA2A(status).tone + ")";
       }
-      const TEMPLATE_DIR = "X:\\temp\\dsh\\\u5F00\u53D1\\taskboard\\templates";
-      const STORE_FILE = "C:\\Users\\16229\\.dsh\\taskboard\\plans.jsonl";
+      let PATHS = null;
+      function guessHomeDirs() {
+        const homes = [];
+        try {
+          if (typeof window !== "undefined" && window.__DSH_BOOT__) {
+            const boot = window.__DSH_BOOT__;
+            if (boot && typeof boot.dshHome === "string" && boot.dshHome !== "") homes.push(boot.dshHome);
+          }
+        } catch (failure) {
+        }
+        homes.push("C:\\Users\\16229\\.dsh");
+        return homes;
+      }
+      function templateDirCandidates() {
+        return ["X:\\temp\\dsh\\\u5F00\u53D1\\taskboard\\templates"];
+      }
+      async function ensurePaths() {
+        if (PATHS !== null) return PATHS;
+        const home = guessHomeDirs()[0] || "C:\\Users\\16229\\.dsh";
+        PATHS = {
+          store: home + "\\taskboard\\plans.jsonl",
+          templates: templateDirCandidates()[0] || ""
+        };
+        return PATHS;
+      }
       function fileRpc() {
         try {
           const remote = pluginRuntime && pluginRuntime.remote;
@@ -2333,21 +2341,19 @@
           body
         });
       }
-      const TYPE_TO_KIND = {
+      const KIND_LABELS = {
+        goal: "\u76EE\u6807",
+        design: "\u8BBE\u8BA1",
+        record: "\u8BB0\u5F55",
+        work: "\u5DE5\u4F5C"
+      };
+      const LEGACY_TYPE_LABELS = {
         A: "\u95EE\u9898",
         B: "\u8BBE\u8BA1",
         C: "\u63A5\u53E3",
         D: "\u5B9E\u73B0",
         R: "\u7814\u7A76",
-        F: "\u590D\u76D8",
-        H1: "\u6401\u7F6E\xB7\u6388\u6743",
-        H2: "\u6401\u7F6E\xB7\u6388\u6743",
-        H3: "\u6401\u7F6E\xB7\u6388\u6743",
-        H4: "\u6401\u7F6E\xB7\u8865\u5145",
-        H5: "\u6401\u7F6E\xB7\u8865\u5145",
-        H6: "\u6401\u7F6E\xB7\u6388\u6743",
-        H7: "\u6401\u7F6E\xB7\u6388\u6743",
-        H8: "\u6401\u7F6E\xB7\u8865\u5145"
+        F: "\u590D\u76D8"
       };
       function fromApi(row) {
         const type = String(row.type || "").toUpperCase();
@@ -2364,10 +2370,12 @@
         });
         return {
           id: row.id,
-          /* 原始类型码：编辑时回填表单要用它，不能从 kind 反推（搁置模板 H1..H8 反推不出来）。 */
+          /* 原始类型码：编辑时回填表单要用它。宿主的 /tasks 已经归一成双字母编号。 */
           typeCode: type,
           title: row.title || row.id,
-          kind: TYPE_TO_KIND[type] || "\u8BA1\u5212",
+          /* kind 优先用宿主给的（四类别模型）；没有才按旧 type 兜底。 */
+          kindKey: String(row.kind || "").trim(),
+          kind: KIND_LABELS[String(row.kind || "").trim()] || LEGACY_TYPE_LABELS[type] || type || "\u4E8B\u9879",
           status,
           on: status === "\u63D0\u4EA4" || status === "\u5904\u7406\u4E2D",
           parent: row.parent || "",
@@ -2546,6 +2554,93 @@
           width: Math.max(NODE_W + 8, box.width || 0),
           height: Math.max(NODE_H + 8, box.height || 0)
         };
+      }
+      function TaskList(props) {
+        const tasks = props.tasks;
+        const byGroup = [
+          { id: "\u8FDB\u884C", label: "\u8FDB\u884C" },
+          { id: "\u6401\u7F6E", label: "\u6401\u7F6E" },
+          { id: "\u5B8C\u6210", label: "\u5B8C\u6210" },
+          { id: "", label: "\u8349\u7A3F" }
+        ];
+        const bucket = function(node) {
+          if (node.status === "\u672A\u6307\u5B9A") return "";
+          const groups = groupsOf(node.status);
+          if (groups.indexOf("\u6401\u7F6E") !== -1) return "\u6401\u7F6E";
+          if (groups.indexOf("\u8FDB\u884C") !== -1) return "\u8FDB\u884C";
+          return "\u5B8C\u6210";
+        };
+        return h(
+          "div",
+          { style: { height: 336, overflow: "auto", display: "flex", flexDirection: "column", gap: 10, paddingRight: 4 } },
+          byGroup.map(function(group) {
+            const rows = tasks.filter(function(node) {
+              return bucket(node) === group.id;
+            });
+            if (rows.length === 0) return null;
+            return h(
+              "div",
+              { key: "grp-" + (group.id || "draft"), style: { display: "flex", flexDirection: "column", gap: 4 } },
+              h(
+                "div",
+                {
+                  style: {
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--dsw-alias-label-secondary)",
+                    paddingBottom: 2,
+                    borderBottom: "1px solid var(--dsw-alias-border-l1)"
+                  }
+                },
+                group.label + "\uFF08" + rows.length + "\uFF09"
+              ),
+              rows.map(function(node) {
+                return h(
+                  "div",
+                  {
+                    key: "row-" + node.id,
+                    onClick: function() {
+                      props.onSelect(node.id);
+                    },
+                    style: clickableStyle({
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "5px 8px",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      background: props.selected === node.id ? "var(--dsw-alias-bg-layer-2)" : "var(--dsw-alias-bg-layer-1)",
+                      border: "3px solid " + (props.selected === node.id ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)")
+                    })
+                  },
+                  h("span", { style: idChipStyle }, node.id),
+                  h("span", { style: kindChipStyle }, node.kind),
+                  h(
+                    "span",
+                    {
+                      style: {
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 12,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        color: "var(--dsw-alias-label-primary)"
+                      }
+                    },
+                    node.title
+                  ),
+                  h(
+                    "span",
+                    { style: { fontSize: 11, flex: "none", color: statusTone(node.status) } },
+                    node.status + " \xB7 " + groupLabel(node.status)
+                  )
+                );
+              })
+            );
+          }),
+          tasks.length === 0 ? h("div", { style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" } }, "\u6CA1\u6709\u7B26\u5408\u6761\u4EF6\u7684\u4E8B\u9879\u3002") : null
+        );
       }
       function TechTree(props) {
         const graph = props.graph;
@@ -2995,6 +3090,36 @@
               node.summary,
               props.body ? h("div", { style: { marginTop: 10, whiteSpace: "pre-wrap", color: "var(--dsw-alias-label-primary)" } }, props.body) : null
             )
+          ),
+          section(
+            "\u5386\u53F2",
+            props.history && props.history.length > 0 ? h(
+              "div",
+              { style: { display: "flex", flexDirection: "column", gap: 4 } },
+              props.history.slice().reverse().map(function(entry, index) {
+                const when = entry.ts ? entry.ts.replace("T", " ").replace(/\..*$/u, "") : "\u2014";
+                const who = entry.actor || "\u2014";
+                const move = entry.from && entry.to ? entry.from + " \u2192 " + entry.to : "\u72B6\u6001=" + entry.status;
+                return h(
+                  "div",
+                  {
+                    key: "hist-" + index,
+                    style: {
+                      display: "flex",
+                      gap: 8,
+                      fontSize: 11,
+                      lineHeight: "18px",
+                      color: "var(--dsw-alias-label-secondary)",
+                      borderLeft: "2px solid var(--dsw-alias-border-l1)",
+                      paddingLeft: 8
+                    }
+                  },
+                  h("span", { style: { flex: "none", width: 128 } }, when),
+                  h("span", { style: { flex: "none", width: 90, overflow: "hidden", textOverflow: "ellipsis" } }, who),
+                  h("span", { style: { color: "var(--dsw-alias-label-primary)" } }, move)
+                );
+              })
+            ) : h("div", { style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" } }, "\u6CA1\u6709\u53EF\u8BFB\u7684\u5386\u53F2\u4E8B\u4EF6\u3002")
           )
         );
       }
@@ -3092,22 +3217,43 @@
         flush();
         return out;
       }
-      const TYPE_LABELS = [
-        ["A", "\u95EE\u9898"],
-        ["B", "\u8BBE\u8BA1"],
-        ["C", "\u63A5\u53E3"],
-        ["D", "\u5B9E\u73B0"],
-        ["R", "\u7814\u7A76"],
-        ["F", "\u590D\u76D8"],
-        ["H1", "\u6401\u7F6E \xB7 \u6388\u6743-\u4EE3\u4EF7\u8FC7\u5927"],
-        ["H2", "\u6401\u7F6E \xB7 \u6388\u6743-\u7528\u6237\u8F6C\u79FB\u8BDD\u9898"],
-        ["H3", "\u6401\u7F6E \xB7 \u6388\u6743-\u65B9\u6848\u7F3A\u9677\u8FC7\u5927"],
-        ["H4", "\u6401\u7F6E \xB7 \u8865\u5145-\u7F3A\u7528\u6237\u4FE1\u606F"],
-        ["H5", "\u6401\u7F6E \xB7 \u8865\u5145-\u9700\u8981\u5148\u8C03\u7814"],
-        ["H6", "\u6401\u7F6E \xB7 \u6388\u6743-\u8D44\u6E90\u88AB\u5360\u7528"],
-        ["H7", "\u6401\u7F6E \xB7 \u6388\u6743-\u7F3A\u6743\u9650/\u73AF\u5883"],
-        ["H8", "\u6401\u7F6E \xB7 \u8865\u5145-\u5B50\u4EFB\u52A1\u672A\u56DE\u6536"]
+      function templateLabelSet(templates) {
+        const out = [];
+        const seen = /* @__PURE__ */ Object.create(null);
+        Object.keys(templates || {}).forEach(function(type) {
+          const yaml = String(templates[type] || "");
+          const match = /^name:\s*(.+)$/mu.exec(yaml);
+          let label = match ? match[1].trim() : "";
+          label = label.replace(/^[A-Z]{1,2}\s*[·・.]\s*/u, "").trim();
+          if (label === "") label = type;
+          if (seen[type]) return;
+          seen[type] = true;
+          out.push([type, label]);
+        });
+        out.sort(function(left, right) {
+          return left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0;
+        });
+        return out;
+      }
+      function kindOfTemplate(yaml) {
+        const match = /^(?:default_)?kind:\s*(\w+)$/mu.exec(String(yaml || ""));
+        return match ? match[1] : "";
+      }
+      function templateDomain(yaml) {
+        const match = /^domain:\s*(\w+)$/mu.exec(String(yaml || ""));
+        return match ? match[1] : "general";
+      }
+      const DOMAIN_OPTIONS = [
+        ["code", "\u4EE3\u7801"],
+        ["art", "\u7ED8\u753B"],
+        ["writing", "\u5199\u4F5C"],
+        ["general", "\u901A\u7528"],
+        ["", "\u5168\u90E8\u9886\u57DF"]
       ];
+      let REMEMBERED_DOMAIN = "code";
+      function rememberDomain(value) {
+        REMEMBERED_DOMAIN = value;
+      }
       const formInputStyle = clickableStyle({
         width: "100%",
         boxSizing: "border-box",
@@ -3141,6 +3287,12 @@
         const typeState = React.useState(initialType);
         const type = typeState[0];
         const setType = typeState[1];
+        const kindState = React.useState(init.kind === void 0 ? "goal" : init.kind);
+        const kind = kindState[0];
+        const setKind = kindState[1];
+        const domainState = React.useState(init.domain || REMEMBERED_DOMAIN || "code");
+        const domain = domainState[0];
+        const setDomain = domainState[1];
         const valuesState = React.useState(initialValues);
         const values = valuesState[0];
         const setValues = valuesState[1];
@@ -3169,6 +3321,8 @@
         const fields = template ? template.items.filter(function(item) {
           return item.type !== "markdown";
         }) : [];
+        const templateMissing = type !== "" && template === null;
+        const fallbackToPlainText = templateMissing && String(init.body || "").trim() !== "";
         const updateLink = function(index, patch) {
           const next = links.slice();
           next[index] = Object.assign({}, next[index], patch);
@@ -3180,7 +3334,9 @@
             return;
           }
           let text = "";
-          if (type !== "") {
+          if (fallbackToPlainText) {
+            text = body;
+          } else if (type !== "") {
             const parts = [];
             let missing = "";
             fields.forEach(function(item) {
@@ -3223,6 +3379,8 @@
           props.onSubmit({
             title: title.trim(),
             type,
+            /* 空串 = 让宿主按模板推断；非空则显式指定大类。 */
+            kind,
             body: text,
             parent,
             links: linkText,
@@ -3269,28 +3427,99 @@
             h(
               "div",
               { style: { width: 440, flex: "none", display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "auto", paddingRight: 6 } },
+              /* 标题独占一行（用户要求）。 */
+              h("input", {
+                value: title,
+                placeholder: "\u6807\u9898\uFF08\u4E00\u53E5\u8BDD\uFF09",
+                onChange: function(event) {
+                  setTitle(event.target.value);
+                },
+                style: Object.assign({}, formInputStyle, { width: "100%", flex: "none" })
+              }),
               h(
                 "div",
                 { style: { display: "flex", gap: 8 } },
-                h("input", {
-                  value: title,
-                  placeholder: "\u6807\u9898\uFF08\u4E00\u53E5\u8BDD\uFF09",
-                  onChange: function(event) {
-                    setTitle(event.target.value);
+                /* 领域在**最左**：它是筛选器，先排除"我现在不想看到的东西"。
+                   用户原话：「左边再放一个领域。作为筛选。我写程序的时候不想看到小说的模板。」
+                   领域记在内存里，下次打开沿用上次选的。 */
+                h(
+                  "select",
+                  {
+                    value: domain,
+                    onChange: function(event) {
+                      const next = event.target.value;
+                      setDomain(next);
+                      rememberDomain(next);
+                      if (type !== "" && templateDomain(templates[type]) !== next) setType("");
+                    },
+                    title: "\u9886\u57DF\uFF1A\u53EA\u5F71\u54CD\u6A21\u677F\u4E0B\u62C9\u663E\u793A\u4EC0\u4E48\uFF0C\u4E0D\u5F71\u54CD\u5DF2\u5B58\u5728\u7684\u4E8B\u9879",
+                    style: Object.assign({}, formInputStyle, { width: 96, flex: "none" })
                   },
-                  style: Object.assign({}, formInputStyle, { flex: 1 })
-                }),
+                  DOMAIN_OPTIONS.map(function(pair) {
+                    return h("option", { key: "domain-" + pair[0], value: pair[0] }, pair[1]);
+                  })
+                ),
+                /* 大类：先决定"这是哪一类"，模板列表跟着被筛。
+                                 用户原话：「大类在左边，而且大类是筛选。大类下拉框在目标的时候只能显示类别为目标的模板。」
+                
+                                 模板编号是 `大类前缀 + 模板字母`（MG / SQ / JB / GR…），
+                                 所以按首字母就能筛，不用额外查表。 */
+                h(
+                  "select",
+                  {
+                    value: kind,
+                    onChange: function(event) {
+                      const next = event.target.value;
+                      setKind(next);
+                      if (type !== "" && next !== "") {
+                        const prefix = { goal: "M", design: "S", record: "J", work: "G" }[next];
+                        if (prefix && type.charAt(0) !== prefix) setType("");
+                      }
+                    },
+                    title: "\u5927\u7C7B\u51B3\u5B9A\u8C01\u80FD\u6807\u5B8C\u6210\uFF1A\u76EE\u6807\u7531\u5B50\u4E8B\u9879\u63A8\u5BFC\u3001\u8BBE\u8BA1\u7B49\u4F60\u70B9\u5934\u3001\u8BB0\u5F55\u5199\u5B8C\u5373\u5B8C\u3001\u5DE5\u4F5C\u7531 AI \u505A\u51FA\u6765",
+                    style: Object.assign({}, formInputStyle, { width: 104, flex: "none" })
+                  },
+                  [["", "\u5168\u90E8\u5927\u7C7B"]].concat(
+                    Object.keys(KIND_LABELS).map(function(key) {
+                      return [key, KIND_LABELS[key]];
+                    })
+                  ).map(function(pair) {
+                    return h(
+                      "option",
+                      { key: "kind-" + (pair[0] || "all"), value: pair[0] },
+                      pair[0] === "" ? pair[1] : pair[0] + " \xB7 " + pair[1]
+                    );
+                  })
+                ),
+                /* 模板：只列「所选大类」下的。大类为空时列全部。 */
                 h(
                   "select",
                   {
                     value: type,
                     onChange: function(event) {
-                      setType(event.target.value);
+                      const next = event.target.value;
+                      setType(next);
+                      if (next !== "") {
+                        const declared = kindOfTemplate(templates[next]);
+                        if (declared !== "") setKind(declared);
+                      }
                     },
-                    style: Object.assign({}, formInputStyle, { width: 132, flex: "none" })
+                    style: Object.assign({}, formInputStyle, { flex: 1, minWidth: 0 })
                   },
-                  [["", "\u7A7A\u6A21\u677F"]].concat(TYPE_LABELS).map(function(pair) {
-                    return h("option", { key: "type-" + (pair[0] || "blank"), value: pair[0] }, pair[0] === "" ? pair[1] : pair[0] + " \xB7 " + pair[1]);
+                  [["", "\u7A7A\u6A21\u677F"]].concat(
+                    templateLabelSet(templates).filter(function(pair) {
+                      const own = templateDomain(templates[pair[0]]);
+                      if (domain !== "" && own !== domain && own !== "general") return false;
+                      if (kind === "") return true;
+                      return kindOfTemplate(templates[pair[0]]) === kind;
+                    })
+                  ).map(function(pair) {
+                    return h(
+                      "option",
+                      { key: "type-" + (pair[0] || "blank"), value: pair[0] },
+                      /* 不重复拼编号：模板名已去掉前缀，这里补上编号一次。 */
+                      pair[0] === "" ? pair[1] : pair[0] + " \xB7 " + pair[1]
+                    );
                   })
                 )
               ),
@@ -3414,6 +3643,20 @@
               "div",
               { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "auto", paddingRight: 6, borderLeft: "1px solid var(--dsw-alias-border-l1)", paddingLeft: 16 } },
               template && type !== "" ? h("div", { style: lineStyle }, template.name + "\uFF1A" + template.description) : null,
+              fallbackToPlainText ? h(
+                "div",
+                {
+                  style: {
+                    fontSize: 11,
+                    lineHeight: 1.6,
+                    padding: "6px 8px",
+                    borderRadius: 8,
+                    border: "1px solid var(--dsw-alias-state-warn-primary)",
+                    color: "var(--dsw-alias-state-warn-primary)"
+                  }
+                },
+                "\u6A21\u677F " + type + " \u6CA1\u52A0\u8F7D\u51FA\u6765\uFF0C\u5DF2\u5207\u5230\u7EAF\u6587\u672C\u7F16\u8F91\uFF1A\u4E0B\u9762\u662F\u8BA1\u5212\u539F\u6587\uFF0C\u76F4\u63A5\u6539 Markdown \u5373\u53EF\u3002"
+              ) : null,
               type !== "" ? h(
                 "div",
                 { style: { display: "flex", flexDirection: "column", gap: 10 } },
@@ -3439,14 +3682,24 @@
                     item.type === "input" ? h("input", Object.assign({}, common, { style: formInputStyle })) : h("textarea", Object.assign({}, common, { rows: 3, style: Object.assign({}, formInputStyle, { resize: "vertical" }) }))
                   );
                 }) : h("div", { style: lineStyle }, "\u6A21\u677F\u8FD8\u6CA1\u52A0\u8F7D\u51FA\u6765\uFF08\u68C0\u67E5\u5BBF\u4E3B\u63D2\u4EF6\u662F\u5426\u5728\u8DD1\uFF09")
-              ) : h("textarea", {
+              ) : null,
+              /* 模板缺失且有原文 → 纯文本兜底，保证内容不丢。 */
+              fallbackToPlainText ? h("textarea", {
+                value: body,
+                placeholder: "\u6B63\u6587\uFF08Markdown\uFF09",
+                onChange: function(event) {
+                  setBody(event.target.value);
+                },
+                style: Object.assign({}, formInputStyle, { flex: 1, minHeight: 200, resize: "vertical" })
+              }) : null,
+              type === "" ? h("textarea", {
                 value: body,
                 placeholder: "\u6B63\u6587\uFF08Markdown\uFF09\u2014\u2014\u7A7A\u6A21\u677F\uFF0C\u4ECE\u96F6\u5199",
                 onChange: function(event) {
                   setBody(event.target.value);
                 },
                 style: Object.assign({}, formInputStyle, { flex: 1, minHeight: 160, resize: "vertical" })
-              })
+              }) : null
             )
           ),
           h(
@@ -3473,6 +3726,9 @@
         const noteState = React.useState({ id: "", draft: "", error: "" });
         const note = noteState[0];
         const setNote = noteState[1];
+        const historyState = React.useState({ id: "", entries: [] });
+        const historyInfo = historyState[0];
+        const setHistoryInfo = historyState[1];
         const createState = React.useState({ open: false, busy: false, error: "" });
         const create = createState[0];
         const setCreate = createState[1];
@@ -3486,16 +3742,10 @@
         const templates = templatesState[0];
         const setTemplates = templatesState[1];
         const sessionId = props.sessionId;
-        const load = React.useCallback(function() {
-          if (typeof sessionId !== "string" || sessionId === "") return;
-          setBusy(true);
+        const loadViaFiles = function(paths) {
           const files = fileRpc();
-          if (files === null) {
-            setData({ tasks: SAMPLE_TASKS, bodies: {}, live: false, error: "\u6CA1\u6709\u6587\u4EF6 RPC\uFF08workspaceFiles\uFF09\uFF0C\u8BFB\u4E0D\u5230\u8BA1\u5212\u5E93" });
-            setBusy(false);
-            return;
-          }
-          Promise.resolve(files.read(sessionId, STORE_FILE, { limit: 5e3 }, void 0)).then(function(result) {
+          if (files === null) throw new Error("\u6CA1\u6709\u6587\u4EF6 RPC\uFF08workspaceFiles\uFF09");
+          return Promise.resolve(files.read(sessionId, paths.store, { limit: 5e3 }, void 0)).then(function(result) {
             if (!result || result.ok !== true) {
               throw new Error("\u8BFB\u53D6\u8BA1\u5212\u5E93\u5931\u8D25\uFF1A" + String(result && result.error && result.error.message || "\u672A\u77E5\u9519\u8BEF"));
             }
@@ -3523,9 +3773,23 @@
             rows.forEach(function(row) {
               bodies[row.id] = row.body || "";
             });
-            setData({ tasks: rows.map(fromApi), bodies, live: true, error: "" });
+            return { rows, bodies };
+          });
+        };
+        const load = React.useCallback(function() {
+          if (typeof sessionId !== "string" || sessionId === "") return;
+          setBusy(true);
+          ensurePaths().then(function(paths) {
+            return loadViaFiles(paths);
+          }).then(function(result) {
+            setData({ tasks: result.rows.map(fromApi), bodies: result.bodies, live: true, error: "" });
           }).catch(function(error) {
-            setData({ tasks: SAMPLE_TASKS, bodies: {}, live: false, error: String(error && error.message || error) });
+            setData({
+              tasks: SAMPLE_TASKS,
+              bodies: {},
+              live: false,
+              error: "\u8BFB\u4E0D\u5230\u8BA1\u5212\u5E93\uFF1A" + String(error && error.message || error) + "\uFF08\u4E0B\u9762\u663E\u793A\u7684\u662F\u6837\u4F8B\u6570\u636E\uFF09"
+            });
           }).then(function() {
             setBusy(false);
           });
@@ -3569,47 +3833,41 @@
             setNote({ id: activeNodeId, draft: value, error: String(error && error.message || error) });
           });
         };
+        const loadTemplates = function(onError) {
+          runCommand("/task-templates", sessionId).then(function(settled) {
+            const text = commandText(settled);
+            const list = JSON.parse(text);
+            if (!Array.isArray(list)) throw new Error("/task-templates \u6CA1\u8FD4\u56DE\u6570\u7EC4");
+            const map = {};
+            list.forEach(function(item) {
+              if (item && typeof item.type === "string" && item.type !== "" && item.yaml) {
+                map[item.type] = item.yaml;
+              }
+            });
+            if (Object.keys(map).length === 0) {
+              if (onError) onError("\u5BBF\u4E3B\u8FD4\u56DE\u4E86 0 \u4E2A\u6A21\u677F\uFF08\u68C0\u67E5 templates \u76EE\u5F55\uFF09");
+              return;
+            }
+            setTemplates(map);
+          }).catch(function(error) {
+            if (onError) onError(String(error && error.message || error));
+          });
+        };
         const openCreate = function() {
           setEditId("");
           setCreate({ open: true, busy: false, error: "" });
           if (Object.keys(templates).length > 0) return;
-          const files = fileRpc();
-          if (files === null) {
-            setCreate({ open: true, busy: false, error: "\u8BFB\u4E0D\u5230\u6A21\u677F\uFF1A\u6CA1\u6709\u6587\u4EF6 RPC" });
-            return;
-          }
-          const types = [
-            "A",
-            "B",
-            "C",
-            "D",
-            "R",
-            "F",
-            "H1",
-            "H2",
-            "H3",
-            "H4",
-            "H5",
-            "H6",
-            "H7",
-            "H8"
-          ];
-          Promise.all(
-            types.map(function(type) {
-              return Promise.resolve(files.read(sessionId, TEMPLATE_DIR + "\\" + type + ".yml", { limit: 400 }, void 0)).then(function(result) {
-                return result && result.ok === true ? [type, result.value.text] : [type, ""];
-              }).catch(function() {
-                return [type, ""];
-              });
-            })
-          ).then(function(pairs) {
-            const map = {};
-            pairs.forEach(function(pair) {
-              if (pair[1]) map[pair[0]] = pair[1];
-            });
-            setTemplates(map);
-          }).catch(function(error) {
-            setCreate({ open: true, busy: false, error: String(error && error.message || error) });
+          loadTemplates(function(message) {
+            setCreate({ open: true, busy: false, error: message });
+          });
+        };
+        const openEdit = function(node, mode) {
+          setSelected(node.id);
+          setEditMode(mode);
+          setEditId(node.id);
+          if (Object.keys(templates).length > 0) return;
+          loadTemplates(function(message) {
+            setCreate({ open: false, busy: false, error: message });
           });
         };
         const submitCreate = function(payload) {
@@ -3648,7 +3906,37 @@
             setCreate({ open: false, busy: false, error: String(error && error.message || error) });
           });
         };
-        const tasks = data.tasks;
+        const viewState = React.useState("tree");
+        const view = viewState[0];
+        const setView = viewState[1];
+        const filterState = React.useState("");
+        const groupFilter = filterState[0];
+        const setGroupFilter = filterState[1];
+        const searchState = React.useState("");
+        const search = searchState[0];
+        const setSearch = searchState[1];
+        const allTasks = data.tasks;
+        const tasks = React.useMemo(
+          function() {
+            const needle = search.trim().toLowerCase();
+            return allTasks.filter(function(node) {
+              if (groupFilter !== "") {
+                const groups = groupsOf(node.status);
+                if (node.status === "\u672A\u6307\u5B9A") {
+                  if (groupFilter !== "\u8349\u7A3F") return false;
+                } else if (groups.indexOf(groupFilter) === -1) {
+                  return false;
+                }
+              }
+              if (needle !== "") {
+                const hay = (node.id + " " + node.title).toLowerCase();
+                if (hay.indexOf(needle) === -1) return false;
+              }
+              return true;
+            });
+          },
+          [allTasks, groupFilter, search]
+        );
         const graph = React.useMemo(
           function() {
             return buildGraph(tasks);
@@ -3658,11 +3946,56 @@
         const activeNode = selected && graph.byId[selected] ? graph.byId[selected].node : null;
         const activeId = activeNode ? activeNode.id : "";
         const activeNodeId = activeId;
+        React.useEffect(
+          function() {
+            if (activeNodeId === "") return void 0;
+            if (historyInfo.id === activeNodeId) return void 0;
+            let canceled = false;
+            ensurePaths().then(function(paths) {
+              const files = fileRpc();
+              if (paths === null || files === null) throw new Error("\u6CA1\u6709\u6587\u4EF6\u901A\u9053");
+              return Promise.resolve(files.read(sessionId, paths.store, { limit: 5e3 }, void 0));
+            }).then(function(result) {
+              if (!result || result.ok !== true) throw new Error("\u8BFB\u4E0D\u5230\u8BA1\u5212\u5E93");
+              const entries = [];
+              String(result.value.text || "").split(/\r?\n/u).filter(function(line) {
+                return line.trim() !== "";
+              }).forEach(function(line) {
+                let event = null;
+                try {
+                  event = JSON.parse(line);
+                } catch (failure) {
+                  return;
+                }
+                if (!event || event.op !== "upsert" || !event.task) return;
+                if (String(event.task.id) !== activeNodeId) return;
+                entries.push({
+                  ts: event.ts || "",
+                  actor: event.actor || "",
+                  from: event.from || "",
+                  to: event.to || "",
+                  status: event.task.status || ""
+                });
+              });
+              if (canceled) return;
+              setHistoryInfo({ id: activeNodeId, entries: entries.slice(-30) });
+            }).catch(function() {
+              if (canceled) return;
+              setHistoryInfo({ id: activeNodeId, entries: [] });
+            });
+            return function() {
+              canceled = true;
+            };
+          },
+          [activeNodeId, historyInfo.id, sessionId]
+        );
         const editNode = editId && graph.byId[editId] ? graph.byId[editId].node : null;
         const editInitial = editNode ? {
           id: editNode.id,
           title: editMode === "fork" ? editNode.title + "\uFF08\u5206\u652F\uFF09" : editNode.title,
           type: editNode.typeCode || "",
+          /* 回填大类：编辑时能看到当前是目标/设计/记录/工作，也能改（升级）。 */
+          kind: editNode.kindKey || "",
           body: data.bodies[editNode.id] || "",
           parent: editNode.parent || "",
           workspace: editNode.workspace || "",
@@ -3737,6 +4070,18 @@
             legendItem("parent", false, "\u7236\u5B50"),
             legendItem("link", true, "\u94FE\u63A5"),
             h("span", { style: { flex: 1 } }),
+            /* 视图切换（T-020）：树看关系，列表看密度。 */
+            h(
+              "button",
+              {
+                type: "button",
+                onClick: function() {
+                  setView(view === "tree" ? "list" : "tree");
+                },
+                style: buttonBase(false)
+              },
+              view === "tree" ? t("board.list") : t("board.tree")
+            ),
             h(
               "button",
               { type: "button", onClick: openCreate, style: buttonBase(false) },
@@ -3748,14 +4093,58 @@
               busy ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0"
             )
           ),
+          /* 过滤条（T-020）：按组 + 搜索。 */
+          h(
+            "div",
+            { style: { display: "flex", alignItems: "center", gap: 6 } },
+            ["", "\u8FDB\u884C", "\u6401\u7F6E", "\u5B8C\u6210", "\u8349\u7A3F"].map(function(key) {
+              const label = key === "" ? "\u5168\u90E8" : key;
+              const active = groupFilter === key;
+              return h(
+                "button",
+                {
+                  key: "filter-" + (key || "all"),
+                  type: "button",
+                  onClick: function() {
+                    setGroupFilter(key);
+                  },
+                  style: Object.assign({}, buttonBase(active), {
+                    padding: "2px 10px",
+                    opacity: active ? 1 : 0.75
+                  })
+                },
+                label
+              );
+            }),
+            h("span", { style: { flex: 1 } }),
+            h("input", {
+              value: search,
+              placeholder: "\u641C id \u6216\u6807\u9898\u2026",
+              onChange: function(event) {
+                setSearch(event.target.value);
+              },
+              style: Object.assign({}, formInputStyle, { width: 180, flex: "none" })
+            }),
+            h(
+              "span",
+              { style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)", flex: "none" } },
+              tasks.length + " / " + allTasks.length
+            )
+          ),
           h(
             "div",
             { style: { display: "flex", minHeight: 0, flex: 1, position: "relative" } },
-            h("div", { style: { flex: 1, minWidth: 0 } }, h(TechTree, { graph, selected, onSelect: setSelected }))
+            h(
+              "div",
+              { style: { flex: 1, minWidth: 0 } },
+              view === "tree" ? h(TechTree, { graph, selected, onSelect: setSelected }) : h(TaskList, { tasks, selected, onSelect: setSelected })
+            )
           ),
           editNode ? h(CreateForm, {
             initial: editInitial,
             title: editMode === "fork" ? "\u5206\u652F\u8BA1\u5212\uFF08\u53D6\u4EE3\u539F\u8BA1\u5212\uFF09" : "\u7F16\u8F91\u8BA1\u5212",
+            /* T-035：编辑也要拿到模板，否则字段渲染不出来。 */
+            templates,
             plans: tasks,
             busy: create.busy,
             error: create.error,
@@ -3785,12 +4174,12 @@
             onJump: setSelected,
             canEdit: activeNode.status === "\u672A\u6307\u5B9A",
             onEdit: function() {
-              setEditMode(activeNode.status === "\u672A\u6307\u5B9A" ? "edit" : "fork");
-              setEditId(activeNode.id);
+              openEdit(activeNode, activeNode.status === "\u672A\u6307\u5B9A" ? "edit" : "fork");
             },
             /* 备注草稿：切到另一张计划时自动换成那张的备注。 */
             noteDraft: note.id === activeNode.id ? note.draft : activeNode.note || "",
             noteError: note.id === activeNode.id ? note.error : "",
+            history: historyInfo.id === activeNode.id ? historyInfo.entries : [],
             onNoteDraft: function(value) {
               setNote({ id: activeNode.id, draft: value, error: "" });
             },
@@ -3912,6 +4301,30 @@
         );
         return h("div", { style: wrapperStyle }, panel, h("div", { style: buttonSlotStyle }, button));
       }
+      function RightbarPanel(props) {
+        const state = React.useState(false);
+        const open = state[0];
+        const setOpen = state[1];
+        useLocaleRevision();
+        React.useEffect(function() {
+          setOpen(true);
+        }, []);
+        return h(
+          "div",
+          {
+            style: {
+              display: "flex",
+              flexDirection: "column",
+              height: "100%",
+              minHeight: 0,
+              padding: "10px 12px",
+              boxSizing: "border-box",
+              background: "var(--dsw-alias-bg-layer-1)"
+            }
+          },
+          open ? h(TaskBoard, { sessionId: props.sessionId }) : null
+        );
+      }
       return {
         inject: ["slots", "remote", "remote.commands", "remote.workspaceFiles"],
         apply(ctx) {
@@ -3952,6 +4365,44 @@
               ComposerDrawer
             );
           });
+          const RIGHT_TAB_ID = "@local/composer-drawer:taskboard";
+          const RIGHT_TAB_KIND = "taskboard";
+          const tabsFace = (function() {
+            try {
+              return typeof ctx.get === "function" ? ctx.get("sidebarRightTabs") : void 0;
+            } catch (failure) {
+              return void 0;
+            }
+          })();
+          if (tabsFace && typeof tabsFace.register === "function") {
+            try {
+              ctx.effect(function() {
+                return tabsFace.register({
+                  id: RIGHT_TAB_ID,
+                  kind: RIGHT_TAB_KIND,
+                  priority: "extension",
+                  title: function() {
+                    return t("panel.title");
+                  }
+                });
+              }, "composer-drawer: \u6CE8\u518C\u53F3\u4FA7\u680F tab \u7C7B\u578B");
+            } catch (failure) {
+            }
+            ctx.slots.inject("sidebar.right.pane.tab", function() {
+              return ctx.slots.register(
+                { name: "sidebar.right.pane.tab", key: RIGHT_TAB_KIND },
+                RightbarPanel
+              );
+            });
+            ctx.slots.inject("sidebar.right.pane.tab.title", function() {
+              return ctx.slots.register(
+                { name: "sidebar.right.pane.tab.title", key: RIGHT_TAB_KIND },
+                function() {
+                  return h("span", null, t("panel.title"));
+                }
+              );
+            });
+          }
         }
       };
     }

@@ -1,0 +1,39 @@
+name: SK · 提问
+default_kind: design
+behavior: answer
+description: 一句话问用户；得到答复就完成
+domain: general
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    能自己查到的不要问。问之前先想：这个我能不能调研出来？
+    能 → 派调研；不能 → 才问。
+  fail: |
+    用户没答就是没答，不要重复问同一个问题。
+    换个问法之前先想清：是不是问题本身问错了。
+
+body:
+  - type: textarea
+    id: ask
+    attributes:
+      label: 问什么
+      description: |
+        一个问题。如果里面有两个问号，拆成两条分别问。
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么要问
+      description: |
+        不知道这个会怎样？写清"没有这个信息，我只能做 X 或 Y 的假设"。
+        写不出就用默认假设往下做，别问。
+    validations:
+      required: true
+  - type: textarea
+    id: guess
+    attributes:
+      label: 我的猜测
+      description: |
+        给出一个假设答案。用户只要说"对/不对"就省事了。
+        这是提问最省力的形式。

@@ -1,0 +1,50 @@
+name: SA · 问题
+default_kind: design
+behavior: propose
+description: 一个痛点或需求：为什么需要、什么算满意、有没有先例
+domain: general
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    这一份只回答"问题本身"，不写设计和实现。
+    判据：读完这段，别人应该能判断"这值不值得做"。
+  fail: |
+    问题被判断为"不需要做"不是失败，是结论。
+    写清为什么不做，供以后参考。
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这一份只回答"问题本身"，不写设计和实现。
+  - type: textarea
+    id: pain
+    attributes:
+      label: 痛点 / 验收
+      description: |
+        为什么需要这个？做到什么程度算满意？
+        一句话说清痛点，再补一句验收标准。
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景
+      description: |
+        现在的做法是什么，痛在哪一步。
+        写成"我现在是……；每次都要……；最烦的是……"。
+    validations:
+      required: true
+  - type: textarea
+    id: fitness
+    attributes:
+      label: 适用性
+      description: |
+        什么前提下才成立？长期搁置会失去什么意义？
+  - type: textarea
+    id: precedent
+    attributes:
+      label: 先例
+      description: |
+        同类产品/实现长什么样，能抄什么、必须改什么。
+        没有先例就写"没有"，不要编。

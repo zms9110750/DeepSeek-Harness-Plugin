@@ -1,0 +1,58 @@
+name: MO · 优化
+default_kind: goal
+behavior: answer
+domain: general
+description: 觉得哪里不好但说不出具体怎么改；先立目标，再拆
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    这一类**没有现成的头，也没有方案**。它就是"我隐约觉得这不爽"。
+    所以正文不要硬编方案 —— 只写清三件事：
+      1. 哪里让我觉得不对（现象，不是原因）
+      2. 现在有多糟（有数就写数）
+      3. 什么程度算够好（模糊也行，但要有个方向）
+
+    写完这一段，下一步通常不是动手，而是**派一个调研**去把"到底哪里慢/哪里烂"量出来。
+    没有测量过的优化都是瞎猜。
+  fail: |
+    目标不会失败。如果优化没效果，那是下面工作的事。
+    但"优化了没感觉"本身是重要信息 —— 说明量的基准错了，重新立一个目标去量。
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这一类是"没有头的目标"：知道不好，不知道该怎么改。先立住它，再拆。
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 哪里不对
+      description: |
+        写**现象**，不要写原因，更不要写方案。
+        "列表滚动卡"是现象；"应该是没做虚拟滚动"是原因（那还没验证）。
+    validations:
+      required: true
+  - type: textarea
+    id: measure
+    attributes:
+      label: 现在有多糟
+      description: |
+        有数字就写数字：几秒、几次、几个、多少内存。
+        没数字就写"感觉"有多频繁、什么情况下最明显。
+        没有基准的优化无法判断有没有变好。
+    validations:
+      required: true
+  - type: textarea
+    id: enough
+    attributes:
+      label: 什么程度算够好
+      description: |
+        模糊也行，但要能判断。
+        "快一点"不行；"打开不超过 200ms"或"明显感觉到不卡"都行。
+  - type: textarea
+    id: split
+    attributes:
+      label: 怎么拆
+      description: |
+        通常第一步是**量**（派调研），不是改。
+        量完才知道该改哪里，也才知道值不值得改。

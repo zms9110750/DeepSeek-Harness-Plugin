@@ -14,7 +14,7 @@
  */
 import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 
@@ -29,31 +29,105 @@ const HEAD_FIELDS = [
 	'id',
 	'title',
 	'type',
+	'kind',
 	'status',
 	'parent',
 	'links',
 	'workspace',
 	'workspaces',
 	'permission',
+	'deny',
 	'claimed_by',
 	'note',
+	'flags',
 ];
-
 /*
  * 模板类型：A–F 是「这是什么活」，H1–H8 是「为什么停下来等人」。
  * 代码只认 type 字符串，H* 不参与别的逻辑（status / 分类都不看 type）；
  * 模板本身只是正文骨架，用来把搁置理由写具体。
  */
-const TYPES = ['A', 'B', 'C', 'D', 'R', 'F'];
-const HOLD_TYPES = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8'];
-const ALL_TYPES = TYPES.concat(HOLD_TYPES);
+/**
+ * 模板编号（双字母）：**大类首字母 + 模板字母**。
+ *
+ *   M = 目标（mubiao）  S = 设计（sheji）  J = 记录（jilu）  G = 工作（gongzuo）
+ *
+ * 例：`SQ` = 设计+Q（决策）；`GD` = 工作+D（实现）。
+ *
+ * 为什么双字母：单字母从文件名看不出属于哪个大类，而大类决定"能不能领取"这种
+ * 根本行为。双字母让文件名自带语义，也不用记对照表。
+ *
+ * H1–H8 不再是模板：它们是"为什么停"，已降级为阻碍模板（JB）里的理由词表。
+ */
+const TYPES = [
+	// 目标
+	'MG', 'MO', 'ML', 'MT',
+	// 设计
+	'SQ', 'SP', 'SK', 'SC', 'SA', 'SV',
+	// 记录
+	'JB', 'JW', 'JF', 'JT',
+	// 工作
+	'GR', 'GD', 'GI', 'GX', 'GN', 'GJ', 'GZ', 'GE', 'GY',
+];
+/** 旧类型：只用于读老数据，新建不再接受（但会按 RENAME 自动升级）。 */
+const LEGACY_TYPES = [
+	'A', 'B', 'C', 'D', 'F', 'G', 'I', 'K', 'N', 'O', 'P', 'Q', 'R', 'W', 'X',
+	'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8',
+];
+const ALL_TYPES = TYPES.concat(LEGACY_TYPES);
+
+/** 旧单字母 → 新双字母。读老数据时用，保证 type 字段能升级。 */
+const RENAME = {
+	G: 'MG',
+	O: 'MO',
+	Q: 'SQ',
+	P: 'SP',
+	K: 'SK',
+	C: 'SC',
+	A: 'SA',
+	B: 'JB',
+	W: 'JW',
+	F: 'JF',
+	R: 'GR',
+	D: 'GD',
+	I: 'GI',
+	X: 'GX',
+	N: 'GN',
+};
+
+/** 把任意写法的 type 归一成当前的编号（旧单字母自动升级）。 */
+function normalizeType(raw) {
+	const value = String(raw ?? '').trim().toUpperCase();
+	if (value === '') return '';
+	if (TYPES.includes(value)) return value;
+	if (Object.hasOwn(RENAME, value)) return RENAME[value];
+	return value;
+}
+
 const TYPE_NAMES = {
-	A: '问题',
-	B: '设计',
-	C: '接口',
-	D: '实现',
-	R: '研究',
-	F: '复盘',
+	MG: '用户提出',
+	MO: '优化',
+	ML: '画作',
+	MT: '小说',
+	SQ: '决策',
+	SP: '方案',
+	SK: '提问',
+	SC: '接口',
+	SA: '问题',
+	SV: '定调',
+	JB: '阻碍',
+	JW: '汇报',
+	JF: '复盘',
+	JT: '设定集',
+	GR: '调研',
+	GD: '实现',
+	GI: '实现项',
+	GX: '缺陷',
+	GN: '校验',
+	GJ: '线稿',
+	GZ: '上色',
+	GE: '起草',
+	GY: '修改',
+	/* 老数据里的 H* 只用于显示 */
 	H1: '需要授权 · 代价过大',
 	H2: '需要授权 · 用户转移话题',
 	H3: '需要授权 · 方案缺陷过大',
@@ -63,6 +137,159 @@ const TYPE_NAMES = {
 	H7: '需要授权 · 缺权限 / 环境不对',
 	H8: '需要补充 · 子任务未回收',
 };
+
+/*
+ * ---------------------------------------------------------------------------
+ * 四个大类（kind）
+ * ---------------------------------------------------------------------------
+ *
+ * 分类轴是「**什么时候算做完**」——四个定义互斥且穷尽，所以是真正的大类，
+ * 而不是按行业角色乱切（那样必然互相重叠）。
+ *
+ *   goal   目标   子事项全部终结才算完         无自有状态，纯推导   不占位
+ *   design 设计   用户采纳/驳回了才算完        有状态              不占位
+ *   record 记录   写出来就算完（没人动手）      有状态              不占位
+ *   work   工作   真做出来了才算完             有状态              **占位**
+ *
+ * 只有 work 可领取、参与「一次一个」的竞争。其余三类根本不存在「领取」这个动作。
+ *
+ * 其余一切（形态、章节、提示语、能派发什么）都下沉到**模板**：
+ * 「行为取决于具体的模板配置」。
+ */
+const KINDS = {
+	goal: { name: '目标', who: '无（由子事项决定）', occupying: false, claimable: false },
+	design: { name: '设计', who: '用户', occupying: false, claimable: false },
+	record: { name: '记录', who: '无（写出来即完）', occupying: false, claimable: false },
+	work: { name: '工作', who: 'AI', occupying: true, claimable: true },
+};
+const KIND_ORDER = ['goal', 'design', 'record', 'work'];
+
+/**
+ * 老 type → 新 kind 的推断（零行为变更，只是把概念落进数据）。
+ *
+ * A（问题）      → design  它是在问方向，等用户答
+ * B（设计）      → design
+ * C（接口）      → design  接口约定也是"定方向"，不是动手
+ * D（实现）      → work    真正动手
+ * R（研究）      → work    调研也要动手查
+ * F（复盘）      → record  复盘是写出来就完
+ * H1..H8         → record  它们是"为什么停"，属于叙述，不是活
+ * 空             → work    最安全：老数据里空 type 的多半是待办事项
+ */
+/**
+ * type → kind 的映射（新模板 + 老数据兼容）。
+ *
+ * 目标类：G
+ * 设计类：Q 决策  P 方案  K 提问  C 接口  A 问题
+ * 记录类：B 阻碍  W 汇报  F 复盘
+ * 工作类：R 调研  D 实现  I 实现项
+ *
+ * 老类型（已废弃，只为读旧数据）：
+ *   A→design  B→design  C→design  D→work  R→work  F→record  H*→record
+ * 注意老 B 是"设计"，新 B 是"阻碍"——同一个字母含义变了。
+ * 兼容靠 kind 字段：老数据没存 kind 才按 type 推，且老数据不会有新 B。
+ */
+const TYPE_TO_KIND = {
+	MG: 'goal',
+	MO: 'goal',
+	ML: 'goal',
+	MT: 'goal',
+	SQ: 'design',
+	SP: 'design',
+	SK: 'design',
+	SC: 'design',
+	SA: 'design',
+	SV: 'design',
+	JB: 'record',
+	JW: 'record',
+	JF: 'record',
+	JT: 'record',
+	GR: 'work',
+	GD: 'work',
+	GI: 'work',
+	GX: 'work',
+	GN: 'work',
+	GJ: 'work',
+	GZ: 'work',
+	GE: 'work',
+	GY: 'work',
+	/* 老数据（旧单字母 + H1–H8） */
+	A: 'design',
+	B: 'design',
+	C: 'design',
+	D: 'work',
+	F: 'record',
+	G: 'goal',
+	I: 'work',
+	K: 'design',
+	N: 'work',
+	O: 'goal',
+	P: 'design',
+	Q: 'design',
+	R: 'work',
+	W: 'record',
+	X: 'work',
+	H1: 'record',
+	H2: 'record',
+	H3: 'record',
+	H4: 'record',
+	H5: 'record',
+	H6: 'record',
+	H7: 'record',
+	H8: 'record',
+};
+
+/**
+ * 推断 kind：存的优先，没存就按 type 推。
+ *
+ * ⚠️ 有个陷阱：**老 type 和新 kind 可能矛盾**。
+ *
+ * 例：老数据里 `type: H1`（旧的搁置模板）如果被写进了 `kind: design`
+ * （因为当时还是"设计"类），那读的时候到底听谁的？
+ *
+ * 口径：**存的 kind 优先**——它是明确的、后来写下的决定；
+ * type 只是模板骨架，模板可以换，kind 不会因为换模板而变。
+ * 但这种情况要能被查出来，所以 renderTask 会标出"类型与种类不一致"。
+ */
+function kindOf(task) {
+	const stored = String(task?.kind ?? '').trim();
+	if (stored !== '' && Object.hasOwn(KINDS, stored)) return stored;
+	/* 老数据是单字母 type：normalizeType 会升级成双字母，再查表。 */
+	const type = normalizeType(task?.type);
+	if (type !== '' && Object.hasOwn(TYPE_TO_KIND, type)) return TYPE_TO_KIND[type];
+	return 'work';
+}
+
+/** 这个 kind 是否参与领取竞争。 */
+function isClaimable(task) {
+	return KINDS[kindOf(task)]?.claimable === true;
+}
+
+/** 父节点处于这些状态时，不允许再往下派生/领取。 */
+const PARENT_CLOSED = new Set(['完成', '失败', '取消', '拒绝']);
+
+/** 模板目录说明，给工具描述用：`G 用户提出 / Q 决策 / …`，从常量生成避免漏改。 */
+function typeCatalog() {
+	return TYPES.map((type) => `${type} ${TYPE_NAMES[type] || ''}`).join(' / ');
+}
+
+/**
+ * 解析传入的 kind：空 → 按 type 推；给了就必须是四个之一。
+ *
+ * 这是 step 1「零行为变更」的关键：老调用方（面板、旧代码）不传 kind，
+ * 行为与以前完全一致；新调用方可以显式指定，落进数据里。
+ */
+function resolveKindArg(raw, type) {
+	const wanted = String(raw ?? '').trim();
+	if (wanted === '') {
+		const upper = String(type ?? '').trim().toUpperCase();
+		return TYPE_TO_KIND[upper] ?? 'work';
+	}
+	if (!Object.hasOwn(KINDS, wanted)) {
+		throw new Error(`kind 必须是 ${KIND_ORDER.join(' / ')} 之一，收到「${wanted}」`);
+	}
+	return wanted;
+}
 
 /* 计划状态复用 A2A 的九态（见 计划\19-A2A调研\README.md）。 */
 const STATUS = ['未指定', '提交', '处理中', '需要补充', '需要授权', '完成', '失败', '取消', '拒绝'];
@@ -179,8 +406,125 @@ function resolveClaim(agent) {
 	return CLAIM_CACHE.find((task) => (task.claimed_by || '') === id);
 }
 
-/** 会改工作区的工具；其余当只读。 */
-const WRITE_TOOLS = new Set(['write', 'edit', 'delete', 'pwsh', 'bash', 'terminal_open']);
+/*
+ * ---------------------------------------------------------------------------
+ * 工具描述符（T-023）
+ * ---------------------------------------------------------------------------
+ *
+ * MCP 给工具四个描述：**写 / 破坏 / 外部 / 幂等**。本地工具也应该有，才能做细粒度开关。
+ *
+ * 为什么不挂在 `defineTool` 上：`defineTool()` 只挑它认识的字段（name / description /
+ * parameters / output / deferTimeout…），自定义字段会被**静默丢弃**（读过 lib/index.js
+ * 的 defineTool 实现确认）。所以描述符单独维护一张表，按工具名查。
+ *
+ * 四个描述符的语义：
+ *
+ *   write      改工作区的内容（写文件、改配置、跑命令）。
+ *              只读档下必须拒。
+ *   destructive 可能删/覆盖已有东西，且不可逆（delete、rm、清库）。
+ *              就算给了写权限，也应该单独再要一次确认。
+ *   external   会离开这台机器/这个进程（联网、调外部 API、起子进程、装包）。
+ *              沙箱能挡文件，挡不了这个。
+ *   idempotent 同样参数重复执行结果一样。false 表示重放有副作用。
+ *              决定重试安不安全。
+ *
+ * 未知工具按最保守处理：write + destructive + external 全 true、idempotent false。
+ */
+
+/** 描述符表：只列已知道具；没列的走 CONSERVATIVE。 */
+const DESCRIPTORS = {
+	// —— 只读 ——
+	read: { write: false, destructive: false, external: false, idempotent: true },
+	glob: { write: false, destructive: false, external: false, idempotent: true },
+	grep: { write: false, destructive: false, external: false, idempotent: true },
+	'screenshot': { write: false, destructive: false, external: false, idempotent: true },
+	'job_list': { write: false, destructive: false, external: false, idempotent: true },
+	'job_output': { write: false, destructive: false, external: false, idempotent: true },
+	'task_list': { write: false, destructive: false, external: false, idempotent: true },
+	'task_get': { write: false, destructive: false, external: false, idempotent: true },
+	'task_template': { write: false, destructive: false, external: false, idempotent: true },
+	'task_groups': { write: false, destructive: false, external: false, idempotent: true },
+	'task_history': { write: false, destructive: false, external: false, idempotent: true },
+
+	// —— 计划管理（只改计划库自己的文件）——
+	'task_submit': { write: true, destructive: false, external: false, idempotent: false },
+	'task_claim': { write: true, destructive: false, external: false, idempotent: false },
+	'task_state': { write: true, destructive: false, external: false, idempotent: false },
+	'task_update': { write: true, destructive: false, external: false, idempotent: false },
+	'task_note': { write: true, destructive: false, external: false, idempotent: true },
+
+	// —— 写工作区 ——
+	write: { write: true, destructive: false, external: false, idempotent: true },
+	edit: { write: true, destructive: false, external: false, idempotent: true },
+	'apply_patch': { write: true, destructive: false, external: false, idempotent: true },
+	delete: { write: true, destructive: true, external: false, idempotent: true },
+
+	// —— 命令执行：写 + 破坏 + 外部，且不幂等 ——
+	pwsh: { write: true, destructive: true, external: true, idempotent: false },
+	bash: { write: true, destructive: true, external: true, idempotent: false },
+	'terminal_open': { write: true, destructive: true, external: true, idempotent: false },
+	'terminal_write': { write: true, destructive: true, external: true, idempotent: false },
+	'job_kill': { write: true, destructive: true, external: false, idempotent: true },
+
+	// —— 能绕过权限模型的东西：全保守 ——
+	'plugin_manager': { write: true, destructive: true, external: true, idempotent: false },
+	'subagent': { write: false, destructive: false, external: true, idempotent: false },
+	'subagent_fork': { write: false, destructive: false, external: true, idempotent: false },
+	'subai': { write: false, destructive: false, external: true, idempotent: false },
+	'subai_fork': { write: false, destructive: false, external: true, idempotent: false },
+	'workflow': { write: false, destructive: false, external: true, idempotent: false },
+
+	// —— 外部 / 网络 ——
+	web_search: { write: false, destructive: false, external: true, idempotent: true },
+	web_fetch: { write: false, destructive: false, external: true, idempotent: true },
+};
+
+/** 未知工具的默认描述：按最危险算。 */
+const CONSERVATIVE_DESCRIPTOR = {
+	write: true,
+	destructive: true,
+	external: true,
+	idempotent: false,
+};
+
+/** 取某个工具的描述符。没登记过 → 保守默认。 */
+function descriptorOf(toolName) {
+	const name = String(toolName ?? '');
+	if (Object.prototype.hasOwnProperty.call(DESCRIPTORS, name)) return DESCRIPTORS[name];
+	/* MCP 工具命名不统一（mcp__server__tool），一律按外部 + 破坏处理。 */
+	if (name.startsWith('mcp__') || name.startsWith('mcp_')) {
+		return { write: true, destructive: true, external: true, idempotent: false };
+	}
+	return CONSERVATIVE_DESCRIPTOR;
+}
+
+/**
+ * 计划的「描述符开关」：计划里可以显式关掉某一类能力，
+ * 比整个「权限档位」细一档。
+ *
+ * 写法（计划字段 `deny`，逗号分隔）：`destructive, external`
+ * 语义是「在权限档位之上再收窄」——只能收窄，不能放宽。
+ */
+const DESCRIPTOR_KEYS = ['write', 'destructive', 'external', 'idempotent'];
+
+function parseDeny(raw) {
+	const out = new Set();
+	for (const part of String(raw ?? '').split(/[,，;；\s]+/u)) {
+		const key = part.trim().toLowerCase();
+		if (key !== '' && DESCRIPTOR_KEYS.includes(key)) out.add(key);
+	}
+	return out;
+}
+
+/** 按描述符判定是否要拦；返回原因或空串。 */
+function descriptorBlocker(toolName, denySet) {
+	const desc = descriptorOf(toolName);
+	if (desc.write && denySet.has('write')) return '计划关闭了「写」类能力（write）';
+	if (desc.destructive && denySet.has('destructive')) return '计划关闭了「破坏」类能力（destructive）';
+	if (desc.external && denySet.has('external')) return '计划关闭了「外部」类能力（external）';
+	if (desc.idempotent === false && denySet.has('idempotent')) return '计划关闭了「不幂等」类能力（idempotent）';
+	return '';
+}
 
 /**
  * 计划管理类工具：只读写计划库、不碰工作区。
@@ -199,6 +543,7 @@ const PLAN_TOOLS = new Set([
 	'task_template',
 	'task_note',
 	'task_groups',
+	'task_history',
 ]);
 
 function claimKey(agent) {
@@ -281,6 +626,9 @@ function installGuard(ctx) {
 			}
 
 			const permission = claim.permission || '工作区内修改';
+			/* 计划级描述符开关：比权限档位细一档，只能收窄。 */
+			const deny = parseDeny(claim.deny);
+
 			if (permission === '工具全关') {
 				return (
 					`按计划：任务 ${claim.id} 要求「工具全关」，本会话不能调用工作区类工具。\n` +
@@ -288,18 +636,40 @@ function installGuard(ctx) {
 					'再用 task_list + task_claim 领下一张。'
 				);
 			}
-			if (permission === '完全权限') return undefined;
+			if (permission === '完全权限') {
+				/* 完全权限之上仍尊重计划自己写的 deny。 */
+				const blocked = descriptorBlocker(toolName, deny);
+				return blocked === '' ? undefined : `按计划：任务 ${claim.id} 的 ${toolName} 被拒——${blocked}。`;
+			}
 
 			const args = argsOf(exec);
+			const desc = descriptorOf(toolName);
 
 			if (permission === '仅可查看') {
-				if (WRITE_TOOLS.has(toolName)) {
+				/* 白名单口径（T-017）：按**描述符**判，不按名字清单判。
+				   以前是 WRITE_TOOLS 黑名单，只认 5 个名字，plugin_manager /
+				   subagent / mcp__* 全漏放行。现在只要带了 write 描述就拒，
+				   未知工具默认带 write，所以新装的插件也自动被挡。 */
+				if (desc.write) {
 					return (
-						`按计划：任务 ${claim.id} 只给「仅可查看」，${toolName} 是写操作，不能调用。\n` +
+						`按计划：任务 ${claim.id} 只给「仅可查看」，${toolName} 会写东西（write=${desc.write}），不能调用。\n` +
 						'切任务不受限：先 task_state 结束或搁置这张计划，再领下一张。'
 					);
 				}
-				return undefined;
+				/* external 也挡：只读档不该联网、不该起子智能体。 */
+				if (desc.external) {
+					return `按计划：任务 ${claim.id} 只给「仅可查看」，${toolName} 是外部调用（external），不能调用。`;
+				}
+				const blocked = descriptorBlocker(toolName, deny);
+				return blocked === '' ? undefined : `按计划：任务 ${claim.id} 的 ${toolName} 被拒——${blocked}。`;
+			}
+
+			/* 「工作区内修改」：先过描述符，再过路径。 */
+			{
+				const blocked = descriptorBlocker(toolName, deny);
+				if (blocked !== '') return `按计划：任务 ${claim.id} 的 ${toolName} 被拒——${blocked}。`;
+				/* 读类工具不需要路径校验。 */
+				if (!desc.write) return undefined;
 			}
 
 			// 工作区内修改（也是没写权限时的默认）：计划没写子工作空间时，按会话 cwd 兜底
@@ -309,7 +679,6 @@ function installGuard(ctx) {
 				? claim.workspaces.filter((entry) => text(entry) !== '')
 				: splitWorkspaces(claim.workspaces);
 			const roots = (root === '' ? [] : [root]).concat(extras);
-			if (!WRITE_TOOLS.has(toolName)) return undefined;
 
 			const allowed = () => roots.join('、') || '（计划没写工作区）';
 
@@ -320,8 +689,20 @@ function installGuard(ctx) {
 					return `按计划：任务 ${claim.id} 没有子工作空间，命令类工具一律拒绝。`;
 				}
 				if (command !== '') {
-					const lowered = command.toLowerCase();
-					if (roots.some((entry) => lowered.includes(entry.toLowerCase()))) return undefined;
+					/* 命令判定（T-018 第 2 项）：
+					   以前是「命令里出现过允许目录的字符串就放行」，实测可以
+					   `Remove-Item C:\Windows\...; echo X:\temp\dsh` 绕过。
+					   现在按「每个分句里出现的路径都必须在允许目录内」判：
+					     · 按 ; && || | 换行切段
+					     · 每段里抽出形如 X:\... 的路径，逐个要求落在允许目录内
+					     · 一段都没抽到路径的（比如 `npm test`）→ 拒，因为看不出写哪
+					   仍然不是完备的（管道、重定向、cd + 相对路径都还能绕），
+					   T-029 正在研究更硬的方案；这里先把已知绕过堵掉。 */
+					const verdict = judgeCommand(command, roots);
+					if (verdict !== '') {
+						return `按计划：任务 ${claim.id} 只给「工作区内修改」，命令被拒——${verdict}。\n允许的目录：${allowed()}`;
+					}
+					return undefined;
 				}
 				return (
 					`按计划：任务 ${claim.id} 只给「工作区内修改」，但看不出要写哪个目录。\n` +
@@ -368,6 +749,83 @@ function isAbsolutePath(value) {
 	if (/^\\\\/u.test(text)) return true;
 	if (text.startsWith('/')) return true;
 	return false;
+}
+
+/** 从一段命令里抽出绝对路径（Windows 盘符路径 / UNC），用于目录归属判定。 */
+function extractPaths(segment) {
+	const found = [];
+	for (const match of String(segment ?? '').matchAll(/[A-Za-z]:[\\/][^\s"'|;&]*/gu)) {
+		found.push(match[0]);
+	}
+	for (const match of String(segment ?? '').matchAll(/\\\\[^\s"'|;&]+/gu)) {
+		found.push(match[0]);
+	}
+	return found;
+}
+
+/**
+ * 命令是不是只动允许目录（T-018 第 2 项）。
+ *
+ * 返回空串 = 放行；否则返回给模型看的原因。
+ *
+ * 判定口径（偏保守）：
+ *   1. 按 `;` `&&` `||` `|` 与换行切成独立分句；
+ *   2. 每个分句里抽出的每个绝对路径，都必须落在某个允许目录内；
+ *   3. 一个路径都没抽到的分句 → 拒（看不出它写哪，宁可让模型拆成 write/edit）。
+ *
+ * 已知不完备：`cd` 后接相对路径、重定向 `>`、`node -e "..."` 里的字符串。
+ * 真正完备需要按命令解析（T-029 在研究），这里先把已证实的绕过堵掉。
+ */
+function judgeCommand(command, roots) {
+	const segments = String(command ?? '')
+		.split(/[;&|\r\n]+/u)
+		.map((part) => part.trim())
+		.filter((part) => part !== '');
+	if (segments.length === 0) return '命令是空的';
+
+	for (const segment of segments) {
+		const paths = extractPaths(segment);
+		if (paths.length === 0) {
+			/* 没写绝对路径：可能是纯粹的计算（echo hi / node --version），
+			   也可能是相对路径写入。分不清，只放行明显只读的形态。 */
+			if (isPlainReadOnlyCommand(segment)) continue;
+			return `分句「${segment.slice(0, 40)}」看不出要动哪个目录`;
+		}
+		for (const path of paths) {
+			if (!roots.some((root) => within(root, path))) {
+				return `路径 ${path} 不在允许目录内`;
+			}
+		}
+	}
+	return '';
+}
+
+/** 明显只读的命令形态（白名单）：只认真正无副作用的。 */
+const READONLY_COMMAND_PREFIXES = [
+	'echo ',
+	'echo"',
+	'Write-Output ',
+	'Get-ChildItem',
+	'Get-Content',
+	'Get-Item',
+	'Get-Location',
+	'Test-Path',
+	'Select-String',
+	'Measure-Object',
+	'node --version',
+	'node -v',
+	'pnpm --version',
+	'git status',
+	'git log',
+	'git diff',
+	'git branch',
+	'where ',
+	'which ',
+];
+
+function isPlainReadOnlyCommand(segment) {
+	const text = String(segment ?? '').trim().toLowerCase();
+	return READONLY_COMMAND_PREFIXES.some((prefix) => text.startsWith(prefix.toLowerCase()));
 }
 
 /**
@@ -424,23 +882,37 @@ function parseTask(raw, file) {
 	return {
 		id,
 		title: text(head.title) || id,
-		type: text(head.type).toUpperCase(),
+		/* 存归一化后的编号：老数据的单字母在这里自动升级成双字母。 */
+		type: normalizeType(head.type),
+		/* kind 存了就用存的；没存是因为老数据，读的时候按 type 推（见 kindOf）。 */
+		kind: text(head.kind),
 		status: text(head.status) || '未指定',
 		parent: text(head.parent),
 		links: text(head.links),
 		workspace: text(head.workspace),
 		workspaces: text(head.workspaces),
 		permission: text(head.permission),
+		deny: text(head.deny),
 		claimed_by: text(head.claimed_by),
 		body: lines.slice(index).join('\n').trim(),
 		note: text(head.note),
+		flags: text(head.flags),
 		file,
 	};
 }
 
 function renderTask(task) {
 	const lines = ['---'];
-	for (const field of HEAD_FIELDS) lines.push(`${field}: ${text(task[field])}`);
+	for (const field of HEAD_FIELDS) {
+		if (field === 'kind') {
+			/* 老数据没存 kind：这里输出**推断后**的值，并标出它是推出来的。 */
+			const resolved = kindOf(task);
+			const stored = text(task.kind);
+			lines.push(`kind: ${resolved}${stored === '' ? ' (推断)' : ''}`);
+			continue;
+		}
+		lines.push(`${field}: ${text(task[field])}`);
+	}
 	lines.push('---', '', text(task.body));
 	if (text(task.note) !== '') lines.push('', '<!-- note -->', text(task.note));
 	return `${lines.join('\n')}\n`;
@@ -451,7 +923,36 @@ function renderTask(task) {
  * 每行一个事件：{"op":"upsert","task":{…}}；读取时顺序折叠成当前状态。
  * 追加写、无原生依赖；单文件，备份/搬迁只搬这一个。
  */
-const STORE_DIR = join(homedir(), '.dsh', 'taskboard');
+/**
+ * 数据根目录：与宿主同一套规则（读自 `app.asar` 的 `@deepseek-ai/dsh-home-paths`）。
+ *
+ * 优先级（高 → 低）：
+ *   1. 显式配置的路径
+ *   2. `$DSH_HOME`（空串/纯空白视为没设，避免把 home 解析成当前目录）
+ *   3. `~/.dsh`
+ *
+ * 计划库是**运行时数据**，跟会话消息一个地位，所以必须住在同一个根下（T-032）。
+ * 支持 `~` / `~/` / `~\` 前缀展开。
+ */
+function expandHomePath(raw) {
+	const value = String(raw ?? '');
+	if (value === '~') return homedir();
+	if (value.startsWith('~/') || value.startsWith('~\\')) return join(homedir(), value.slice(2));
+	return value;
+}
+
+function resolveDshHome(configured) {
+	const fromEnv = process.env.DSH_HOME;
+	const picked =
+		configured !== undefined && configured !== null && String(configured).trim() !== ''
+			? configured
+			: fromEnv !== undefined && fromEnv.trim().length > 0
+				? fromEnv
+				: join(homedir(), '.dsh');
+	return resolve(expandHomePath(picked));
+}
+
+const STORE_DIR = join(resolveDshHome(), 'taskboard');
 const STORE_FILE = process.env.TASKBOARD_STORE || join(STORE_DIR, 'plans.jsonl');
 
 async function readStore() {
@@ -497,9 +998,41 @@ function withWrite(operation) {
 	);
 	return run;
 }
+/**
+ * 追加一条事件（T-019 事件溯源）。
+ *
+ * 只**增加**字段，不动原有结构：
+ *   {op, task}  →  {op, ts, actor, from, to, task}
+ *
+ * 为什么这么保守：用户明确说过「不要随便改日志，如果读不了，可能整个 agent
+ * 都要别的 agent 修」。所以：
+ *   · 仍然是 `{"op":"upsert","task":{…}}` 这一行一个事件的老形状；
+ *   · `ts`/`actor`/`from`/`to` 是**同级新增**，老读代码（只认 op/task）完全不受影响；
+ *   · 老事件没有这些字段 → 读的时候缺就缺，不报错、不补写、不迁移。
+ *
+ * `from`/`to` 只在状态真的变化时才有；`actor` 是会话 id 或 `user`。
+ */
 async function appendEvent(event) {
 	await mkdir(dirname(STORE_FILE), { recursive: true });
-	await appendFile(STORE_FILE, `${JSON.stringify(event)}\n`, 'utf8');
+	const enriched = Object.assign({ ts: new Date().toISOString() }, event);
+	/* actor：调用方没给就落到当前写入上下文（见 withActor），最后兜底 'unknown'。 */
+	if (enriched.actor === undefined) enriched.actor = CURRENT_ACTOR.value || 'unknown';
+	await appendFile(STORE_FILE, `${JSON.stringify(enriched)}\n`, 'utf8');
+}
+
+/**
+ * 当前写入者（会话 id / 'user' / 'unknown'）。
+ *
+ * 用「最近一次 setState/saveTask 的上下文」而不是异步上下文传递：
+ * 这个插件所有写入都在 withWrite 串行链里，同一时刻只有一个写入上下文，
+ * 所以一个简单的「当前值」就够，不需要 AsyncLocalStorage。
+ */
+const CURRENT_ACTOR = { value: '' };
+
+function actorLabel(agent, byUser) {
+	if (byUser === true) return 'user';
+	const id = String(agent?.id ?? agent?.session?.id ?? '').trim();
+	return id === '' ? 'unknown' : id;
 }
 
 /** 老目录（任务\*.md）→ 一次性导入 JSONL。 */
@@ -539,7 +1072,7 @@ async function listAll() {
 
 async function readTask(id) {
 	const wanted = text(id).trim();
-	if (wanted === '') throw new Error('task_get: 需要一个计划 id，例如 T-001');
+	if (wanted === '') throw new Error('task_get: 需要一个计划 id，例如 MG-01');
 	return (await readStore()).get(wanted);
 }
 
@@ -559,9 +1092,20 @@ function dedupeLinks(raw) {
 		});
 	return out.join(', ');
 }
-async function saveTask(task) {
+/**
+ * 写一份计划的当前状态。
+ *
+ * `meta` 可选：`{from, to}` 表示这次写是一次状态转移（只有 setState 会传）。
+ * `from`/`to` 只在真的变化时才写，别的写入（改备注、改正文）不带这两个字段。
+ */
+async function saveTask(task, meta) {
 	if (task && typeof task.links === 'string') task = Object.assign({}, task, { links: dedupeLinks(task.links) });
-	await appendEvent({ op: 'upsert', task });
+	const event = { op: 'upsert', task };
+	if (meta && typeof meta.from === 'string' && typeof meta.to === 'string' && meta.from !== meta.to) {
+		event.from = meta.from;
+		event.to = meta.to;
+	}
+	await appendEvent(event);
 }
 
 /** 新建：取下一个空号再追加；撞号就重试。 */
@@ -569,26 +1113,52 @@ async function createNew(task) {
 	return withWrite(() => createNewInner(task));
 }
 
+/**
+ * 新建：编号 = **模板编号 + 流水号**，例如 `MG-01`、`GD-03`、`SQ-02`。
+ *
+ * 为什么不再用 `T-001`：用户要求编号自带语义（"用双字母…大分类首字母，
+ * 然后模板类型一个字母"）。`T-` 前缀看不出它是什么，而且所有类型挤在一条
+ * 流水线上——新增一张调研会和实现抢号，读起来毫无信息。
+ *
+ * 现在的规则：
+ *   · 前缀 = 模板编号（MG / SQ / JB / GR …），一眼知道类别和形态
+ *   · 流水号**按前缀各自编号**，MG-01、MG-02、GD-01……互不干扰
+ *
+ * 老数据保持 `T-001` 不动（只读不改）。新老 id 混存没问题，
+ * 因为 id 只是主键，语义在 type/kind 里。
+ */
 async function createNewInner(task) {
+	/* 前缀：有模板就用模板编号（MG / SQ / GR…）；
+	   空模板（没选 type）用**大类首字母**：goal→M、design→S、record→J、work→G。
+	   这样空模板也有可读编号，不会冒出一个 ITEM-01 这种怪东西。 */
+	const KIND_PREFIX = { goal: 'M', design: 'S', record: 'J', work: 'G' };
+	/* 旧类型（单字母 / H1–H8）不再产生新编号：它们已被 TYPES 淘汰，
+	   如果还照着旧 type 编出 "H1-01" 这种，正则和面板都会含糊。
+	   统一回落到大类首字母。 */
+	const declared = normalizeType(task?.type);
+	const prefix = TYPES.includes(declared) ? declared : KIND_PREFIX[kindOf(task)] || 'X';
+	const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+	const pattern = new RegExp(`^${escaped}-(\\d+)$`, 'u');
 	for (let attempt = 0; attempt < 50; attempt += 1) {
 		const map = await readStore();
 		let max = 0;
 		for (const key of map.keys()) {
-			const match = /^T-(\d+)$/u.exec(key);
+			const match = pattern.exec(key);
 			if (match) max = Math.max(max, Number(match[1]));
 		}
-		const id = `T-${String(max + 1).padStart(3, '0')}`;
+		const id = `${prefix}-${String(max + 1 + attempt).padStart(2, '0')}`;
 		if (map.has(id)) continue;
 		await saveTask(Object.assign({}, task, { id }));
 		return id;
 	}
-	throw new Error('新建计划失败：连续 50 次编号冲突');
+	throw new Error('新建事项失败：连续 50 次编号冲突');
 }
 
 function summarize(task) {
 	const groups = groupsOf(task.status);
+	const kind = kindOf(task);
 	const bits = [
-		`${task.id} [${task.type || '?'} ${TYPE_NAMES[task.type] || ''}] ${task.title}`,
+		`${task.id} [${KINDS[kind]?.name ?? kind}/${task.type || '?'} ${TYPE_NAMES[task.type] || ''}] ${task.title}`,
 		`状态=${task.status}` + (groups.length > 0 ? `（${groups.join('/')}）` : '（草稿）'),
 	];
 	if (task.parent) bits.push(`父=${task.parent}`);
@@ -641,7 +1211,7 @@ function registerTools(ctx) {
 		defineTool({
 			name: 'task_get',
 			description: '读一份计划的全文（头部 + 正文）。先用 task_list 找 id。',
-			parameters: { id: { type: 'string', required: true, description: '计划 id，例如 T-001' } },
+			parameters: { id: { type: 'string', required: true, description: '计划 id，例如 MG-01' } },
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
 				render: (_args, value) => [{ type: 'text', text: value.text }],
@@ -658,46 +1228,55 @@ function registerTools(ctx) {
 		defineTool({
 			name: 'task_submit',
 			description:
-				'提交一份计划草稿。状态固定为「未指定」，用户在面板里采纳之后变成「提交」才能被领取。' +
-				'type 取 A(问题)/B(设计)/C(接口)/D(实现)/R(研究)/F(复盘)，或留空 = 空模板（正文自由写，适合记录待定事项），' +
-				'或 H1..H8（搁置模板：用 task_template 取骨架，用来写清为什么停下来等人）。' +
+				'提交一份事项草稿。状态固定为「未指定」，用户在面板里采纳之后变成「提交」才能被领取。' +
+				`type 取其一：${typeCatalog()}；留空 = 空模板（正文自由写）。` +
+				'kind 取 goal(目标) / design(设计) / record(记录) / work(工作)，留空按 type 推断。' +
+				'四个大类的区别是**谁能标完成**：目标由子事项决定、设计等用户点头、记录写完即完、工作由 AI 做出来。' +
+				'只有「工作」能被领取，且一次只能做一个。' +
+				'工作不能再派工作（能一次做完和能再拆互斥，要拆就先升级为目标）。' +
 				'workspace 填子工作空间（主战场，单个绝对路径，可空 = 会话目录）；' +
 				'workspaces 填额外工作区（要读写的其它目录，逗号分隔的绝对路径，可空）；' +
 				'permission 填 仅可查看/工作区内修改/完全权限/工具全关，可空。',
 			parameters: {
 				title: { type: 'string', required: true, description: '一句话标题' },
-				type: { type: 'string', description: 'A/B/C/D/R/F，或留空 = 空模板' },
+				type: { type: 'string', description: `${TYPES.join('/')}，或留空 = 空模板` },
+				kind: { type: 'string', description: 'goal/design/record/work；留空则按 type 推断' },
 				body: { type: 'string', required: true, description: '正文 Markdown，按该类型模板的小节填' },
 				parent: { type: 'string', description: '父计划 id，空 = 顶层' },
-				links: { type: 'string', description: '链接，例如「依赖:T-003, 派生:T-004」' },
+				links: { type: 'string', description: '链接，例如「依赖:GD-01, 派生:GR-01」' },
 				workspace: { type: 'string', description: '子工作空间绝对路径（单个）' },
 				workspaces: { type: 'string', description: '额外工作区，逗号分隔的绝对路径（可多个）' },
 				permission: { type: 'string', description: '仅可查看 / 工作区内修改 / 完全权限 / 工具全关' },
+				deny: { type: 'string', description: '按描述符再收窄，逗号分隔：write / destructive / external / idempotent' },
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
 				render: (_args, value) => [{ type: 'text', text: value.text }],
 			},
 			async execute(args) {
-				const type = text(args.type).toUpperCase();
+				const type = normalizeType(args.type);
 				/* 空字符串 = 空模板（面板的 /task-create 一直允许，工具这边也放开）。 */
 				if (type !== '' && !ALL_TYPES.includes(type)) {
 					throw new Error(`task_submit: type 必须留空或取 ${ALL_TYPES.join('/')}，收到「${args.type}」`);
 				}
 				const title = text(args.title).trim();
 				if (title === '') throw new Error('task_submit: 标题不能为空');
-				await assertParent(text(args.parent));
+				/* kind 先算：assertParent 要拿它判断"工作不能派工作"。 */
+				const kind = resolveKindArg(args.kind, type);
+				await assertParent(text(args.parent), kind, type);
 				/* 额外工作区：校验绝对路径并归一（逗号分隔）；非法直接拒，不落盘。 */
 				const workspaces = splitWorkspaces(args.workspaces).join(', ');
 				const id = await createNew({
 					title,
 					type,
+					kind,
 					status: '未指定',
 					parent: text(args.parent),
 					links: text(args.links),
 					workspace: text(args.workspace),
 					workspaces,
 					permission: text(args.permission),
+					deny: text(args.deny),
 					claimed_by: '',
 					body: text(args.body),
 				});
@@ -716,7 +1295,7 @@ function registerTools(ctx) {
 			description:
 				'领取一份「提交」状态的计划，返回它的子工作空间与权限档位。' +
 				'未指定、拒绝、完成、需要补充、需要授权的计划都不能领取。领取后状态变成「处理中」，并在计划头上记下领取的会话。',
-			parameters: { id: { type: 'string', required: true, description: '计划 id，例如 T-001' } },
+			parameters: { id: { type: 'string', required: true, description: '计划 id，例如 MG-01' } },
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
 				render: (_args, value) => [{ type: 'text', text: value.text }],
@@ -756,6 +1335,10 @@ function registerCommands(ctx) {
 							summary: firstLine ? firstLine.slice(0, 80) : '',
 							/* 九态分组：数组，一个状态可以属于多个组。面板按这个着色/分区。 */
 							groups: groupsOf(head.status),
+							/* kind 用**推断后**的值：老数据没存 kind，直接给 head.kind 会是空的，
+							   面板就没法按四类别显示。这里统一填好，面板不用自己推。 */
+							kind: kindOf(head),
+							type: normalizeType(head.type),
 						});
 					}),
 				),
@@ -788,15 +1371,13 @@ function registerCommands(ctx) {
 			const task = await readTask(id);
 			if (task === undefined) return { kind: 'error', text: `没有这份计划：${id}` };
 			if (task.status === '提交') return { kind: 'success', text: `${task.id} 已经是「提交」` };
-			if (task.status !== '未指定') {
-				return { kind: 'error', text: `${task.id} 现在是「${task.status}」，只有「未指定」的计划能被采纳` };
+			/* 走唯一入口：转移校验、from→to 事件、取代级联都在里面。 */
+			try {
+				const approved = await setState(id, '提交', undefined, true);
+				return { kind: 'success', text: `已采纳 ${approved.id}（现在可以被领取）` };
+			} catch (error) {
+				return { kind: 'error', text: String(error?.message ?? error) };
 			}
-			task.status = '提交';
-			task.claimed_by = '';
-			await saveTask(task);
-			await applySupersede(task);
-			await refreshClaims();
-			return { kind: 'success', text: `已采纳 ${task.id}（现在可以被领取）` };
 		},
 	});
 
@@ -823,7 +1404,17 @@ const TEMPLATE_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'templat
 
 async function loadTemplate(type) {
 	const wanted = String(type ?? '').trim().toUpperCase();
-	if (!ALL_TYPES.includes(wanted)) throw new Error(`模板类型必须是 ${ALL_TYPES.join('/')}，收到「${type}」`);
+	/* 只接受当前模板（TYPES）。H1–H8 已废除：它们是停止理由，不是模板，
+	   文件也删了。给老 type 一个清楚的报错，而不是"文件不存在"。 */
+	if (!TYPES.includes(wanted)) {
+		if (LEGACY_TYPES.includes(wanted)) {
+			throw new Error(
+				`模板 ${wanted} 已废除：H1–H8 是"为什么停"的理由，不是模板。` +
+					'现在用记录类的「B · 阻碍」，它的 reason 小节就是这张词表。',
+			);
+		}
+		throw new Error(`模板类型必须是 ${TYPES.join('/')}，收到「${type}」`);
+	}
 	return readFile(join(TEMPLATE_DIR, `${wanted}.yml`), 'utf8');
 }
 
@@ -959,6 +1550,21 @@ async function setStateInner(id, next, agent, byUser, note) {
 	if (blocker !== '') throw new Error(blocker);
 
 	if (wanted === '处理中') {
+		/* 只有「工作」这一类才能被领取（四类别模型）。
+		 *
+		 * 目标、设计、记录都不存在「领取」这个动作：
+		 *   · 目标的状态由子事项推导，它自己不占位；
+		 *   · 设计是等用户回答/选择/过目，AI 领它没有意义；
+		 *   · 记录没人动手，写出来就完。
+		 *
+		 * 所以「一次只能做一个」只对工作生效，别的类别根本不参与竞争。 */
+		if (!isClaimable(task)) {
+			const kind = kindOf(task);
+			throw new Error(
+				`${task.id} 是「${KINDS[kind]?.name ?? kind}」，不能领取。` +
+					'只有「工作」需要领取（一次只能做一个）；目标是推导的、设计等你回答、记录写出来就完。',
+			);
+		}
 		/* 领取前置：必须是「提交」。转移规则已经保证草稿进不来，
 		   但这里再挡一次——两个会话同时领同一张时，后到的那个读到的是
 		   「处理中」而不是「提交」，必须被拒（T-018 并发双领）。 */
@@ -970,7 +1576,9 @@ async function setStateInner(id, next, agent, byUser, note) {
 		}
 		const running = await activeClaimOf(agent);
 		if (running !== undefined && running.id !== task.id) {
-			throw new Error(`当前已有进行中的任务 ${running.id}（${running.title}）：一次只能做一个，先把它完成/失败/取消再领取新的`);
+			throw new Error(
+				`当前已有进行中的任务 ${running.id}（${running.title}）：一次只能做一个，先把它完成/失败/取消再领取新的`,
+			);
 		}
 		const blocker2 = await claimBlocker(task);
 		if (blocker2 !== '') throw new Error(`不能领取 ${task.id}：${blocker2}`);
@@ -996,7 +1604,10 @@ async function setStateInner(id, next, agent, byUser, note) {
 	}
 	/* 状态与备注可以一次写完：搁置时最该说清「为什么」。 */
 	if (typeof note === 'string') task.note = note.trim().slice(0, NOTE_LIMIT);
-	await saveTask(task);
+	/* 事件溯源（T-019）：记下 from→to 和是谁改的。 */
+	CURRENT_ACTOR.value = actorLabel(agent, byUser);
+	await saveTask(task, { from, to: wanted });
+	CURRENT_ACTOR.value = '';
 	if (!wasSubmitted) await applySupersede(task);
 	await refreshClaims();
 	/* CLAIMS 统一在这里维护：所有进出「处理中」的路径（工具、命令、planClaims、
@@ -1011,6 +1622,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 				workspace: task.workspace,
 				workspaces: task.workspaces,
 				permission: task.permission,
+				deny: task.deny,
 			});
 		} else {
 			CLAIMS.delete(key);
@@ -1021,15 +1633,73 @@ async function setStateInner(id, next, agent, byUser, note) {
 	return task;
 }
 
+/**
+ * 读某份计划的事件历史（T-019）。
+ *
+ * **只读**：不改文件、不补字段、不迁移。老事件没有 ts/actor/from/to 就显示为「—」。
+ * 这是「append-only JSONL 本来就存了全部历史，只是没人读」的兑现。
+ */
+async function readHistory(id, limit) {
+	const wanted = String(id ?? '').trim();
+	if (wanted === '') throw new Error('task_history: 需要一个计划 id，例如 MG-01');
+	let raw = '';
+	try {
+		raw = await readFile(STORE_FILE, 'utf8');
+	} catch (error) {
+		if (!error || error.code !== 'ENOENT') throw error;
+		raw = '';
+	}
+	const entries = [];
+	for (const line of raw.split(/\r?\n/u)) {
+		if (line.trim() === '') continue;
+		let event;
+		try {
+			event = JSON.parse(line);
+		} catch (failure) {
+			/* 坏行跳过：历史读不出来不该让整个调用失败。 */
+			continue;
+		}
+		if (!event || event.op !== 'upsert' || !event.task || String(event.task.id) !== wanted) continue;
+		entries.push({
+			ts: text(event.ts),
+			actor: text(event.actor),
+			from: text(event.from),
+			to: text(event.to),
+			status: text(event.task.status),
+			note: text(event.task.note),
+		});
+	}
+	if (entries.length === 0) {
+		const any = await readTask(wanted);
+		if (any === undefined) throw new Error(`没有这份计划：${wanted}`);
+		return [];
+	}
+	const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50;
+	return entries.slice(-cap);
+}
+
+function renderHistory(id, entries) {
+	if (entries.length === 0) return `${id} 没有可读的历史事件（可能是老数据，或还没被改过）。`;
+	const lines = [`${id} 的历史（最近 ${entries.length} 条，时间顺序）：`];
+	for (const entry of entries) {
+		const when = entry.ts === '' ? '（无时间戳）' : entry.ts.replace('T', ' ').replace(/\..*$/u, '');
+		const who = entry.actor === '' ? '—' : entry.actor;
+		const move = entry.from !== '' && entry.to !== '' ? `${entry.from} → ${entry.to}` : `状态=${entry.status}`;
+		lines.push(`- ${when}  ${who}  ${move}` + (entry.note ? `  备注：${entry.note.slice(0, 40)}` : ''));
+	}
+	return lines.join('\n');
+}
+
 function registerExtraTools(ctx) {
 	ctx.tools.register(
 		defineTool({
 			name: 'task_template',
 			description:
-				'取一种计划模板（GitHub issue forms 的 YAML）。写计划前先取模板，按 body 里的字段填。' +
-				'type 取 A(问题)/B(设计)/C(接口)/D(实现)/R(研究)/F(复盘)，' +
-				'或 H1..H8（搁置模板：按「为什么停下来等人」分——代价过大 / 用户转移话题 / 方案缺陷 / 缺用户信息 / 需先调研 / 资源被占用 / 缺权限 / 子任务未回收）。',
-			parameters: { type: { type: 'string', required: true, description: 'A/B/C/D/R/F 或 H1..H8' } },
+				'取一种事项模板（GitHub issue forms 的 YAML）。写事项前先取模板，按 body 里的字段填。' +
+				`可选模板：${typeCatalog()}。` +
+				'每个模板声明了 default_kind（默认大类）与 behavior（界面形态）。' +
+				'注意 H1–H8 已废除：它们是"为什么停"的理由，现在是阻碍模板（B）里的 reason 小节。',
+			parameters: { type: { type: 'string', required: true, description: `${TYPES.join('/')}` } },
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
 				render: (_args, value) => [{ type: 'text', text: value.text }],
@@ -1048,7 +1718,7 @@ function registerExtraTools(ctx) {
 				'改「完成」时，进行态的子计划会被自动取消；改「需要补充 / 需要授权」时，进行态的子计划转「需要授权」。' +
 				'可选 note 一起写下理由（搁置时最该填：为什么需要授权 / 为什么缺信息）。',
 			parameters: {
-				id: { type: 'string', required: true, description: '计划 id，例如 T-001' },
+				id: { type: 'string', required: true, description: '计划 id，例如 MG-01' },
 				status: { type: 'string', required: true, description: '九态之一' },
 				note: { type: 'string', description: '备注 / 搁置理由（可选，写清为什么停在这里）' },
 			},
@@ -1065,12 +1735,33 @@ function registerExtraTools(ctx) {
 
 	ctx.tools.register(
 		defineTool({
+			name: 'task_history',
+			description:
+				'读一份计划的事件历史（时间、谁改的、状态从什么变成什么、备注）。**只读**，不改任何东西。' +
+				'老事件没有时间戳/actor 时显示为「—」。',
+			parameters: {
+				id: { type: 'string', required: true, description: '计划 id，例如 MG-01' },
+				limit: { type: 'integer', description: '返回最近多少条，默认 50' },
+			},
+			output: {
+				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
+				render: (_args, value) => [{ type: 'text', text: value.text }],
+			},
+			async execute(args) {
+				const entries = await readHistory(args.id, args.limit);
+				return { text: renderHistory(String(args.id).trim(), entries) };
+			},
+		}),
+	);
+
+	ctx.tools.register(
+		defineTool({
 			name: 'task_note',
 			description:
 				'改一份计划的备注（附加信息 / 搁置理由）。**不受「只有未指定可改」的限制**——' +
 				'进行中的计划也能补一句「我在等什么」。空字符串表示清空备注。',
 			parameters: {
-				id: { type: 'string', required: true, description: '计划 id，例如 T-001' },
+				id: { type: 'string', required: true, description: '计划 id，例如 MG-01' },
 				note: { type: 'string', required: true, description: '备注正文；空串 = 清空' },
 			},
 			output: {
@@ -1092,12 +1783,54 @@ function registerExtraTools(ctx) {
 
 function registerExtraCommands(ctx) {
 	ctx.commands.register({
+		name: 'task-history',
+		description: '输出一份计划的事件历史 JSON（面板读取时间线）',
+		input: { hint: '<计划 id> [limit]' },
+		recordInput: false,
+		async handler({ rawInput }) {
+			const parts = String(rawInput ?? '').trim().split(/\s+/u);
+			if (parts.length < 1 || parts[0] === '') return { kind: 'error', text: '用法：/task-history <计划 id> [limit]' };
+			try {
+				const limit = parts[1] === undefined ? undefined : Number(parts[1]);
+				const entries = await readHistory(parts[0], limit);
+				return { kind: 'success', text: JSON.stringify({ id: parts[0], entries }) };
+			} catch (error) {
+				return { kind: 'error', text: String(error?.message ?? error) };
+			}
+		},
+	});
+
+	/* 保留但**当前没有调用方**。
+	   面板现在已经不靠它了：沙箱只管工具调用、不管工具内部实现，Windows 也没有
+	   沙箱机制，所以面板直接读文件就行，不需要问宿主路径（发命令会写会话日志）。
+
+	   留着它是因为它对**人**有用：想看计划库落在哪、或者宿主按 $DSH_HOME
+	   解析到了什么位置，敲一下就知道。 */
+	ctx.commands.register({
+		name: 'task-paths',
+		description: '输出计划库与模板的绝对路径（人工排查用；面板不依赖它）',
+		recordInput: false,
+		async handler() {
+			return {
+				kind: 'success',
+				text: JSON.stringify({
+					store: STORE_FILE,
+					templates: TEMPLATE_DIR,
+					home: resolveDshHome(),
+				}),
+			};
+		},
+	});
+
+	ctx.commands.register({
 		name: 'task-templates',
-		description: '输出全部计划模板（YAML）的 JSON（面板读取）',
+		description: '输出全部模板（YAML）的 JSON（面板读取；只给当前可用模板，不含已废弃的 H*）',
 		recordInput: false,
 		async handler() {
 			const out = [];
-			for (const type of ALL_TYPES) {
+			/* 只列 TYPES（当前模板）。H1–H8 已降级为停止原因，文件都删了，
+			   列出来只会让面板显示 8 个空模板。老数据靠 LEGACY_TYPES 兜住读取。 */
+			for (const type of TYPES) {
 				try {
 					out.push({ type: type, yaml: await loadTemplate(type) });
 				} catch (error) {
@@ -1116,7 +1849,7 @@ function registerExtraCommands(ctx) {
 		async handler({ rawInput }) {
 			try {
 				const input = JSON.parse(String(rawInput ?? '{}'));
-				const type = String(input.type ?? '').toUpperCase();
+				const type = normalizeType(input.type);
 				if (type !== '' && !ALL_TYPES.includes(type)) return { kind: 'error', text: `type 必须是 ${ALL_TYPES.join('/')}，或留空（空模板）` };
 				const title = String(input.title ?? '').trim();
 				if (title === '') return { kind: 'error', text: '标题不能为空' };
@@ -1129,16 +1862,19 @@ function registerExtraCommands(ctx) {
 					return { kind: 'error', text: '新建只能用「未指定」或「提交」；其它状态要走 /task-state' };
 				}
 				const status = wantedStatus;
-				await assertParent(text(input.parent));
+				const kind = resolveKindArg(input.kind, type);
+				await assertParent(text(input.parent), kind, type);
 				const id = await createNew({
 					title,
 					type,
+					kind,
 					status,
 					parent: text(input.parent),
 					links: text(input.links),
 					workspace: text(input.workspace),
 					workspaces: splitWorkspaces(input.workspaces).join(', '),
 					permission: text(input.permission),
+					deny: text(input.deny),
 					claimed_by: '',
 					body: text(input.body),
 				});
@@ -1219,8 +1955,13 @@ const PROMPT_TEXT = [
 	'- 搁置（需要补充 / 需要授权）时用 `task_state` 的 `note` 参数写清为什么停在这里（在等谁、等什么）；事后补写用 `task_note`。',
 	'- 一张计划交付后会级联取消它下面停在「需要补充 / 需要授权」的子计划，所以子计划要赶在父计划完成前处理掉。',
 	'- 做完一张回到 `task_list` 继续领下一张，直到没有「提交」的计划；都没有就停下等用户，不要自己找事做。',
-	'- 计划太大或含糊：先用 `task_template` 取模板，再用 `task_submit` 拆成子计划（A问题/B设计/C接口/D实现/R研究/F复盘 选合适层），再执行。',
-	'- 领取前的硬规则：自己 `依赖:X` 的，X 必须「完成」；有父计划或派生源的，父计划/派生源必须「处理中」。不满足就领不到。',
+	'- 计划太大或含糊：先用 `task_template` 取模板，再用 `task_submit` 拆成子事项，再执行。' +
+		`可用模板：${typeCatalog()}。`,
+	'- 领取前的硬规则：自己 `依赖:X` 的，X 必须「完成」。父节点是终结态时不能再派生。',
+	'- **四个大类（凭"谁能标完成"区分）**：目标（子事项全终结才算完，不占位）/ 设计（等用户点头，不占位）/ 记录（写完即完，不占位）/ 工作（AI 做出来，**占位**）。',
+	'- **只有「工作」能被领取**，且一次只能做一个。目标/设计/记录根本不存在"领取"这个动作。',
+	'- **工作不能派工作**：「能一次做完」和「能再拆」互斥 —— 还要拆说明它是容器，那就升级为目标。',
+	'- 阻碍 = 记录类模板 `B`。它一出现，父工作从「处理中」转「需要补充」。阻碍解除后**不自动改状态**，靠查询判断能否继续（没有未终结的阻碍子节点就能继续）。',
 	'- 状态三分类：**进行态**＝提交 / 处理中 / 需要补充 / 需要授权；**草稿**＝未指定（没采纳，不作数）；**完成态**＝完成 / 失败 / 取消 / 拒绝（已交付，不销毁）。',
 	'- 派生就是父子结构：子计划还有进行态时不能完成父计划；父计划搁置（需要补充 / 需要授权）时，进行态的子计划一起转「需要授权」；父计划终止（完成 / 失败 / 取消 / 拒绝）时，进行态的子计划全部「取消」。草稿与完成态都不动。',
 	'- 依赖链单向终结：前者「完成」→ 后者照常可领；前者失败 / 取消 / 拒绝 → 进行态的下游全部「取消」（递归）。已采纳的计划不能改，要重来只能 fork 出新计划。',
@@ -1245,9 +1986,22 @@ async function updateTaskInner(id, patch) {
 		throw new Error(`${task.id} 现在的状态是「${task.status}」，已采纳的计划不能直接改；请用「分支」复制一份再改`);
 	}
 	const next = Object.assign({}, task, patch, { id: task.id, status: task.status, claimed_by: task.claimed_by });
+	/* kind 变了要校验：它是四类别模型的核心字段，不能写进非法值。
+	   这也是「升级为目标」的落地路径（工作 ⇄ 目标 可互转）。 */
+	if (patch.kind !== undefined) {
+		const wanted = String(patch.kind ?? '').trim();
+		if (wanted === '') {
+			next.kind = task.kind;
+		} else {
+			if (!Object.hasOwn(KINDS, wanted)) {
+				throw new Error(`kind 必须是 ${KIND_ORDER.join(' / ')} 之一，收到「${wanted}」`);
+			}
+			next.kind = wanted;
+		}
+	}
 	/* 额外工作区进来时同样校验绝对路径并归一。 */
 	if (patch.workspaces !== undefined) next.workspaces = splitWorkspaces(patch.workspaces).join(', ');
-	for (const field of ['title', 'type', 'body', 'parent', 'links', 'workspace', 'workspaces', 'permission']) {
+	for (const field of ['title', 'type', 'kind', 'body', 'parent', 'links', 'workspace', 'workspaces', 'permission', 'deny']) {
 		if (patch[field] === undefined) next[field] = task[field];
 	}
 	await saveTask(next);
@@ -1269,11 +2023,21 @@ function linkPairs(task) {
 }
 
 /**
- * 领取前的规则检查：
- *   · 自己 links 里的「依赖:X」→ X 必须是「完成」
- *   · 有父计划的 → 父计划必须是「处理中」
- *   · 别人 links 里有「派生:我」→ 那个派生源必须是「处理中」
- * 返回错误文案；空串表示可以领取。
+ * 领取前的规则检查。
+ *
+ * 现在只查一件事：**依赖的东西完成了没有**。
+ *
+ * 以前这里还有两条：
+ *   · 「父计划必须是处理中」
+ *   · 「派生源必须是处理中」
+ * 四类别模型下**全删了**，因为它们正是死锁的来源：
+ *
+ *   父计划（目标/设计）根本不该处于「处理中」——目标没有自有状态，
+ *   设计是等用户回答。要求它们「处理中」等于要求一个不该存在的状态，
+ *   于是凡是有父节点的计划都领不了。
+ *
+ * 派生关系不再额外限制：能不能派生由模板的 dispatch 表和 kind 决定，
+ * 不由「父节点正在跑」决定。父节点是容器，容器不需要"在跑"。
  */
 async function claimBlocker(task, tasks) {
 	const all = tasks || (await listAll());
@@ -1282,22 +2046,16 @@ async function claimBlocker(task, tasks) {
 		if (link.label !== '依赖') continue;
 		const dep = byId.get(link.to);
 		if (dep === undefined) return `依赖 ${link.to} 不存在`;
+		/* 依赖：必须先完成才能领。这是"还没开始、要等前面"的语义，
+		   和"阻碍"（在做、中途卡住）不是一回事。 */
 		if (dep.status !== '完成') return `依赖 ${link.to} 还没完成（当前「${dep.status}」），不能领取`;
 	}
 	if (task.parent) {
 		const parent = byId.get(task.parent);
 		if (parent === undefined) return `父计划 ${task.parent} 不存在`;
-		if (parent.status !== '处理中') {
-			return `父计划 ${parent.id} 不在「处理中」（当前「${parent.status}」），不能领取`;
-		}
-	}
-	/* 派生：谁 links 里写了「派生:我」，谁就是我的派生源，必须正在「处理中」。 */
-	for (const other of all) {
-		if (other.id === task.id) continue;
-		const derives = linkPairs(other).some((link) => link.label === '派生' && link.to === task.id);
-		if (!derives) continue;
-		if (other.status !== '处理中') {
-			return `派生源 ${other.id} 不在「处理中」（当前「${other.status}」），不能领取`;
+		/* 已终结的父节点下面不能再开新活（父都收尾了，孩子不该冒出来）。 */
+		if (PARENT_CLOSED.has(parent.status)) {
+			return `父计划 ${parent.id} 已「${parent.status}」，不能再往下领取`;
 		}
 	}
 	return '';
@@ -1314,13 +2072,63 @@ async function activeClaimOf(agent) {
 	const all = await listAll();
 	return all.find((task) => task.status === '处理中' && (task.claimed_by || '') === id);
 }
-/** 父子校验：父计划必须存在，且已完成的计划不能再派生。 */
-async function assertParent(parentId) {
+
+/*
+ * 这里曾经有 isAncestorOf / isDescendantOf 两个函数，用来做「祖先链内部交接」，
+ * 目的是解开当时的死锁（领了父计划 → 子计划全领不了）。
+ *
+ * 四类别模型落地后它们是**多余的**，已经删除：
+ *   · 能派工作的容器是「目标」，而目标不可领取（状态由子事项推导）；
+ *   · 所以「父节点占着会话位、子节点进不来」这个前提根本不会出现；
+ *   · 死锁不是靠"允许换手"绕过去的，是在类别层面就不存在。
+ *
+ * 删掉它们比留着更安全：留着会让人以为父子争位是个需要特殊处理的情况。
+ */
+
+/**
+ * 父子校验（创建/派生时调用）。
+ *
+ * 查三件事：
+ *   1. 父存在
+ *   2. 父不是终结态（PARENT_CLOSED —— 与 claimBlocker 共用同一个集合）
+ *   3. **工作不能派「工作类项目」**（四类别模型的核心约束）
+ *
+ * 关于第 3 条的口径（用户明确纠正过一次）：
+ *
+ *   工作**可以**派任何"项目"——调研、记录、复盘、设计，都行。
+ *   比如线稿画到一半查参考（派 GR 调研），这是创作里最高频的动作。
+ *
+ *   工作**不能**派"另一件要做的事"（派 GI 实现项 / GX 缺陷 这类）。
+ *   因为那说明它本来就不是原子任务——它是容器，该升级为目标。
+ *
+ * 所以判定不能只看 kind，要看**具体模板**：
+ *   · ENTITY_TYPES（实现类模板）才是"要动手做的东西"
+ *   · GR 调研 / GN 校验 / GJ 线稿 这些是"项目"，工作可以派
+ *
+ * 为什么"派另一件工作"必须禁止：两个都要占会话位，必然互相抢。
+ * 而调研/记录不占位（或只在被领取时短暂占位），不会与父工作争。
+ */
+const ENTITY_TYPES = new Set(['GI', 'GX', 'GD', 'GE', 'GY', 'GZ']);
+
+async function assertParent(parentId, childKind, childType) {
 	const id = String(parentId ?? '').trim();
 	if (id === '') return;
 	const parent = await readTask(id);
 	if (parent === undefined) throw new Error(`父计划 ${id} 不存在`);
-	if (parent.status === '完成') throw new Error(`父计划 ${id} 已完成，不能再往下派生`);
+	if (PARENT_CLOSED.has(parent.status)) {
+		throw new Error(`父节点 ${id} 已「${parent.status}」，不能再往下派生`);
+	}
+	/* 工作不能派"另一件要做的事"。调研 / 记录 / 复盘 / 设计都可以派。 */
+	if (kindOf(parent) === 'work' && childKind === 'work') {
+		const child = normalizeType(childType);
+		if (child === '' || ENTITY_TYPES.has(child)) {
+			throw new Error(
+				`${id} 是「工作」，不能再派另一件要做的事。\n` +
+					'理由：「能一次做完」和「能再拆」互斥 —— 还要拆的东西本身是容器，那是「目标」。\n' +
+					`要么把 ${id} 升级为目标，要么派调研（GR）/ 记录（JB、JW、JF）/ 设计（SQ、SP）。`,
+			);
+		}
+	}
 }
 /**
  * 父计划被搁置（需要补充/需要授权）时，进行态的子计划一起转「需要授权」（递归，防环）。
@@ -1406,14 +2214,16 @@ function registerUpdate(ctx) {
 			description:
 				'改一份已有计划的内容（标题 / 类型 / 父计划 / 关联 / 子工作空间 / 权限 / 正文）。只改内容，不改状态——状态用 task_state。',
 			parameters: {
-				id: { type: 'string', required: true, description: '计划 id，例如 T-004' },
+				id: { type: 'string', required: true, description: '计划 id，例如 SQ-01' },
 				title: { type: 'string', description: '新标题' },
 				type: { type: 'string', description: 'A/B/C/D/R/F，或空串表示空模板' },
+				kind: { type: 'string', description: 'goal/design/record/work；空则按 type 推断' },
 				body: { type: 'string', description: '新正文（Markdown）' },
 				parent: { type: 'string', description: '父计划 id，空 = 顶层' },
-				links: { type: 'string', description: '关联，例如「依赖:T-001, 派生:T-002」' },
+				links: { type: 'string', description: '关联，例如「依赖:GD-01, 派生:GR-01」' },
 				workspace: { type: 'string', description: '子工作空间绝对路径' },
 				permission: { type: 'string', description: '仅可查看 / 工作区内修改 / 完全权限 / 工具全关' },
+				deny: { type: 'string', description: '按描述符再收窄，逗号分隔：write / destructive / external / idempotent' },
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
@@ -1421,7 +2231,7 @@ function registerUpdate(ctx) {
 			},
 			async execute(args) {
 				const patch = {};
-				for (const field of ['title', 'type', 'body', 'parent', 'links', 'workspace', 'workspaces', 'permission']) {
+				for (const field of ['title', 'type', 'kind', 'body', 'parent', 'links', 'workspace', 'workspaces', 'permission', 'deny']) {
 					if (args[field] !== undefined) patch[field] = String(args[field]);
 				}
 				if (patch.type !== undefined) {
@@ -1437,14 +2247,14 @@ function registerUpdate(ctx) {
 	ctx.commands.register({
 		name: 'task-update',
 		description: '改一份已有计划的内容（面板调用；JSON：{id,title?,type?,body?,parent?,links?,workspace?,permission?}）',
-		input: { hint: '{"id":"T-004","title":"…"}' },
+		input: { hint: '{"id":"SQ-01","title":"…"}' },
 		recordInput: false,
 		async handler({ rawInput }) {
 			try {
 				const input = JSON.parse(String(rawInput ?? '{}'));
 				if (!input.id) return { kind: 'error', text: '缺少 id' };
 				const patch = {};
-				for (const field of ['title', 'type', 'body', 'parent', 'links', 'workspace', 'workspaces', 'permission']) {
+				for (const field of ['title', 'type', 'kind', 'body', 'parent', 'links', 'workspace', 'workspaces', 'permission', 'deny']) {
 					if (input[field] !== undefined) patch[field] = String(input[field]);
 				}
 				if (patch.type !== undefined) patch.type = patch.type.toUpperCase();

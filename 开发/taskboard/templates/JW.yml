@@ -1,0 +1,36 @@
+name: JW · 汇报
+default_kind: record
+behavior: write
+description: 只读的结论汇报；写完即完，不占位
+domain: general
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    结论先行。用户读完第一段就该知道结果。
+    不要按"我做了什么"组织，要按"用户关心什么"组织。
+  fail: |
+    汇报不会失败。
+
+body:
+  - type: textarea
+    id: conclusion
+    attributes:
+      label: 结论
+      description: |
+        第一句就是答案。不要铺垫、不要背景、不要"让我来介绍一下"。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 依据
+      description: |
+        每条结论后面跟可核对的东西：链接、文件路径、命令输出、原文引用。
+        "根据经验"不算依据。
+  - type: textarea
+    id: limits
+    attributes:
+      label: 不确定的地方
+      description: |
+        明确写出哪些是推测、哪些没验证。
+        这一节写"无"通常代表谎报——除非真的全部验证过。

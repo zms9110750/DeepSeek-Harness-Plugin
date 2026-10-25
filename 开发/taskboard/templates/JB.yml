@@ -1,0 +1,77 @@
+name: JB · 阻碍
+default_kind: record
+behavior: block
+description: 卡住了；父工作会被踢出「处理中」，转入「需要补充」
+domain: general
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    这一条一出现，父工作立刻停止占位。所以只写"真的过不去"的事，
+    不要因为"有点麻烦"就派阻碍——那会把好好的工作打断。
+
+    不要穷举你试过的一切。只写：
+      · 卡在哪一步（一句话）
+      · 为什么过不去（**一个**原因，不是清单）
+      · 下一步最该试的一件事（**一件**，不是清单）
+    如果确实不知道下一步 → 派一个调研，别在这条里继续猜。
+  blocked: |
+    阻碍解除之前，父工作不能继续。解决方式有三种：
+      · 派一个调研去查清（工作）
+      · 派一个决策让用户选（设计）
+      · 直接写清绕法，解除阻碍
+    不要在阻碍里长篇分析——分析是调研的事。
+  fail: |
+    阻碍不会失败。它只会被"解除"或者被"放弃"。
+    放弃时写清：放弃了什么、绕过去要付什么代价。
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这一条的作用是**让工作停下来**，不是记录困难。
+        它一存在，父工作就不占会话位。
+  - type: textarea
+    id: where
+    attributes:
+      label: 卡在哪
+      description: |
+        一句话，指到具体的步骤。
+        "做不下去了"不算，"执行第 3 步时迁移脚本报外键冲突"才算。
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么过不去
+      description: |
+        **只写一个原因。** 如果你列了三个原因，说明还没找到根因——
+        那就先派一个调研。
+    validations:
+      required: true
+  - type: textarea
+    id: next
+    attributes:
+      label: 下一步最该试的一件事
+      description: |
+        **只写一件。** 写多件等于没想清楚优先顺序。
+        真要并行试两件，那是两个工作，不是一条阻碍。
+    validations:
+      required: true
+  - type: textarea
+    id: bypass
+    attributes:
+      label: 能不能绕
+      description: |
+        如果能绕：绕法是什么、绕过去会欠下什么。
+        如果不能绕：写"不能绕"，并说明缺的是什么（权限？信息？外部依赖？）。
+  - type: textarea
+    id: reason
+    attributes:
+      label: 停下来的原因
+      description: |
+        从词表里挑（见 templates/STOP-REASONS.md），再补一句具体说明：
+        · 需要授权：代价过大 / 用户转移话题 / 方案缺陷过大 / 资源被占用 / 缺权限 / 环境不对
+        · 需要补充：缺用户信息 / 需要先调研 / 子任务未回收
+        挑不出来说明还没想清卡在哪，先别派阻碍。
+    validations:
+      required: true

@@ -1,0 +1,58 @@
+name: GN · 校验
+default_kind: work
+behavior: execute
+domain: general
+description: 做完的东西要验；跑一遍看结果对不对
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    校验通常是**并列的工作**，靠「依赖」排在实现后面 —— 不是实现的子节点。
+    原因：子任务是"完成它才能完成我"，而校验不是实现的一部分，是它的下一道关。
+
+    校验和工作是同一粒度概念：跑一条命令看结果 = 工作；
+    从拉库开始写一套测试工程 = 目标。**粒度不同，类别就不同。**
+
+    校验不算做完，除非你把"实际看到什么"写出来。"应该没问题"不是校验。
+  fail: |
+    校验失败通常不是"校验本身失败"，是**被校验的东西坏了**。
+    所以失败时写清：哪一条断言没过、实际值是什么、怀疑哪里。
+
+    不要穷举跑过的所有用例。只写没过的那条。
+
+body:
+  - type: textarea
+    id: target
+    attributes:
+      label: 验什么
+      description: |
+        指到具体的东西：哪个功能、哪个文件、哪个契约。
+        写"整体验一下"等于没验。
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: 怎么验
+      description: |
+        跑了什么命令 / 点了什么路径 / 看了什么输出。
+        要能照着复现同一次校验。
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: 实际看到什么
+      description: |
+        贴输出、贴截图、贴数字。
+        "应该没问题"不是结果。
+    validations:
+      required: true
+  - type: textarea
+    id: verdict
+    attributes:
+      label: 结论
+      description: |
+        通过 / 不通过 / 部分通过。
+        不通过要写清是哪一条，不要写"有些问题"。
+    validations:
+      required: true

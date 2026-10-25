@@ -16,9 +16,6 @@ window.__ModuleLoader__.load({
       'panel.body': '这里将来放面板内容。',
       'panel.note': '面板会一直保持打开，只有再次点击上面的箭头按钮才会收起。',
       'board.count': '共 {n} 条 · 已启用 {on} 条',
-      'board.expandAll': '全部展开',
-      'board.collapseAll': '全部收起',
-      'board.off': '未启用',
       'board.empty': '还没有任务。',
       'board.tree': '科技树',
       'board.list': '列表',
@@ -31,9 +28,6 @@ window.__ModuleLoader__.load({
       'panel.body': '这里将来放面板内容。',
       'panel.note': '面板会一直保持打开，只有再次点击上面的箭头按钮才会收起。',
       'board.count': '共 {n} 条 · 已启用 {on} 条',
-      'board.expandAll': '全部展开',
-      'board.collapseAll': '全部收起',
-      'board.off': '未启用',
       'board.empty': '还没有任务。',
       'board.tree': '科技树',
       'board.list': '列表',
@@ -46,9 +40,6 @@ window.__ModuleLoader__.load({
       'panel.body': 'Panel content goes here.',
       'panel.note': 'The panel stays open until you click the arrow button again.',
       'board.count': '{n} tasks · {on} enabled',
-      'board.expandAll': 'Expand all',
-      'board.collapseAll': 'Collapse all',
-      'board.off': 'Disabled',
       'board.empty': 'No tasks yet.',
       'board.tree': 'Tech tree',
       'board.list': 'List',
@@ -376,13 +367,9 @@ window.__ModuleLoader__.load({
       return depth;
     }
 
-    /** Start folded below the first level so the panel opens as an outline. */
-    const DEFAULT_COLLAPSED = {};
-    SAMPLE_TASKS.forEach(function (node) {
-      if ((TASK_CHILDREN[node.id] || []).length > 0 && taskDepth(node) >= 1) {
-        DEFAULT_COLLAPSED[node.id] = true;
-      }
-    });
+    /* 注：早期这里有个 DEFAULT_COLLAPSED（默认折叠二级以下），但 TechTree
+       从来没读过它，等于死代码。T-020 换成「视图切换 + 组过滤 + 搜索」
+       之后彻底删掉——折叠这件事交给按组过滤做，不需要每个节点自己记状态。 */
 
     /* 计划状态直接复用 A2A 的任务九态（摘要见 计划\19-A2A调研\README.md）：
        未指定 / 已提交 / 处理中 / 需补充(INPUT_REQUIRED) / 需授权(AUTH_REQUIRED) /
@@ -472,11 +459,71 @@ window.__ModuleLoader__.load({
       return 'var(--dsw-alias-' + statusA2A(status).tone + ')';
     }
 
-    /** 计划模板目录（GitHub issue forms 的 YAML）。 */
-    const TEMPLATE_DIR = 'X:\\temp\\dsh\\开发\\taskboard\\templates';
+    /**
+     * 计划库与模板的路径。
+     *
+     * ⚠️ 这里连踩两次坑，写死教训：
+     *
+     * 第一次：把「读文件」换成「走命令通道」+ 5 秒轮询 → 每秒 21 条系统消息刷屏。
+     *
+     * 第二次：加了 `/task-paths` 命令去问宿主路径，但**Host 侧插件不重载就不会有
+     * 这条命令**（客户端是页面级加载、刷新即生效，Host 不是）。于是每次开面板
+     * `/task-paths` 都失败 → 走兜底 → 兜底又是 1 + 52 条 `/task-get` → 再次刷屏。
+     *
+     * 所以现在的规矩是：**面板一个命令都不主动发**。
+     *   1. 先用宿主给的路径（如果宿主已重载、`/task-paths` 存在，最多只问一次）
+     *   2. 问不到就用下面这几个兜底路径直接读文件
+     *
+     * 另外记一条常被搞错的前提（用户明确指出）：
+     * **沙箱只管「工具调用」，不管工具内部的实现；而且 Windows 上本来就没有沙箱机制。**
+     * 所以「工作区外的文件读不到」这个担心从一开始就不成立 —— workspaceFiles RPC
+     * 跑在宿主进程里，读 `~/.dsh/**` 和读工作区内的文件没有任何区别。
+     * 以前正是这个错误前提，才促使我把读文件换成了走命令通道，进而刷屏。
+     */
+    /**
+     * 计算计划库与模板的路径 —— **一条命令都不发**。
+     *
+     * 之前这里会跑 `/task-paths` 命令问宿主。现在去掉，原因：
+     * 沙箱只管工具调用，不管工具内部实现；Windows 也没有沙箱机制。
+     * 所以面板（跑在宿主进程里的客户端半边）读 `~/.dsh/**` 毫无障碍，
+     * 根本不需要为了"绕过限制"去问宿主，更不需要发命令。
+     *
+     * 路径按宿主的同一套规则推导（`dsh-home-paths`）：
+     *   显式配置 > $DSH_HOME > ~/.dsh
+     */
+    let PATHS = null;
 
-    /** 计划库：单个 JSONL 文件（用户目录）。 */
-    const STORE_FILE = 'C:\\Users\\16229\\.dsh\\taskboard\\plans.jsonl';
+    /** 推导用户主目录：优先宿主给的 cwd 里的盘符，否则用已知环境。 */
+    function guessHomeDirs() {
+      const homes = [];
+      /* Electron 渲染进程里通常有这些全局量。 */
+      try {
+        if (typeof window !== 'undefined' && window.__DSH_BOOT__) {
+          const boot = window.__DSH_BOOT__;
+          if (boot && typeof boot.dshHome === 'string' && boot.dshHome !== '') homes.push(boot.dshHome);
+        }
+      } catch (failure) {
+        /* 没有就算了 */
+      }
+      /* 本机常见位置兜底。 */
+      homes.push('C:\\Users\\16229\\.dsh');
+      return homes;
+    }
+
+    function templateDirCandidates() {
+      return ['X:\\temp\\dsh\\开发\\taskboard\\templates'];
+    }
+
+    /** 初始化路径：纯本地推导，不发任何命令。 */
+    async function ensurePaths() {
+      if (PATHS !== null) return PATHS;
+      const home = guessHomeDirs()[0] || 'C:\\Users\\16229\\.dsh';
+      PATHS = {
+        store: home + '\\taskboard\\plans.jsonl',
+        templates: templateDirCandidates()[0] || '',
+      };
+      return PATHS;
+    }
 
     /** 只读文件 RPC：读不写会话日志（命令通道会写）。 */
     function fileRpc() {
@@ -520,21 +567,27 @@ window.__ModuleLoader__.load({
         body: body,
       });
     }
-    const TYPE_TO_KIND = {
+    /**
+     * 类型 → 显示名。**不再自己维护**（T-021 的教训：面板不该硬编码宿主的语义）。
+     *
+     * 以前这里写死了 A–F + H1–H8，宿主改成四类别 + 双字母编号后全部失效。
+     * 现在：四类别名来自宿主的 kind 字段，模板名来自 /task-templates 返回的 YAML。
+     * 这个表只留作**旧数据兜底**（宿主没给 kind 时）。
+     */
+    const KIND_LABELS = {
+      goal: '目标',
+      design: '设计',
+      record: '记录',
+      work: '工作',
+    };
+    /** 旧单字母 type 的兜底名（只有老数据会走到）。 */
+    const LEGACY_TYPE_LABELS = {
       A: '问题',
       B: '设计',
       C: '接口',
       D: '实现',
       R: '研究',
       F: '复盘',
-      H1: '搁置·授权',
-      H2: '搁置·授权',
-      H3: '搁置·授权',
-      H4: '搁置·补充',
-      H5: '搁置·补充',
-      H6: '搁置·授权',
-      H7: '搁置·授权',
-      H8: '搁置·补充',
     };
 
     /** 宿主 /tasks 的一行 → 卡片节点。 */
@@ -558,10 +611,16 @@ window.__ModuleLoader__.load({
         });
       return {
         id: row.id,
-        /* 原始类型码：编辑时回填表单要用它，不能从 kind 反推（搁置模板 H1..H8 反推不出来）。 */
+        /* 原始类型码：编辑时回填表单要用它。宿主的 /tasks 已经归一成双字母编号。 */
         typeCode: type,
         title: row.title || row.id,
-        kind: TYPE_TO_KIND[type] || '计划',
+        /* kind 优先用宿主给的（四类别模型）；没有才按旧 type 兜底。 */
+        kindKey: String(row.kind || '').trim(),
+        kind:
+          KIND_LABELS[String(row.kind || '').trim()] ||
+          LEGACY_TYPE_LABELS[type] ||
+          type ||
+          '事项',
         status: status,
         on: status === '提交' || status === '处理中',
         parent: row.parent || '',
@@ -768,6 +827,108 @@ window.__ModuleLoader__.load({
         width: Math.max(NODE_W + 8, box.width || 0),
         height: Math.max(NODE_H + 8, box.height || 0),
       };
+    }
+
+    /**
+     * 列表视图（T-020）。
+     *
+     * 计划一多，树就没法看：没有边的节点会被 dagre 一字排开，
+     * 30 张要滚 3 屏。列表视图按组分区、一行一张，密度高得多，
+     * 而且在这里做「未读/待办」标记最容易读。
+     */
+    function TaskList(props) {
+      const tasks = props.tasks;
+      const byGroup = [
+        { id: '进行', label: '进行' },
+        { id: '搁置', label: '搁置' },
+        { id: '完成', label: '完成' },
+        { id: '', label: '草稿' },
+      ];
+      const bucket = function (node) {
+        if (node.status === '未指定') return '';
+        const groups = groupsOf(node.status);
+        /* 同时属于「进行」和「搁置」的，优先归「搁置」——用户更关心在等他的。 */
+        if (groups.indexOf('搁置') !== -1) return '搁置';
+        if (groups.indexOf('进行') !== -1) return '进行';
+        return '完成';
+      };
+
+      return h(
+        'div',
+        { style: { height: 336, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 } },
+        byGroup.map(function (group) {
+          const rows = tasks.filter(function (node) {
+            return bucket(node) === group.id;
+          });
+          if (rows.length === 0) return null;
+          return h(
+            'div',
+            { key: 'grp-' + (group.id || 'draft'), style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+            h(
+              'div',
+              {
+                style: {
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: 'var(--dsw-alias-label-secondary)',
+                  paddingBottom: 2,
+                  borderBottom: '1px solid var(--dsw-alias-border-l1)',
+                },
+              },
+              group.label + '（' + rows.length + '）',
+            ),
+            rows.map(function (node) {
+              return h(
+                'div',
+                {
+                  key: 'row-' + node.id,
+                  onClick: function () {
+                    props.onSelect(node.id);
+                  },
+                  style: clickableStyle({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '5px 8px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    background:
+                      props.selected === node.id ? 'var(--dsw-alias-bg-layer-2)' : 'var(--dsw-alias-bg-layer-1)',
+                    border:
+                      '3px solid ' +
+                      (props.selected === node.id ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)'),
+                  }),
+                },
+                h('span', { style: idChipStyle }, node.id),
+                h('span', { style: kindChipStyle }, node.kind),
+                h(
+                  'span',
+                  {
+                    style: {
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 12,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      color: 'var(--dsw-alias-label-primary)',
+                    },
+                  },
+                  node.title,
+                ),
+                h(
+                  'span',
+                  { style: { fontSize: 11, flex: 'none', color: statusTone(node.status) } },
+                  node.status + ' · ' + groupLabel(node.status),
+                ),
+              );
+            }),
+          );
+        }),
+        tasks.length === 0
+          ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } }, '没有符合条件的事项。')
+          : null,
+      );
     }
 
 
@@ -1246,6 +1407,41 @@ window.__ModuleLoader__.load({
               : null,
           ),
         ),
+        section(
+          '历史',
+          props.history && props.history.length > 0
+            ? h(
+                'div',
+                { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+                props.history
+                  .slice()
+                  .reverse()
+                  .map(function (entry, index) {
+                    const when = entry.ts ? entry.ts.replace('T', ' ').replace(/\..*$/u, '') : '—';
+                    const who = entry.actor || '—';
+                    const move = entry.from && entry.to ? entry.from + ' → ' + entry.to : '状态=' + entry.status;
+                    return h(
+                      'div',
+                      {
+                        key: 'hist-' + index,
+                        style: {
+                          display: 'flex',
+                          gap: 8,
+                          fontSize: 11,
+                          lineHeight: '18px',
+                          color: 'var(--dsw-alias-label-secondary)',
+                          borderLeft: '2px solid var(--dsw-alias-border-l1)',
+                          paddingLeft: 8,
+                        },
+                      },
+                      h('span', { style: { flex: 'none', width: 128 } }, when),
+                      h('span', { style: { flex: 'none', width: 90, overflow: 'hidden', textOverflow: 'ellipsis' } }, who),
+                      h('span', { style: { color: 'var(--dsw-alias-label-primary)' } }, move),
+                    );
+                  }),
+              )
+            : h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } }, '没有可读的历史事件。'),
+        ),
       );
     }
     /** GitHub issue forms 的 YAML 子集：name / description / body[].type,id,attributes.*,validations.required */
@@ -1345,24 +1541,64 @@ window.__ModuleLoader__.load({
       flush();
       return out;
     }
-    /* 模板下拉：先「这是什么活」，再「为什么停下来等人」。
-       代码只认 type 字符串，H* 不改变任何状态语义，只是正文骨架。 */
-    const TYPE_LABELS = [
-      ['A', '问题'],
-      ['B', '设计'],
-      ['C', '接口'],
-      ['D', '实现'],
-      ['R', '研究'],
-      ['F', '复盘'],
-      ['H1', '搁置 · 授权-代价过大'],
-      ['H2', '搁置 · 授权-用户转移话题'],
-      ['H3', '搁置 · 授权-方案缺陷过大'],
-      ['H4', '搁置 · 补充-缺用户信息'],
-      ['H5', '搁置 · 补充-需要先调研'],
-      ['H6', '搁置 · 授权-资源被占用'],
-      ['H7', '搁置 · 授权-缺权限/环境'],
-      ['H8', '搁置 · 补充-子任务未回收'],
+    /**
+     * 从模板 YAML 里抠出「编号 / 名称」，给下拉用。
+     *
+     * ⚠️ 名称里**不再拼编号**：模板的 `name` 本身已经是 `GD · 实现` 这种形式，
+     * 再拼一次就成了 `GD · GD · 实现`（用户截图里就是这个毛病）。
+     * 这里只取 `·` 后面的部分，编号由调用方决定怎么显示。
+     */
+    function templateLabelSet(templates) {
+      const out = [];
+      const seen = Object.create(null);
+      Object.keys(templates || {}).forEach(function (type) {
+        const yaml = String(templates[type] || '');
+        const match = /^name:\s*(.+)$/mu.exec(yaml);
+        let label = match ? match[1].trim() : '';
+        /* 去掉已有的 `XX · ` 前缀，只留中文名。 */
+        label = label.replace(/^[A-Z]{1,2}\s*[·・.]\s*/u, '').trim();
+        if (label === '') label = type;
+        if (seen[type]) return;
+        seen[type] = true;
+        out.push([type, label]);
+      });
+      out.sort(function (left, right) {
+        return left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0;
+      });
+      return out;
+    }
+
+    /** 模板 YAML 里声明的大类。 */
+    function kindOfTemplate(yaml) {
+      const match = /^(?:default_)?kind:\s*(\w+)$/mu.exec(String(yaml || ''));
+      return match ? match[1] : '';
+    }
+
+    /** 模板 YAML 里声明的领域；没写按 general。 */
+    function templateDomain(yaml) {
+      const match = /^domain:\s*(\w+)$/mu.exec(String(yaml || ''));
+      return match ? match[1] : 'general';
+    }
+
+    /**
+     * 领域选项。这是**固定枚举**，不是自由标签（用户明确：不做 tag）。
+     *
+     * 作用只有一个：筛选模板下拉。用户原话——
+     * 「我写程序的时候不想看到小说的模板。」
+     */
+    const DOMAIN_OPTIONS = [
+      ['code', '代码'],
+      ['art', '绘画'],
+      ['writing', '写作'],
+      ['general', '通用'],
+      ['', '全部领域'],
     ];
+
+    /** 上次选的领域记在内存里（刷新页面就重置，够用）。 */
+    let REMEMBERED_DOMAIN = 'code';
+    function rememberDomain(value) {
+      REMEMBERED_DOMAIN = value;
+    }
 
     const formInputStyle = clickableStyle({
       width: '100%',
@@ -1398,6 +1634,17 @@ window.__ModuleLoader__.load({
       const typeState = React.useState(initialType);
       const type = typeState[0];
       const setType = typeState[1];
+      /* 大类（kind）：四类别模型的核心字段，决定"谁能标完成"。
+         不选时跟模板推断（宿主会按 type 推），但用户能显式改——
+         例如把一张工作升级成目标。
+         **默认是目标**（用户要求）。 */
+      const kindState = React.useState(init.kind === undefined ? 'goal' : init.kind);
+      const kind = kindState[0];
+      const setKind = kindState[1];
+      /* 领域（domain）：只用来筛模板，不影响已存在的事项。沿用上次选的。 */
+      const domainState = React.useState(init.domain || REMEMBERED_DOMAIN || 'code');
+      const domain = domainState[0];
+      const setDomain = domainState[1];
       const valuesState = React.useState(initialValues);
       const values = valuesState[0];
       const setValues = valuesState[1];
@@ -1429,6 +1676,11 @@ window.__ModuleLoader__.load({
             return item.type !== 'markdown';
           })
         : [];
+      /* T-035 兜底：选了类型但模板没加载出来（例如只读档下读不到模板文件），
+         且这张计划本来有正文 → 退回纯文本编辑，并把原因说出来。
+         以前这种情况是静默失败：字段一个都不显示，也不知道为什么。 */
+      const templateMissing = type !== '' && template === null;
+      const fallbackToPlainText = templateMissing && String(init.body || '').trim() !== '';
 
       const updateLink = function (index, patch) {
         const next = links.slice();
@@ -1442,7 +1694,10 @@ window.__ModuleLoader__.load({
           return;
         }
         let text = '';
-        if (type !== '') {
+        if (fallbackToPlainText) {
+          /* 模板没加载出来：直接按纯文本保存，不要再拿空 fields 去卡「至少填一项」。 */
+          text = body;
+        } else if (type !== '') {
           const parts = [];
           let missing = '';
           fields.forEach(function (item) {
@@ -1488,6 +1743,8 @@ window.__ModuleLoader__.load({
         props.onSubmit({
           title: title.trim(),
           type: type,
+          /* 空串 = 让宿主按模板推断；非空则显式指定大类。 */
+          kind: kind,
           body: text,
           parent: parent,
           links: linkText,
@@ -1537,29 +1794,114 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { style: { width: 440, flex: 'none', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, overflow: 'auto', paddingRight: 6 } },
+            /* 标题独占一行（用户要求）。 */
+            h('input', {
+              value: title,
+              placeholder: '标题（一句话）',
+              onChange: function (event) {
+                setTitle(event.target.value);
+              },
+              style: Object.assign({}, formInputStyle, { width: '100%', flex: 'none' }),
+            }),
             h(
               'div',
               { style: { display: 'flex', gap: 8 } },
-              h('input', {
-                value: title,
-                placeholder: '标题（一句话）',
-                onChange: function (event) {
-                  setTitle(event.target.value);
+              /* 领域在**最左**：它是筛选器，先排除"我现在不想看到的东西"。
+                 用户原话：「左边再放一个领域。作为筛选。我写程序的时候不想看到小说的模板。」
+                 领域记在内存里，下次打开沿用上次选的。 */
+              h(
+                'select',
+                {
+                  value: domain,
+                  onChange: function (event) {
+                    const next = event.target.value;
+                    setDomain(next);
+                    rememberDomain(next);
+                    /* 换领域后当前模板可能不在新领域里 → 清空。 */
+                    if (type !== '' && templateDomain(templates[type]) !== next) setType('');
+                  },
+                  title: '领域：只影响模板下拉显示什么，不影响已存在的事项',
+                  style: Object.assign({}, formInputStyle, { width: 96, flex: 'none' }),
                 },
-                style: Object.assign({}, formInputStyle, { flex: 1 }),
-              }),
+                DOMAIN_OPTIONS.map(function (pair) {
+                  return h('option', { key: 'domain-' + pair[0], value: pair[0] }, pair[1]);
+                }),
+              ),
+              /* 大类：先决定"这是哪一类"，模板列表跟着被筛。
+                 用户原话：「大类在左边，而且大类是筛选。大类下拉框在目标的时候只能显示类别为目标的模板。」
+
+                 模板编号是 `大类前缀 + 模板字母`（MG / SQ / JB / GR…），
+                 所以按首字母就能筛，不用额外查表。 */
+              h(
+                'select',
+                {
+                  value: kind,
+                  onChange: function (event) {
+                    const next = event.target.value;
+                    setKind(next);
+                    /* 换了大类，当前模板可能不合法 → 清空，让用户重选。
+                       留着会让人以为选上了，实际提交时被宿主按新 kind 覆盖。 */
+                    if (type !== '' && next !== '') {
+                      const prefix = { goal: 'M', design: 'S', record: 'J', work: 'G' }[next];
+                      if (prefix && type.charAt(0) !== prefix) setType('');
+                    }
+                  },
+                  title: '大类决定谁能标完成：目标由子事项推导、设计等你点头、记录写完即完、工作由 AI 做出来',
+                  style: Object.assign({}, formInputStyle, { width: 104, flex: 'none' }),
+                },
+                [['', '全部大类']].concat(
+                  Object.keys(KIND_LABELS).map(function (key) {
+                    return [key, KIND_LABELS[key]];
+                  }),
+                ).map(function (pair) {
+                  return h(
+                    'option',
+                    { key: 'kind-' + (pair[0] || 'all'), value: pair[0] },
+                    pair[0] === '' ? pair[1] : pair[0] + ' · ' + pair[1],
+                  );
+                }),
+              ),
+              /* 模板：只列「所选大类」下的。大类为空时列全部。 */
               h(
                 'select',
                 {
                   value: type,
                   onChange: function (event) {
-                    setType(event.target.value);
+                    const next = event.target.value;
+                    setType(next);
+                    /* 选了模板就同步大类（模板自带 kind），避免两处不一致。 */
+                    if (next !== '') {
+                      const declared = kindOfTemplate(templates[next]);
+                      if (declared !== '') setKind(declared);
+                    }
                   },
-                  style: Object.assign({}, formInputStyle, { width: 132, flex: 'none' }),
+                  style: Object.assign({}, formInputStyle, { flex: 1, minWidth: 0 }),
                 },
-                [['', '空模板']].concat(TYPE_LABELS).map(function (pair) {
-                  return h('option', { key: 'type-' + (pair[0] || 'blank'), value: pair[0] }, pair[0] === '' ? pair[1] : pair[0] + ' · ' + pair[1]);
-                }),
+                [['', '空模板']]
+                  .concat(
+                    templateLabelSet(templates).filter(function (pair) {
+                      /* 领域先筛，再按大类筛。
+                       *
+                       * ⚠️ `general` 的模板**在任何领域下都显示**。
+                       * 之前是严格相等，结果「代码 + 目标」筛出 0 个模板——
+                       * 因为目标类四个模板分别是 general/general/art/writing，
+                       * 没有一个是 code。用户看到的就是只有「空模板」。
+                       *
+                       * 语义上 general 就是"不分领域，谁都能用"，不该被筛掉。 */
+                      const own = templateDomain(templates[pair[0]]);
+                      if (domain !== '' && own !== domain && own !== 'general') return false;
+                      if (kind === '') return true;
+                      return kindOfTemplate(templates[pair[0]]) === kind;
+                    }),
+                  )
+                  .map(function (pair) {
+                    return h(
+                      'option',
+                      { key: 'type-' + (pair[0] || 'blank'), value: pair[0] },
+                      /* 不重复拼编号：模板名已去掉前缀，这里补上编号一次。 */
+                      pair[0] === '' ? pair[1] : pair[0] + ' · ' + pair[1],
+                    );
+                  }),
               ),
             ),
             h(
@@ -1681,6 +2023,22 @@ window.__ModuleLoader__.load({
             'div',
             { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, overflow: 'auto', paddingRight: 6, borderLeft: '1px solid var(--dsw-alias-border-l1)', paddingLeft: 16 } },
             template && type !== '' ? h('div', { style: lineStyle }, template.name + '：' + template.description) : null,
+            fallbackToPlainText
+              ? h(
+                  'div',
+                  {
+                    style: {
+                      fontSize: 11,
+                      lineHeight: 1.6,
+                      padding: '6px 8px',
+                      borderRadius: 8,
+                      border: '1px solid var(--dsw-alias-state-warn-primary)',
+                      color: 'var(--dsw-alias-state-warn-primary)',
+                    },
+                  },
+                  '模板 ' + type + ' 没加载出来，已切到纯文本编辑：下面是计划原文，直接改 Markdown 即可。',
+                )
+              : null,
             type !== ''
               ? h(
                   'div',
@@ -1712,14 +2070,28 @@ window.__ModuleLoader__.load({
                       })
                     : h('div', { style: lineStyle }, '模板还没加载出来（检查宿主插件是否在跑）'),
                 )
-              : h('textarea', {
+              : null,
+            /* 模板缺失且有原文 → 纯文本兜底，保证内容不丢。 */
+            fallbackToPlainText
+              ? h('textarea', {
+                  value: body,
+                  placeholder: '正文（Markdown）',
+                  onChange: function (event) {
+                    setBody(event.target.value);
+                  },
+                  style: Object.assign({}, formInputStyle, { flex: 1, minHeight: 200, resize: 'vertical' }),
+                })
+              : null,
+            type === ''
+              ? h('textarea', {
                   value: body,
                   placeholder: '正文（Markdown）——空模板，从零写',
                   onChange: function (event) {
                     setBody(event.target.value);
                   },
                   style: Object.assign({}, formInputStyle, { flex: 1, minHeight: 160, resize: 'vertical' }),
-                }),
+                })
+              : null,
           ),
         ),
         h(
@@ -1749,6 +2121,10 @@ window.__ModuleLoader__.load({
       const noteState = React.useState({ id: '', draft: '', error: '' });
       const note = noteState[0];
       const setNote = noteState[1];
+      /* 事件历史（T-019）：选中计划时拉一次，只读。 */
+      const historyState = React.useState({ id: '', entries: [] });
+      const historyInfo = historyState[0];
+      const setHistoryInfo = historyState[1];
       const createState = React.useState({ open: false, busy: false, error: '' });
       const create = createState[0];
       const setCreate = createState[1];
@@ -1764,60 +2140,108 @@ window.__ModuleLoader__.load({
 
       const sessionId = props.sessionId;
 
+      /**
+       * 【已删除】loadViaCommands
+       *
+       * 这里曾经有一个「文件读不到就改走命令通道」的兜底。删掉它，因为它
+       * 两次把界面刷屏了：
+       *
+       *   第一次：命令通道 + 5 秒轮询 → 每秒 21 条系统消息。
+       *   第二次：加了 /task-paths 问宿主路径，但 Host 侧插件必须重载才有这条命令
+       *          （客户端是页面级加载，刷新页面就生效，Host 不是）。于是每次开面板
+       *          /task-paths 都 404 → 走兜底 → 兜底是 1 条 /tasks + 52 条 /task-get
+       *          → 一打开面板就刷屏。
+       *
+       * 根本原因是：**宿主对每条命令都写 command/run + command/done 两条会话事件**，
+       * 而且不进 turn、直接渲染成对话流里的系统消息（见 dsh-commands
+       * appendLifecycle，注释原文 "direct log-only appends — no turn wraps them"）。
+       *
+       * 所以规矩定死：**面板永远不主动发命令读数据**。
+       * 读文件用 workspaceFiles RPC，它只读、不写会话日志。
+       */
+
+      /** 兜底：直接读 JSONL（路径来自 /task-paths，不硬编码）。 */
+      const loadViaFiles = function (paths) {
+        const files = fileRpc();
+        if (files === null) throw new Error('没有文件 RPC（workspaceFiles）');
+        return Promise.resolve(files.read(sessionId, paths.store, { limit: 5000 }, undefined)).then(function (result) {
+          if (!result || result.ok !== true) {
+            throw new Error('读取计划库失败：' + String((result && result.error && result.error.message) || '未知错误'));
+          }
+          const text = result.value.text || '';
+          const map = {};
+          text.split(/\r?\n/u).forEach(function (line) {
+            if (line.trim() === '') return;
+            let event = null;
+            try {
+              event = JSON.parse(line);
+            } catch (failure) {
+              return;
+            }
+            if (!event) return;
+            if (event.op === 'upsert' && event.task && event.task.id) {
+              map[event.task.id] = event.task;
+            } else if (event.op === 'patch' && event.id && map[event.id]) {
+              map[event.id] = Object.assign({}, map[event.id], event.patch);
+            }
+          });
+          const rows = Object.keys(map)
+            .sort()
+            .map(function (id) {
+              return map[id];
+            });
+          const bodies = {};
+          rows.forEach(function (row) {
+            bodies[row.id] = row.body || '';
+          });
+          return { rows: rows, bodies: bodies };
+        });
+      };
+
       const load = React.useCallback(function () {
         if (typeof sessionId !== 'string' || sessionId === '') return;
         setBusy(true);
-        const files = fileRpc();
-        if (files === null) {
-          setData({ tasks: SAMPLE_TASKS, bodies: {}, live: false, error: '没有文件 RPC（workspaceFiles），读不到计划库' });
-          setBusy(false);
-          return;
-        }
-        Promise.resolve(files.read(sessionId, STORE_FILE, { limit: 5000 }, undefined))
+        /* **只读文件**。命令通道已彻底从读取路径上移除：
+         * 宿主对每条命令写两条会话事件并渲染成系统消息，一开面板就刷屏。
+         * 文件读不到就如实报错，不再"换条路试试"——那条路是灾难。 */
+        ensurePaths()
+          .then(function (paths) {
+            return loadViaFiles(paths);
+          })
           .then(function (result) {
-            if (!result || result.ok !== true) {
-              throw new Error('读取计划库失败：' + String((result && result.error && result.error.message) || '未知错误'));
-            }
-            const text = result.value.text || '';
-            const map = {};
-            text.split(/\r?\n/u).forEach(function (line) {
-              if (line.trim() === '') return;
-              let event = null;
-              try {
-                event = JSON.parse(line);
-              } catch (failure) {
-                return;
-              }
-              if (!event) return;
-              if (event.op === 'upsert' && event.task && event.task.id) {
-                map[event.task.id] = event.task;
-              } else if (event.op === 'patch' && event.id && map[event.id]) {
-                map[event.id] = Object.assign({}, map[event.id], event.patch);
-              }
-            });
-            const rows = Object.keys(map)
-              .sort()
-              .map(function (id) {
-                return map[id];
-              });
-            const bodies = {};
-            rows.forEach(function (row) {
-              bodies[row.id] = row.body || '';
-            });
-            setData({ tasks: rows.map(fromApi), bodies: bodies, live: true, error: '' });
+            setData({ tasks: result.rows.map(fromApi), bodies: result.bodies, live: true, error: '' });
           })
           .catch(function (error) {
-            setData({ tasks: SAMPLE_TASKS, bodies: {}, live: false, error: String((error && error.message) || error) });
+            /* 不再静默降级成样例数据冒充真数据：说清楚读不到，并保留样例做视觉占位。 */
+            setData({
+              tasks: SAMPLE_TASKS,
+              bodies: {},
+              live: false,
+              error: '读不到计划库：' + String((error && error.message) || error) + '（下面显示的是样例数据）',
+            });
           })
           .then(function () {
             setBusy(false);
-          });      }, [sessionId]);
+          });
+      }, [sessionId]);
       React.useEffect(
         function () {
           load();
         },
         [load],
       );
+      /* 自动轮询已移除。
+       *
+       * 原来这里每 5 秒调一次 load()。配上「命令通道读数据」后，每次刷新要发
+       * 53 条命令（1 次 /tasks + 每张一次 /task-get），而宿主对每条命令写两条
+       * 会话事件且会渲染成系统消息 —— 界面被刷屏。
+       *
+       * 现在文件优先、不写日志，轮询本身无害，但仍然是「每 5 秒读一遍全库」，
+       * 52 张计划时没必要。改成「手动刷新 + 操作后自动刷新」：
+       *   · 顶栏「刷新」按钮
+       *   · 任何写操作（改状态 / 存备注 / 新建 / 编辑）成功后各刷一次
+       * 这样既不会漏更新，也不会空转。真的需要看别人会话的改动时，点一下刷新即可。
+       */
 
       const runState = function (next) {
         if (!activeNodeId) return;
@@ -1860,53 +2284,59 @@ window.__ModuleLoader__.load({
           });
       };
 
+      /**
+       * 加载模板（新建与编辑共用）。
+       *
+       * 以前只在 openCreate 里加载，导致「直接点编辑」时 templates 是空的，
+       * CreateForm 解析不出字段 → 界面显示「模板无法加载」（T-024 / T-035）。
+       * 现在抽出来，两条路径都调；加载失败时返回空表，由 CreateForm 走纯文本兜底。
+       */
+      const loadTemplates = function (onError) {
+        /* **从宿主拿模板清单**，不再硬编码。
+           以前这里写死 A–F + H1–H8，宿主改成双字母编号 + 四类别后，
+           那些文件全不存在 → 下拉只剩「空模板」，右侧显示"模板还没加载出来"。
+           宿主的 /task-templates 是唯一真源（它遍历内核的 TYPES）。 */
+        runCommand('/task-templates', sessionId)
+          .then(function (settled) {
+            const text = commandText(settled);
+            const list = JSON.parse(text);
+            if (!Array.isArray(list)) throw new Error('/task-templates 没返回数组');
+            const map = {};
+            list.forEach(function (item) {
+              if (item && typeof item.type === 'string' && item.type !== '' && item.yaml) {
+                map[item.type] = item.yaml;
+              }
+            });
+            if (Object.keys(map).length === 0) {
+              if (onError) onError('宿主返回了 0 个模板（检查 templates 目录）');
+              return;
+            }
+            setTemplates(map);
+          })
+          .catch(function (error) {
+            if (onError) onError(String((error && error.message) || error));
+          });
+      };
+
+
       const openCreate = function () {
         setEditId('');
         setCreate({ open: true, busy: false, error: '' });
         if (Object.keys(templates).length > 0) return;
-        const files = fileRpc();
-        if (files === null) {
-          setCreate({ open: true, busy: false, error: '读不到模板：没有文件 RPC' });
-          return;
-        }
-        /* A–F 是「这是什么活」；H1–H8 是「为什么停下来等人」（搁置模板）。 */
-        const types = [
-          'A',
-          'B',
-          'C',
-          'D',
-          'R',
-          'F',
-          'H1',
-          'H2',
-          'H3',
-          'H4',
-          'H5',
-          'H6',
-          'H7',
-          'H8',
-        ];
-        Promise.all(
-          types.map(function (type) {
-            return Promise.resolve(files.read(sessionId, TEMPLATE_DIR + '\\' + type + '.yml', { limit: 400 }, undefined))
-              .then(function (result) {
-                return result && result.ok === true ? [type, result.value.text] : [type, ''];
-              })
-              .catch(function () {
-                return [type, ''];
-              });
-          }),
-        )
-          .then(function (pairs) {
-            const map = {};
-            pairs.forEach(function (pair) {
-              if (pair[1]) map[pair[0]] = pair[1];
-            });
-            setTemplates(map);
-          })
-          .catch(function (error) {
-            setCreate({ open: true, busy: false, error: String((error && error.message) || error) });
-          });
+        loadTemplates(function (message) {
+          setCreate({ open: true, busy: false, error: message });
+        });
+      };
+
+      /** 打开编辑 / 分支：和新建一样要先把模板准备好（T-035 的修法）。 */
+      const openEdit = function (node, mode) {
+        setSelected(node.id);
+        setEditMode(mode);
+        setEditId(node.id);
+        if (Object.keys(templates).length > 0) return;
+        loadTemplates(function (message) {
+          setCreate({ open: false, busy: false, error: message });
+        });
       };
 
       const submitCreate = function (payload) {
@@ -1954,7 +2384,45 @@ window.__ModuleLoader__.load({
           });
       };
 
-      const tasks = data.tasks;
+      /* 视图与过滤（T-020）。
+         「树糊成一团」的根因不是布局算法，是**一次全画出来**：
+         30 张要滚 3 屏、100 张 9.5 屏，而且没有折叠、没有过滤。
+         所以这里加三样真正生效的东西：视图切换、按组过滤、搜索。 */
+      const viewState = React.useState('tree');
+      const view = viewState[0];
+      const setView = viewState[1];
+      const filterState = React.useState('');
+      const groupFilter = filterState[0];
+      const setGroupFilter = filterState[1];
+      const searchState = React.useState('');
+      const search = searchState[0];
+      const setSearch = searchState[1];
+
+      const allTasks = data.tasks;
+
+      /** 过滤：按组（进行/搁置/完成/草稿）+ 搜索（id 或标题）。 */
+      const tasks = React.useMemo(
+        function () {
+          const needle = search.trim().toLowerCase();
+          return allTasks.filter(function (node) {
+            if (groupFilter !== '') {
+              const groups = groupsOf(node.status);
+              if (node.status === '未指定') {
+                if (groupFilter !== '草稿') return false;
+              } else if (groups.indexOf(groupFilter) === -1) {
+                return false;
+              }
+            }
+            if (needle !== '') {
+              const hay = (node.id + ' ' + node.title).toLowerCase();
+              if (hay.indexOf(needle) === -1) return false;
+            }
+            return true;
+          });
+        },
+        [allTasks, groupFilter, search],
+      );
+
       const graph = React.useMemo(
         function () {
           return buildGraph(tasks);
@@ -1964,12 +2432,71 @@ window.__ModuleLoader__.load({
       const activeNode = selected && graph.byId[selected] ? graph.byId[selected].node : null;
       const activeId = activeNode ? activeNode.id : '';
       const activeNodeId = activeId;
+
+      /* 选中变化时拉一次历史（T-019）。
+       *
+       * 走**文件**，不走命令：历史本来就藏在 plans.jsonl 的每一行里，
+       * 文件里一行一个事件，直接解析就够。用命令的话每次点开详情都会往
+       * 会话日志写一对 command/run + command/done，点几十张就刷屏。
+       * 这一步是纯读，不写任何东西。 */
+      React.useEffect(
+        function () {
+          if (activeNodeId === '') return undefined;
+          if (historyInfo.id === activeNodeId) return undefined;
+          let canceled = false;
+          ensurePaths()
+            .then(function (paths) {
+              const files = fileRpc();
+              if (paths === null || files === null) throw new Error('没有文件通道');
+              return Promise.resolve(files.read(sessionId, paths.store, { limit: 5000 }, undefined));
+            })
+            .then(function (result) {
+              if (!result || result.ok !== true) throw new Error('读不到计划库');
+              const entries = [];
+              String(result.value.text || '')
+                .split(/\r?\n/u)
+                .filter(function (line) {
+                  return line.trim() !== '';
+                })
+                .forEach(function (line) {
+                  let event = null;
+                  try {
+                    event = JSON.parse(line);
+                  } catch (failure) {
+                    return;
+                  }
+                  if (!event || event.op !== 'upsert' || !event.task) return;
+                  if (String(event.task.id) !== activeNodeId) return;
+                  entries.push({
+                    ts: event.ts || '',
+                    actor: event.actor || '',
+                    from: event.from || '',
+                    to: event.to || '',
+                    status: event.task.status || '',
+                  });
+                });
+              if (canceled) return;
+              setHistoryInfo({ id: activeNodeId, entries: entries.slice(-30) });
+            })
+            .catch(function () {
+              if (canceled) return;
+              setHistoryInfo({ id: activeNodeId, entries: [] });
+            });
+          return function () {
+            canceled = true;
+          };
+        },
+        [activeNodeId, historyInfo.id, sessionId],
+      );
+
       const editNode = editId && graph.byId[editId] ? graph.byId[editId].node : null;
       const editInitial = editNode
         ? {
             id: editNode.id,
             title: editMode === 'fork' ? editNode.title + '（分支）' : editNode.title,
             type: editNode.typeCode || '',
+            /* 回填大类：编辑时能看到当前是目标/设计/记录/工作，也能改（升级）。 */
+            kind: editNode.kindKey || '',
             body: data.bodies[editNode.id] || '',
             parent: editNode.parent || '',
             workspace: editNode.workspace || '',
@@ -2052,6 +2579,18 @@ window.__ModuleLoader__.load({
           legendItem('parent', false, '父子'),
           legendItem('link', true, '链接'),
           h('span', { style: { flex: 1 } }),
+          /* 视图切换（T-020）：树看关系，列表看密度。 */
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: function () {
+                setView(view === 'tree' ? 'list' : 'tree');
+              },
+              style: buttonBase(false),
+            },
+            view === 'tree' ? t('board.list') : t('board.tree'),
+          ),
           h(
             'button',
             { type: 'button', onClick: openCreate, style: buttonBase(false) },
@@ -2063,15 +2602,61 @@ window.__ModuleLoader__.load({
             busy ? '刷新中…' : '刷新',
           ),
         ),
+        /* 过滤条（T-020）：按组 + 搜索。 */
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+          ['', '进行', '搁置', '完成', '草稿'].map(function (key) {
+            const label = key === '' ? '全部' : key;
+            const active = groupFilter === key;
+            return h(
+              'button',
+              {
+                key: 'filter-' + (key || 'all'),
+                type: 'button',
+                onClick: function () {
+                  setGroupFilter(key);
+                },
+                style: Object.assign({}, buttonBase(active), {
+                  padding: '2px 10px',
+                  opacity: active ? 1 : 0.75,
+                }),
+              },
+              label,
+            );
+          }),
+          h('span', { style: { flex: 1 } }),
+          h('input', {
+            value: search,
+            placeholder: '搜 id 或标题…',
+            onChange: function (event) {
+              setSearch(event.target.value);
+            },
+            style: Object.assign({}, formInputStyle, { width: 180, flex: 'none' }),
+          }),
+          h(
+            'span',
+            { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', flex: 'none' } },
+            tasks.length + ' / ' + allTasks.length,
+          ),
+        ),
         h(
           'div',
           { style: { display: 'flex', minHeight: 0, flex: 1, position: 'relative' } },
-          h('div', { style: { flex: 1, minWidth: 0 } }, h(TechTree, { graph: graph, selected: selected, onSelect: setSelected })),
+          h(
+            'div',
+            { style: { flex: 1, minWidth: 0 } },
+            view === 'tree'
+              ? h(TechTree, { graph: graph, selected: selected, onSelect: setSelected })
+              : h(TaskList, { tasks: tasks, selected: selected, onSelect: setSelected }),
+          ),
         ),
         editNode
           ? h(CreateForm, {
               initial: editInitial,
               title: editMode === 'fork' ? '分支计划（取代原计划）' : '编辑计划',
+              /* T-035：编辑也要拿到模板，否则字段渲染不出来。 */
+              templates: templates,
               plans: tasks,
               busy: create.busy,
               error: create.error,
@@ -2105,12 +2690,12 @@ window.__ModuleLoader__.load({
               onJump: setSelected,
               canEdit: activeNode.status === '未指定',
               onEdit: function () {
-                setEditMode(activeNode.status === '未指定' ? 'edit' : 'fork');
-                setEditId(activeNode.id);
+                openEdit(activeNode, activeNode.status === '未指定' ? 'edit' : 'fork');
               },
               /* 备注草稿：切到另一张计划时自动换成那张的备注。 */
               noteDraft: note.id === activeNode.id ? note.draft : activeNode.note || '',
               noteError: note.id === activeNode.id ? note.error : '',
+              history: historyInfo.id === activeNode.id ? historyInfo.entries : [],
               onNoteDraft: function (value) {
                 setNote({ id: activeNode.id, draft: value, error: '' });
               },
@@ -2248,6 +2833,42 @@ window.__ModuleLoader__.load({
       return h('div', { style: wrapperStyle }, panel, h('div', { style: buttonSlotStyle }, button));
     }
 
+    /**
+     * 右侧栏里的任务板（T-028）。
+     *
+     * 与输入框上方抽屉**共用同一个 TaskBoard**，区别只有两点：
+     *   · 这里不画那 30×30 的箭头按钮（右侧栏本来就有 tab）；
+     *   · 高度用满，不套「浮起面板」的绝对定位。
+     *
+     * 用户原话：「除了这个箭头的入口以外，右侧的工作区面板应该也加一个计划的UI。
+     * 他们拥有相同的视图。」——所以视图是同一个组件，不是抄一份。
+     */
+    function RightbarPanel(props) {
+      const state = React.useState(false);
+      const open = state[0];
+      const setOpen = state[1];
+      useLocaleRevision();
+      /* 只在 tab 真正挂上时渲染任务板，避免右侧栏没打开也去拉数据。 */
+      React.useEffect(function () {
+        setOpen(true);
+      }, []);
+      return h(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            minHeight: 0,
+            padding: '10px 12px',
+            boxSizing: 'border-box',
+            background: 'var(--dsw-alias-bg-layer-1)',
+          },
+        },
+        open ? h(TaskBoard, { sessionId: props.sessionId }) : null,
+      );
+    }
+
     return {
       inject: ['slots', 'remote', 'remote.commands', 'remote.workspaceFiles'],
       apply(ctx) {
@@ -2295,6 +2916,54 @@ window.__ModuleLoader__.load({
             ComposerDrawer,
           );
         });
+
+        /* ── 右侧栏 tab（T-028）───────────────────────────────────────────
+           两步走，与官方 sidebar-files / ui-plan 插件同一个套路：
+             1. 往 `sidebarRightTabs` 注册一个 tab **类型**（id + kind + 标题）
+             2. 往 `sidebar.right.pane.tab` 与 `.title` 注册该 type 的**内容**
+           两者都用 key，且都必须包在 ctx.effect 里才不会泄漏。 */
+        const RIGHT_TAB_ID = '@local/composer-drawer:taskboard';
+        const RIGHT_TAB_KIND = 'taskboard';
+
+        const tabsFace = (function () {
+          try {
+            return typeof ctx.get === 'function' ? ctx.get('sidebarRightTabs') : undefined;
+          } catch (failure) {
+            return undefined;
+          }
+        })();
+
+        if (tabsFace && typeof tabsFace.register === 'function') {
+          try {
+            ctx.effect(function () {
+              return tabsFace.register({
+                id: RIGHT_TAB_ID,
+                kind: RIGHT_TAB_KIND,
+                priority: 'extension',
+                title: function () {
+                  return t('panel.title');
+                },
+              });
+            }, 'composer-drawer: 注册右侧栏 tab 类型');
+          } catch (failure) {
+            /* 注册失败不影响抽屉那一半 */
+          }
+
+          ctx.slots.inject('sidebar.right.pane.tab', function () {
+            return ctx.slots.register(
+              { name: 'sidebar.right.pane.tab', key: RIGHT_TAB_KIND },
+              RightbarPanel,
+            );
+          });
+          ctx.slots.inject('sidebar.right.pane.tab.title', function () {
+            return ctx.slots.register(
+              { name: 'sidebar.right.pane.tab.title', key: RIGHT_TAB_KIND },
+              function () {
+                return h('span', null, t('panel.title'));
+              },
+            );
+          });
+        }
       },
     };
   },

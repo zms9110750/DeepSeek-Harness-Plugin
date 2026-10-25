@@ -1,0 +1,58 @@
+name: GR · 调研
+default_kind: work
+behavior: execute
+description: 动手去查清一件事；占位，一次只能做一个
+domain: general
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    调研的产出是**结论**，不是"我查了哪些地方"。
+    结论依赖某个你不确定的东西时，不要猜——再派一个调研去查那个。
+    例子：查一个库，发现它"按 XX 协议实现"，那就派第二个调研去查那个协议具体规定了什么。
+    别把假设写进结论。
+  fail: |
+    调研失败的典型样子：查了一圈，写"没找到"。
+    如果真没找到，必须写清：查了哪些地方、用什么关键词、为什么判断它不存在。
+    "没找到"不等于"不存在"——除非你能说明找全了。
+
+    不要穷举你翻过的页面。只写：最后落脚在哪、为什么那里是终点。
+
+body:
+  - type: textarea
+    id: target
+    attributes:
+      label: 要查什么
+      description: |
+        一句话。写成一个能用"是/否/是什么"回答的问题。
+        "研究一下这个库"不算问题；"这个库支持哪些鉴权方式"才算。
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: 怎么查
+      description: |
+        先列可能的信息源，再挑。比如：
+        · 找找发布平台？官网、社区
+        · 有没有 github 仓库？看 README、issue、CHANGELOG
+        · 作者有没有写过教程或博客？看他的足迹
+        · 有没有同类项目可以对照
+        如果源码在手上，优先读源码而不是搜二手资料。
+    validations:
+      required: true
+  - type: textarea
+    id: conclusion
+    attributes:
+      label: 结论
+      description: |
+        直接回答问题。不确定的部分要明说"不确定"。
+        结论里有依赖假设的 → 派子调研，不要把假设当结论。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据
+      description: |
+        每条结论对应一个可核对的来源：链接、文件路径和行号、命令输出。
+        没有证据的结论要标出来。

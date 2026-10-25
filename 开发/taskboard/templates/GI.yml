@@ -1,0 +1,40 @@
+name: GI · 实现项
+default_kind: work
+behavior: execute
+description: 实现里的一个独立可交付项；小到能一次做完
+domain: code
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    这一条和 D（实现）的区别：D 是"做这件事"，I 是"这件事里的一个可独立交付的块"。
+    如果你发现这一条还要再拆，说明它其实是**目标**——把它升级，别在这层硬拆。
+  fail: |
+    写清：卡在哪、一个原因、下一件该试的事。不要罗列试过的所有东西。
+
+body:
+  - type: textarea
+    id: deliver
+    attributes:
+      label: 交付什么
+      description: |
+        一句话说清"做完之后多出来什么东西"：一个文件、一个函数、一条配置。
+        说不出具体交付物的，那就还不是工作，是设计。
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: 动了哪里
+      description: |
+        文件路径 + 改了什么。一行一个。
+    validations:
+      required: true
+  - type: textarea
+    id: verify
+    attributes:
+      label: 怎么确认它对了
+      description: |
+        实际跑了什么、输出是什么。
+        "应该没问题"不算。
+    validations:
+      required: true

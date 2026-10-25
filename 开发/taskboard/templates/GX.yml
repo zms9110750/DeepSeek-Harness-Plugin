@@ -1,0 +1,64 @@
+name: GX · 缺陷
+default_kind: work
+behavior: execute
+domain: code
+description: 冒烟没过 / 工具不行；有复现路径，要修掉
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    缺陷和"实现"的区别：缺陷**有复现路径**，实现没有。
+    所以第一件事永远是把复现步骤写死 —— 写不出复现步骤，说明还不知道它是什么。
+
+    如果你发现这个缺陷修起来要动好几个地方 → 它不是工作，是**目标**：
+    把它升级，再派几个工作分别修。
+  fail: |
+    修不掉要写清：试到哪一步、一个判断的原因、下一件该试的。
+    不要罗列"我试了 A、B、C"——那是流水账。
+
+    特别注意：**修不掉不等于理解不了**。
+    如果连为什么坏都不知道，先派一个调研，别硬修。
+
+body:
+  - type: textarea
+    id: repro
+    attributes:
+      label: 怎么复现
+      description: |
+        一条能照着做的路径。写不出复现步骤 = 还不知道它是什么，先派调研。
+        最少要有：做什么、期望什么、实际什么。
+    validations:
+      required: true
+  - type: textarea
+    id: expect
+    attributes:
+      label: 期望 vs 实际
+      description: |
+        两句话，对照着写。
+        期望要有依据（文档、约定、常理），不要"我觉得应该"。
+    validations:
+      required: true
+  - type: textarea
+    id: root
+    attributes:
+      label: 根因
+      description: |
+        定位到具体位置：文件 + 行号，或者哪个配置项。
+        没定位到就写"未定位"，不要猜一个写上去。
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: 改了什么
+      description: |
+        改动清单 + 为什么这个改动能修掉它。
+        如果只是绕过去，要写明"这是绕过，根因还在"。
+    validations:
+      required: true
+  - type: textarea
+    id: regression
+    attributes:
+      label: 怎么防它再回来
+      description: |
+        加了什么测试、什么断言。
+        没有加 → 写清为什么不加（一次性问题？测不了？）。

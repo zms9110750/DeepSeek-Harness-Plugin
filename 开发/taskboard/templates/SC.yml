@@ -1,0 +1,48 @@
+name: SC · 接口
+default_kind: design
+behavior: propose
+description: 对外长什么样：契约、边界、错误行为
+domain: code
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    接口约定的本质是"以后不许随便改的东西"。
+    所以重点是**不变的部分**，不是功能列表。
+  fail: |
+    接口设计被打回时，通常不是写错了，是没问清谁在用。
+    先确认调用方，再改。
+
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 这次要定什么
+      description: |
+        一句话。接口类只定"对外长什么样"，不定内部怎么实现。
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: 契约
+      description: |
+        签名 / 字段 / 事件名 / 文件格式。要精确到能照着写代码。
+        含糊的契约等于没契约。
+    validations:
+      required: true
+  - type: textarea
+    id: errors
+    attributes:
+      label: 出错时怎么办
+      description: |
+        每种失败情形对应什么表现。包括：非法输入、越界、超时、并发。
+        不写这一节，实现时就会各自发挥。
+    validations:
+      required: true
+  - type: textarea
+    id: breaking
+    attributes:
+      label: 以后改它会破坏什么
+      description: |
+        写清兼容性边界：哪些改动是破坏性的、需要谁同步。
+        这一段是接口类存在的理由。

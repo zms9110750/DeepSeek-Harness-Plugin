@@ -1,0 +1,55 @@
+name: SQ · 决策
+default_kind: design
+behavior: decide
+description: 要用户拍板；给 2-4 个互斥选项，每个写清代价
+domain: general
+dispatch: [goal, design, record, work]
+produces: []
+hints:
+  create: |
+    封闭问题，但不是真封闭——用户可以要求"先调研再决定"。
+    所以：选项要给全，但每个选项后面写清"我还不知道什么"。
+  reject: |
+    决策不会失败，只会被拒。被拒时不要重新问一遍，先把拒绝理由记下来，
+    再决定是换个问法还是转成调研。
+  fail: |
+    决策几乎不会失败。如果连选项都列不出来，说明这不是决策，是调研——转出去。
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        问清"选哪个"，不要问"怎么办"。选项之间必须互斥。
+  - type: textarea
+    id: question
+    attributes:
+      label: 要定什么
+      description: |
+        一句话。如果这句话里有"和"字，说明是两个决策，拆开分别问。
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: 选项
+      description: |
+        2-4 个，互斥，每个写清：代价是什么、放弃了什么、什么情况下它是错的。
+        不要写"取决于"——那是没想清楚。
+    validations:
+      required: true
+  - type: textarea
+    id: unknown
+    attributes:
+      label: 我还不知道什么
+      description: |
+        这次决策依赖哪些还没确定的东西？
+        如果某个未知项会直接改变答案 → 先派一个调研，不要硬问。
+  - type: textarea
+    id: recommend
+    attributes:
+      label: 我的建议
+      description: |
+        必须给一个。不给建议的决策是把判断责任丢回给用户。
+        写清"如果是我，我选 X，因为 Y"。
+    validations:
+      required: true

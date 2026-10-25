@@ -1,0 +1,52 @@
+name: JF · 复盘
+default_kind: record
+behavior: write
+description: 一件事结束后的回顾：根因、教训、下次怎么避
+domain: general
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    复盘不是流水账。只写"下次能用的"东西。
+    如果这次没出问题，不需要复盘。
+
+    最关键的：**不要穷举**。
+    "我试了 A、B、C 都不行"是流水账，不是复盘。
+    复盘只回答：如果当初知道哪一件事，结果就会不同？
+  fail: |
+    复盘是对失败的复盘，它本身不会失败。
+
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 实际结果
+      description: |
+        一句话：成了还是没成。
+        没成就直接说，不要包装成"部分达成"。
+    validations:
+      required: true
+  - type: textarea
+    id: root
+    attributes:
+      label: 根因
+      description: |
+        **一个根因。** 如果你写下三条，说明还没找到那个真的。
+        判据：如果当初知道这一条，结果会不同吗？答"会"才是根因。
+    validations:
+      required: true
+  - type: textarea
+    id: lesson
+    attributes:
+      label: 下次怎么避
+      description: |
+        写成可执行的动作，不要写成感想。
+        "要更小心"不是教训；"改代码前先跑一遍测试"才是。
+    validations:
+      required: true
+  - type: textarea
+    id: apply
+    attributes:
+      label: 这条教训该改哪里
+      description: |
+        指到具体的东西：某个文件、某条规则、某个模板。
+        指不出来的教训会立刻忘掉。
