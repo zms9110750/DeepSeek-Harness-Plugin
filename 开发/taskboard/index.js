@@ -1674,13 +1674,16 @@ function registerTools(ctx) {
 		defineTool({
 			name: 'task_list',
 			description:
-				'列出事项（只给头部：id、类型、状态、父、链接、分组、标签、工作空间、权限档位）。' +
-				'**默认只列「当前分组」里的事项**；要看别的分组，用 group 参数（或其别名 all=true）。' +
+				'**不传 group 就列出所有分组**（各自几条、哪个是当前组）；' +
+				'**传了 group 就列出那一组里的事项**（只给头部：id、类型、状态、父、链接、标签、工作空间、权限档位）。' +
+				'这是两级跳：先看有哪些组，再进组看内容——' +
 				'理由（用户原话）：「你不可能在程序里面去查绘画的风格。」' +
 				'状态「未指定」是 AI 提交但用户还没采纳的，不能领取；「提交」才能 task_claim。',
 			parameters: {
-				group: { type: 'string', description: '看哪个分组（空 = 当前分组；all = 全部）' },
-				all: { type: 'boolean', description: 'true = 不分分组，列全部' },
+				group: {
+					type: 'string',
+					description: 'null/空 = 列出所有分组；给分组 id = 列出该组事项；"all" = 列出全部事项',
+				},
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
@@ -1689,22 +1692,36 @@ function registerTools(ctx) {
 			async execute(args) {
 				const all = await listAll();
 				const groups = (await listGroups()).filter((entry) => entry.name !== '');
+				const current = await readCurrentGroup(CURRENT_SESSION.value);
 				const wanted = String(args?.group ?? '').trim();
-				if (args?.all === true || wanted === 'all') {
-					return { text: renderList(all) };
-				}
-				const current = wanted !== '' ? wanted : await readCurrentGroup(CURRENT_SESSION.value);
-				if (current === '') {
-					/* 没设当前组：列全部，但要说明为什么，避免 AI 以为这就是一组的全部。 */
+
+				/* ① 没传 group → 列出所有分组（不列事项）。 */
+				if (wanted === '') {
+					if (groups.length === 0) {
+						return { text: '还没有任何分组。用 task_group action=create name=… 建一个。' };
+					}
+					const lines = groups.map((group) => {
+						const live = group.members.filter((id) => all.some((item) => item.id === id));
+						const mark = group.id === current ? '★ ' : '  ';
+						const tag = group.archived ? '（已归档）' : '';
+						return `${mark}${group.id} · ${group.name}${tag}（${live.length} 条）`;
+					});
 					const head =
-						groups.length === 0
-							? '还没有任何分组。'
-							: '⚠️ 还没设「当前分组」。用 task_group action=select group=… 设一个，之后工具默认只看那一组。';
-					return { text: head + '\n\n（下面是全部分组之外的全部事项）\n\n' + renderList(all) };
+						current === ''
+							? '当前没有激活的分组（0 个也可以，不是必须有一个）。'
+							: `当前激活的分组：${current}`;
+					return {
+						text: `${head}\n共 ${groups.length} 个分组：\n${lines.join('\n')}\n\n进某个组看内容：task_list group=<分组 id>`,
+					};
 				}
-				const target = groups.find((entry) => entry.id === current);
+
+				/* ② all → 列出全部事项。 */
+				if (wanted === 'all') return { text: renderList(all) };
+
+				/* ③ 给了分组 id → 列出该组事项。 */
+				const target = groups.find((entry) => entry.id === wanted);
 				if (target === undefined) {
-					throw new Error(`没有这个分组：${current}。现有：${groups.map((entry) => entry.id).join(' / ') || '（没有）'}`);
+					throw new Error(`没有这个分组：${wanted}。现有：${groups.map((entry) => entry.id).join(' / ') || '（没有）'}`);
 				}
 				const mine = new Set(target.members);
 				const inside = all.filter((item) => mine.has(item.id));
@@ -1718,15 +1735,45 @@ function registerTools(ctx) {
 	ctx.tools.register(
 		defineTool({
 			name: 'task_get',
-			description: '读一份计划的全文（头部 + 正文）。先用 task_list 找 id。',
-			parameters: { id: { type: 'string', required: true, description: '计划 id，例如 MG-01' } },
+			description:
+				'读一份事项的全文（头部 + 正文）。' +
+				'**group 为 null 时按当前组查**：只在该组里找这个 id。' +
+				'给了 group 就只在那一个组里找。' +
+				'为什么加 group：不同组里可能有同编号的事项（例如两边都有 WI-01），' +
+				'不指定范围会读到另一组的东西。',
+			parameters: {
+				id: { type: 'string', required: true, description: '事项 id，例如 WI-01' },
+				group: {
+					type: 'string',
+					description: '在哪个分组里找（null/空 = 当前组；传 "all" = 不限分组）',
+				},
+			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
 				render: (_args, value) => [{ type: 'text', text: value.text }],
 			},
 			async execute(args) {
-				const task = await readTask(args.id);
-				if (task === undefined) throw new Error(`task_get: 没有这份计划：${args.id}`);
+				const wanted = String(args.id ?? '').trim();
+				const task = await readTask(wanted);
+				if (task === undefined) throw new Error(`task_get: 没有这份事项：${wanted}`);
+				/* 归属校验：防止跨组读到同编号的东西。 */
+				const scope = String(args.group ?? '').trim();
+				if (scope !== 'all') {
+					const groups = (await listGroups()).filter((entry) => entry.name !== '');
+					const groupId = scope !== '' ? scope : await readCurrentGroup(CURRENT_SESSION.value);
+					if (groupId !== '') {
+						const group = groups.find((entry) => entry.id === groupId);
+						if (group === undefined) {
+							throw new Error(`没有这个分组：${groupId}。现有：${groups.map((g) => g.id).join(' / ') || '（没有）'}`);
+						}
+						if (!group.members.includes(wanted)) {
+							throw new Error(
+								`${wanted} 不在分组 ${group.id}（${group.name}）里。\n` +
+									'跨组读取要显式传 group="all"，或者传那个事项真正所属的 group。',
+							);
+						}
+					}
+				}
 				return { text: renderFull(task) };
 			},
 		}),
@@ -2599,13 +2646,18 @@ function registerExtraTools(ctx) {
 					return { text: `${head}\n共 ${groups.length} 个分组：\n` + lines.join('\n') };
 				}
 				if (action === 'select') {
-					/* 设当前分组：之后 task_list 等工具默认只看这一组。
+					/* 设 / 取消激活当前分组。
 					 *
-					 * 用户原话：「需要有一个当前组。工具的查找是默认对当前组里面找的。」 */
+					 * 用户原话：
+					 *   「需要有一个当前组。工具的查找是默认对当前组里面找的。」
+					 *   「最多有一个当前组。但可以没有激活的。」
+					 *
+					 * 所以传空 = 取消激活。取消之后 task_list 不带 group
+					 * 就只是"列出有哪些组"，不是"看全部事项"。 */
 					const wanted = String(args.group ?? '').trim();
 					if (wanted === '') {
 						await writeCurrentGroup('', CURRENT_SESSION.value);
-						return { text: '已清空当前分组（工具恢复为看全部）' };
+						return { text: '已取消激活的分组（现在没有当前组；tool 调用要显式传 group）' };
 					}
 					const hit = groups.find((entry) => entry.id === wanted);
 					if (hit === undefined) {

@@ -3833,8 +3833,45 @@ window.__ModuleLoader__.load({
                 picked.archived ? '已归档' : '归档',
               );
             }
-            /* 普通模式：「设为当前」。已经是当前组就不显示（用 ★ 表示）。 */
-            if (currentGroup === picked.id) return null;
+            /* 普通模式：「设为当前」/「取消激活」。
+             *
+             * 用户原话：「最多有一个当前组。但可以没有激活的。
+             * 这点在 ui 上面也设置一下。对已经激活的组，可以取消他的激活。」
+             *
+             * 所以正在看的这组就是当前组时，按钮变成「取消激活」，
+             * 而不是消失——消失的话用户没地方取消。 */
+            const setCurrent = function (value) {
+              return runCommand(
+                '/task-group-select ' + JSON.stringify({ group: value, session: sessionId }),
+                sessionId,
+              )
+                .then(function (settled) {
+                  const text = commandText(settled);
+                  let saved = null;
+                  try {
+                    saved = JSON.parse(text);
+                  } catch (failure) {
+                    saved = null;
+                  }
+                  if (saved !== null) setCurrentGroup(typeof saved.group === 'string' ? saved.group : '');
+                })
+                .catch(function () {});
+            };
+            if (currentGroup === picked.id) {
+              return h(
+                'button',
+                {
+                  key: 'gp-action-uncurent',
+                  type: 'button',
+                  title: '取消激活：之后工具调用要显式指定分组',
+                  onClick: function () {
+                    setCurrent('');
+                  },
+                  style: Object.assign({}, buttonBase(true), { padding: '2px 10px' }),
+                },
+                '取消激活',
+              );
+            }
             return h(
               'button',
               {
@@ -3842,18 +3879,7 @@ window.__ModuleLoader__.load({
                 type: 'button',
                 title: '让 AI 的工具默认在「' + picked.name + '」里工作',
                 onClick: function () {
-                  runCommand('/task-group-select ' + JSON.stringify({ group: picked.id, session: sessionId }), sessionId)
-                    .then(function (settled) {
-                      const text = commandText(settled);
-                      let saved = null;
-                      try {
-                        saved = JSON.parse(text);
-                      } catch (failure) {
-                        saved = null;
-                      }
-                      if (saved !== null && typeof saved.group === 'string') setCurrentGroup(saved.group);
-                    })
-                    .catch(function () {});
+                  setCurrent(picked.id);
                 },
                 style: Object.assign({}, buttonBase(false), { padding: '2px 10px' }),
               },

@@ -387,7 +387,7 @@ test('备注：可写可清空，不受「只有未指定可改」限制，task_
 	assert.equal(taskOf(id).note, '要花钱买 X，得你点头。');
 
 	/* 列表里能看到备注摘要 */
-	const listed = await tool('task_list').execute({});
+	const listed = await tool('task_list').execute({ group: 'all' });
 	assert.match(listed.text, /要花钱买 X/u);
 
 	/* task_state 一次写完状态 + 理由 */
@@ -1228,7 +1228,7 @@ test('老格式一次性迁移：`任务\\*.md` 导入 JSONL 后写 .migrated �
 		'utf8',
 	);
 
-	const listed = await tool('task_list').execute({});
+	const listed = await tool('task_list').execute({ group: 'all' });
 	assert.match(listed.text, /T-009/u, '迁移后列表里应能看到老计划');
 
 	const migrated = taskOf('T-009');
@@ -1239,7 +1239,7 @@ test('老格式一次性迁移：`任务\\*.md` 导入 JSONL 后写 .migrated �
 
 	/* 再读一次不会重复导入（存储已存在且标记在） */
 	const before = events().length;
-	const again = await tool('task_list').execute({});
+	const again = await tool('task_list').execute({ group: 'all' });
 	assert.match(again.text, /T-009/u);
 	assert.equal(events().length, before, '重复读取不应再追加事件');
 });
@@ -1836,7 +1836,7 @@ test('事件溯源：老事件（没有 ts/actor/from-to）照样能读，不会
 	const before = readFileSync(STORE_PATH, 'utf8');
 
 	/* 读得出来 */
-	const listed = await tool('task_list').execute({});
+	const listed = await tool('task_list').execute({ group: 'all' });
 	assert.match(listed.text, /老计划/u);
 	const got = await tool('task_get').execute({ id: 'T-001' });
 	assert.equal(taskOf('T-001').status, '完成', '折叠逻辑不受影响');

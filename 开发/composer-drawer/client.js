@@ -5029,7 +5029,37 @@
                   picked.archived ? "\u5DF2\u5F52\u6863" : "\u5F52\u6863"
                 );
               }
-              if (currentGroup === picked.id) return null;
+              const setCurrent = function(value) {
+                return runCommand(
+                  "/task-group-select " + JSON.stringify({ group: value, session: sessionId }),
+                  sessionId
+                ).then(function(settled) {
+                  const text = commandText(settled);
+                  let saved = null;
+                  try {
+                    saved = JSON.parse(text);
+                  } catch (failure) {
+                    saved = null;
+                  }
+                  if (saved !== null) setCurrentGroup(typeof saved.group === "string" ? saved.group : "");
+                }).catch(function() {
+                });
+              };
+              if (currentGroup === picked.id) {
+                return h(
+                  "button",
+                  {
+                    key: "gp-action-uncurent",
+                    type: "button",
+                    title: "\u53D6\u6D88\u6FC0\u6D3B\uFF1A\u4E4B\u540E\u5DE5\u5177\u8C03\u7528\u8981\u663E\u5F0F\u6307\u5B9A\u5206\u7EC4",
+                    onClick: function() {
+                      setCurrent("");
+                    },
+                    style: Object.assign({}, buttonBase(true), { padding: "2px 10px" })
+                  },
+                  "\u53D6\u6D88\u6FC0\u6D3B"
+                );
+              }
               return h(
                 "button",
                 {
@@ -5037,17 +5067,7 @@
                   type: "button",
                   title: "\u8BA9 AI \u7684\u5DE5\u5177\u9ED8\u8BA4\u5728\u300C" + picked.name + "\u300D\u91CC\u5DE5\u4F5C",
                   onClick: function() {
-                    runCommand("/task-group-select " + JSON.stringify({ group: picked.id, session: sessionId }), sessionId).then(function(settled) {
-                      const text = commandText(settled);
-                      let saved = null;
-                      try {
-                        saved = JSON.parse(text);
-                      } catch (failure) {
-                        saved = null;
-                      }
-                      if (saved !== null && typeof saved.group === "string") setCurrentGroup(saved.group);
-                    }).catch(function() {
-                    });
+                    setCurrent(picked.id);
                   },
                   style: Object.assign({}, buttonBase(false), { padding: "2px 10px" })
                 },
