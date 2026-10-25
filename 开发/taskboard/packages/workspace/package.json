@@ -1,6 +1,6 @@
 {
   "name": "@local/taskboard-workspace",
-  "version": "0.3.0",
+  "version": "0.1.0-a.1",
   "private": true,
   "type": "module",
   "main": "index.js",

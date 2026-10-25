@@ -1,6 +1,6 @@
 {
   "name": "@local/taskboard",
-  "version": "0.4.0",
+  "version": "0.1.0-a.1",
   "private": true,
   "type": "module",
   "description": "任务板：一个包，一个设置页；后端分四个插件，界面上有两个入口",
