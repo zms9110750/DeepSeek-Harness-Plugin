@@ -3714,113 +3714,37 @@ window.__ModuleLoader__.load({
                 return Array.isArray(item.groupsOf) && item.groupsOf.indexOf(group.id) !== -1;
               }).length;
               const active = groupPick === group.id;
-              /* 是不是宿主的「当前组」（= AI 工具默认工作的范围）。
-               *
-               * 和 `active`（我正在看哪组）是两件事，用户明确要求分开：
-               * 「面板换组是仅查看……切换当前组是另一个操作。」 */
               const isCurrent = currentGroup === group.id;
+              /* **分组按钮上不再挂任何操作按钮**（用户要求「先改按钮位置」）。
+               *
+               * 每多一个分组就多一个操作按钮，分组一多就变成一排噪声，
+               * 而且"设为当前"到底作用于哪一组会看不出来。
+               *
+               * 现在只有 ★ 标记当前组；操作统一放到行尾那一个按钮上，
+               * 作用于**我正在看的那一组**（groupPick）。 */
               buttons.push(
                 h(
-                  'span',
-                  { key: 'gpw-' + group.id, style: { display: 'inline-flex', alignItems: 'center', gap: 2 } },
-                  h(
-                    'button',
-                    {
-                      type: 'button',
-                      title: group.members.length + ' 条' + (group.archived ? '（已归档）' : ''),
-                      onClick: function () {
-                        /* **只切换查看，不发命令**。
-                         *
-                         * 用户原话：「面板换组是仅查看。」
-                         * 「可以只读的看组列表，归档列表，然后选择了一个组
-                         *   可以看里面的东西，而不需要切当前组。
-                         *   切换当前组是另一个操作。」
-                         *
-                         * 所以这里是纯本地状态；要改工具的默认范围，
-                         * 得点旁边那个「设为当前组」。 */
-                        setGroupPick(group.id);
-                      },
-                      style: Object.assign({}, buttonBase(active), {
-                        padding: '2px 10px',
-                        opacity: active ? 1 : group.archived ? 0.5 : 0.75,
-                        fontStyle: group.archived ? 'italic' : 'normal',
-                      }),
+                  'button',
+                  {
+                    key: 'gp-' + group.id,
+                    type: 'button',
+                    title:
+                      group.members.length +
+                      ' 条' +
+                      (group.archived ? '（已归档）' : '') +
+                      (isCurrent ? ' · 当前组' : ''),
+                    onClick: function () {
+                      /* **只切换查看，不发命令**（用户原话：「面板换组是仅查看」）。 */
+                      setGroupPick(group.id);
                     },
-                    group.name + '（' + count + '）',
-                  ),
-                  /* 同一个位置，两种模式的按钮（用户要求）：
-                   *
-                   *   普通模式 → 「设为当前」（只在"正在看但不是当前"时出现，★ 表示已是当前）
-                   *   归档模式（点了「显示已归档」）→ 「归档」开关，黑底=已归档，白底=未归档
-                   *
-                   * 用户原话：「在归档模式下，"设为当前"变成"归档"按钮。
-                   * 如果是归档的，这个按钮就是选中的样子（黑底白字），
-                   * 没归档就是没选中的样子，就跟那个"显示已归档"一样，可切换的按钮。」
-                   *
-                   * 为什么放同一个位置：它们都是"对这一组做点什么"，
-                   * 但两种模式下只可能用一个，并排摆着只是噪声。 */
-                  showArchived
-                    ? h(
-                        'button',
-                        {
-                          type: 'button',
-                          title: group.archived ? '已归档（点一下取回）' : '点一下归档（事项数据不动）',
-                          onClick: function () {
-                            runCommand(
-                              '/task-group-archive ' + JSON.stringify({ group: group.id, archived: !group.archived }),
-                              sessionId,
-                            )
-                              .then(function () {
-                                load();
-                              })
-                              .catch(function () {});
-                          },
-                          style: Object.assign({}, buttonBase(group.archived), {
-                            padding: '0 8px',
-                            fontSize: 11,
-                            lineHeight: '18px',
-                          }),
-                        },
-                        group.archived ? '已归档' : '归档',
-                      )
-                    : active && !isCurrent
-                      ? h(
-                          'button',
-                          {
-                            type: 'button',
-                            title: '让 AI 的工具默认在这组里工作',
-                            onClick: function () {
-                              runCommand(
-                                '/task-group-select ' + JSON.stringify({ group: group.id, session: sessionId }),
-                                sessionId,
-                              )
-                                .then(function (settled) {
-                                  const text = commandText(settled);
-                                  let saved = null;
-                                  try {
-                                    saved = JSON.parse(text);
-                                  } catch (failure) {
-                                    saved = null;
-                                  }
-                                  if (saved !== null && typeof saved.group === 'string') {
-                                    setCurrentGroup(saved.group);
-                                  }
-                                })
-                                .catch(function () {});
-                            },
-                            style: Object.assign({}, buttonBase(false), {
-                              padding: '0 6px',
-                              fontSize: 11,
-                              lineHeight: '18px',
-                            }),
-                          },
-                          '设为当前',
-                        )
-                      : null,
-                  /* 已标成当前组的，给一个小星号，不用按。 */
-                  !showArchived && active && isCurrent
-                    ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-brand-primary)' } }, '★')
-                    : null,
+                    style: Object.assign({}, buttonBase(active), {
+                      padding: '2px 10px',
+                      opacity: active ? 1 : group.archived ? 0.5 : 0.75,
+                      fontStyle: group.archived ? 'italic' : 'normal',
+                    }),
+                  },
+                  /* 当前组用 ★ 前缀，不额外占一个按钮位。 */
+                  (isCurrent ? '★ ' : '') + group.name + '（' + count + '）',
                 ),
               );
             });
@@ -3870,6 +3794,72 @@ window.__ModuleLoader__.load({
            *
            * 对：归档的粒度是整组，所以开关紧挨着分组条才有意义。 */
           h('span', { style: { flex: 1, minWidth: 8 } }),
+          /* **行尾那一个操作按钮，作用于「我正在看的那一组」**。
+           *
+           * 用户要求「先改按钮位置」：原来每个分组后面都挂一个操作按钮，
+           * 分组一多就是一排噪声，而且看不出它作用于哪一组。
+           * 现在统一放在这里，跟「显示已归档」挨着——都是对"当前在看的那组"操作。
+           *
+           * 两种模式（用户原话）：
+           *   「在归档模式下，"设为当前"变成"归档"按钮。
+           *    如果是归档的，这个按钮就是选中的样子（黑底白字），
+           *    没归档就是没选中的样子，就跟那个"显示已归档"一样，可切换的按钮。」
+           */
+          (function () {
+            const picked = groups.find(function (group) {
+              return group.id === groupPick;
+            });
+            if (picked === undefined) return null;
+            if (showArchived) {
+              /* 归档模式：一个可切换的开关，黑底=已归档。 */
+              return h(
+                'button',
+                {
+                  key: 'gp-action-archive',
+                  type: 'button',
+                  title: picked.archived ? '「' + picked.name + '」已归档，点一下取回' : '归档「' + picked.name + '」（事项数据不动）',
+                  onClick: function () {
+                    runCommand(
+                      '/task-group-archive ' + JSON.stringify({ group: picked.id, archived: !picked.archived }),
+                      sessionId,
+                    )
+                      .then(function () {
+                        load();
+                      })
+                      .catch(function () {});
+                  },
+                  style: Object.assign({}, buttonBase(picked.archived), { padding: '2px 10px' }),
+                },
+                picked.archived ? '已归档' : '归档',
+              );
+            }
+            /* 普通模式：「设为当前」。已经是当前组就不显示（用 ★ 表示）。 */
+            if (currentGroup === picked.id) return null;
+            return h(
+              'button',
+              {
+                key: 'gp-action-current',
+                type: 'button',
+                title: '让 AI 的工具默认在「' + picked.name + '」里工作',
+                onClick: function () {
+                  runCommand('/task-group-select ' + JSON.stringify({ group: picked.id, session: sessionId }), sessionId)
+                    .then(function (settled) {
+                      const text = commandText(settled);
+                      let saved = null;
+                      try {
+                        saved = JSON.parse(text);
+                      } catch (failure) {
+                        saved = null;
+                      }
+                      if (saved !== null && typeof saved.group === 'string') setCurrentGroup(saved.group);
+                    })
+                    .catch(function () {});
+                },
+                style: Object.assign({}, buttonBase(false), { padding: '2px 10px' }),
+              },
+              '设为当前',
+            );
+          })(),
           h(
             'button',
             {

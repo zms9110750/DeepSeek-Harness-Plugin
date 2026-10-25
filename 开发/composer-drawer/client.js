@@ -4929,89 +4929,22 @@
                 const isCurrent = currentGroup === group.id;
                 buttons.push(
                   h(
-                    "span",
-                    { key: "gpw-" + group.id, style: { display: "inline-flex", alignItems: "center", gap: 2 } },
-                    h(
-                      "button",
-                      {
-                        type: "button",
-                        title: group.members.length + " \u6761" + (group.archived ? "\uFF08\u5DF2\u5F52\u6863\uFF09" : ""),
-                        onClick: function() {
-                          setGroupPick(group.id);
-                        },
-                        style: Object.assign({}, buttonBase(active), {
-                          padding: "2px 10px",
-                          opacity: active ? 1 : group.archived ? 0.5 : 0.75,
-                          fontStyle: group.archived ? "italic" : "normal"
-                        })
+                    "button",
+                    {
+                      key: "gp-" + group.id,
+                      type: "button",
+                      title: group.members.length + " \u6761" + (group.archived ? "\uFF08\u5DF2\u5F52\u6863\uFF09" : "") + (isCurrent ? " \xB7 \u5F53\u524D\u7EC4" : ""),
+                      onClick: function() {
+                        setGroupPick(group.id);
                       },
-                      group.name + "\uFF08" + count + "\uFF09"
-                    ),
-                    /* 同一个位置，两种模式的按钮（用户要求）：
-                     *
-                     *   普通模式 → 「设为当前」（只在"正在看但不是当前"时出现，★ 表示已是当前）
-                     *   归档模式（点了「显示已归档」）→ 「归档」开关，黑底=已归档，白底=未归档
-                     *
-                     * 用户原话：「在归档模式下，"设为当前"变成"归档"按钮。
-                     * 如果是归档的，这个按钮就是选中的样子（黑底白字），
-                     * 没归档就是没选中的样子，就跟那个"显示已归档"一样，可切换的按钮。」
-                     *
-                     * 为什么放同一个位置：它们都是"对这一组做点什么"，
-                     * 但两种模式下只可能用一个，并排摆着只是噪声。 */
-                    showArchived ? h(
-                      "button",
-                      {
-                        type: "button",
-                        title: group.archived ? "\u5DF2\u5F52\u6863\uFF08\u70B9\u4E00\u4E0B\u53D6\u56DE\uFF09" : "\u70B9\u4E00\u4E0B\u5F52\u6863\uFF08\u4E8B\u9879\u6570\u636E\u4E0D\u52A8\uFF09",
-                        onClick: function() {
-                          runCommand(
-                            "/task-group-archive " + JSON.stringify({ group: group.id, archived: !group.archived }),
-                            sessionId
-                          ).then(function() {
-                            load();
-                          }).catch(function() {
-                          });
-                        },
-                        style: Object.assign({}, buttonBase(group.archived), {
-                          padding: "0 8px",
-                          fontSize: 11,
-                          lineHeight: "18px"
-                        })
-                      },
-                      group.archived ? "\u5DF2\u5F52\u6863" : "\u5F52\u6863"
-                    ) : active && !isCurrent ? h(
-                      "button",
-                      {
-                        type: "button",
-                        title: "\u8BA9 AI \u7684\u5DE5\u5177\u9ED8\u8BA4\u5728\u8FD9\u7EC4\u91CC\u5DE5\u4F5C",
-                        onClick: function() {
-                          runCommand(
-                            "/task-group-select " + JSON.stringify({ group: group.id, session: sessionId }),
-                            sessionId
-                          ).then(function(settled) {
-                            const text = commandText(settled);
-                            let saved = null;
-                            try {
-                              saved = JSON.parse(text);
-                            } catch (failure) {
-                              saved = null;
-                            }
-                            if (saved !== null && typeof saved.group === "string") {
-                              setCurrentGroup(saved.group);
-                            }
-                          }).catch(function() {
-                          });
-                        },
-                        style: Object.assign({}, buttonBase(false), {
-                          padding: "0 6px",
-                          fontSize: 11,
-                          lineHeight: "18px"
-                        })
-                      },
-                      "\u8BBE\u4E3A\u5F53\u524D"
-                    ) : null,
-                    /* 已标成当前组的，给一个小星号，不用按。 */
-                    !showArchived && active && isCurrent ? h("span", { style: { fontSize: 11, color: "var(--dsw-alias-brand-primary)" } }, "\u2605") : null
+                      style: Object.assign({}, buttonBase(active), {
+                        padding: "2px 10px",
+                        opacity: active ? 1 : group.archived ? 0.5 : 0.75,
+                        fontStyle: group.archived ? "italic" : "normal"
+                      })
+                    },
+                    /* 当前组用 ★ 前缀，不额外占一个按钮位。 */
+                    (isCurrent ? "\u2605 " : "") + group.name + "\uFF08" + count + "\uFF09"
                   )
                 );
               });
@@ -5059,6 +4992,68 @@
              *
              * 对：归档的粒度是整组，所以开关紧挨着分组条才有意义。 */
             h("span", { style: { flex: 1, minWidth: 8 } }),
+            /* **行尾那一个操作按钮，作用于「我正在看的那一组」**。
+             *
+             * 用户要求「先改按钮位置」：原来每个分组后面都挂一个操作按钮，
+             * 分组一多就是一排噪声，而且看不出它作用于哪一组。
+             * 现在统一放在这里，跟「显示已归档」挨着——都是对"当前在看的那组"操作。
+             *
+             * 两种模式（用户原话）：
+             *   「在归档模式下，"设为当前"变成"归档"按钮。
+             *    如果是归档的，这个按钮就是选中的样子（黑底白字），
+             *    没归档就是没选中的样子，就跟那个"显示已归档"一样，可切换的按钮。」
+             */
+            (function() {
+              const picked = groups.find(function(group) {
+                return group.id === groupPick;
+              });
+              if (picked === void 0) return null;
+              if (showArchived) {
+                return h(
+                  "button",
+                  {
+                    key: "gp-action-archive",
+                    type: "button",
+                    title: picked.archived ? "\u300C" + picked.name + "\u300D\u5DF2\u5F52\u6863\uFF0C\u70B9\u4E00\u4E0B\u53D6\u56DE" : "\u5F52\u6863\u300C" + picked.name + "\u300D\uFF08\u4E8B\u9879\u6570\u636E\u4E0D\u52A8\uFF09",
+                    onClick: function() {
+                      runCommand(
+                        "/task-group-archive " + JSON.stringify({ group: picked.id, archived: !picked.archived }),
+                        sessionId
+                      ).then(function() {
+                        load();
+                      }).catch(function() {
+                      });
+                    },
+                    style: Object.assign({}, buttonBase(picked.archived), { padding: "2px 10px" })
+                  },
+                  picked.archived ? "\u5DF2\u5F52\u6863" : "\u5F52\u6863"
+                );
+              }
+              if (currentGroup === picked.id) return null;
+              return h(
+                "button",
+                {
+                  key: "gp-action-current",
+                  type: "button",
+                  title: "\u8BA9 AI \u7684\u5DE5\u5177\u9ED8\u8BA4\u5728\u300C" + picked.name + "\u300D\u91CC\u5DE5\u4F5C",
+                  onClick: function() {
+                    runCommand("/task-group-select " + JSON.stringify({ group: picked.id, session: sessionId }), sessionId).then(function(settled) {
+                      const text = commandText(settled);
+                      let saved = null;
+                      try {
+                        saved = JSON.parse(text);
+                      } catch (failure) {
+                        saved = null;
+                      }
+                      if (saved !== null && typeof saved.group === "string") setCurrentGroup(saved.group);
+                    }).catch(function() {
+                    });
+                  },
+                  style: Object.assign({}, buttonBase(false), { padding: "2px 10px" })
+                },
+                "\u8BBE\u4E3A\u5F53\u524D"
+              );
+            })(),
             h(
               "button",
               {
