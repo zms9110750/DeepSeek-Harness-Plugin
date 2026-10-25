@@ -18,7 +18,7 @@
 import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire, registerHooks } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -53,7 +53,16 @@ function locateDshTools() {
 	);
 }
 
-const DSH_TOOLS = locateDshTools();
+/*
+ * 优先用**包内**的 dsh-tools。
+ *
+ * profile 解析出来的那份是从 B: 的旧安装继承的，而那份的
+ * dsh-tools 0.1.0-rc.6 + schemastery 3.18.5 + cosmokit 1.8.2 是不可用组合
+ * （createVolatile 缺失）。包内这份是从 app.asar 抽的 0.2.1-rc.2，
+ * 和 DSH 实际运行的一致。
+ */
+const LOCAL_DSH_TOOLS = join(PLUGIN_DIR, 'node_modules', '@deepseek-ai', 'dsh-tools', 'lib', 'index.js');
+const DSH_TOOLS = existsSync(LOCAL_DSH_TOOLS) ? LOCAL_DSH_TOOLS : locateDshTools();
 registerHooks({
 	resolve(specifier, context, nextResolve) {
 		if (specifier === '@deepseek-ai/dsh-tools') {

@@ -48,7 +48,10 @@ import z from '@deepseek-ai/schemastery';
 
 export const name = 'taskboard-ui';
 
-export const inject = ['remote'];
+/* 宿主侧不需要任何前置服务：UI 全在 client.js 里，浏览器加载。
+ * 早先写了 inject: ['remote']，那是**客户端**服务，宿主侧不存在，
+ * 于是这一行永远停在「等待依赖」。 */
+export const inject = [];
 
 /*
  * 设置页的配置。
