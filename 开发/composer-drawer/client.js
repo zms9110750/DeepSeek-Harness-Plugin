@@ -2390,6 +2390,10 @@
           derived: row.derived || "",
           /* 归档（DP-04）：默认不在树/列表里显示。 */
           archived: row.archived === true,
+          /* 属于哪些分组（id 数组）。面板从 groups.jsonl 反填，宿主 /tasks 也填。 */
+          groupsOf: Array.isArray(row.groupsOf) ? row.groupsOf.map(String) : [],
+          /* 标签：多个，自由字符串。用于跨组检索。 */
+          tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
           /* 开放问题进度：树/列表上可以标「还差 2 条没答」。 */
           questionCount: typeof row.questionCount === "number" ? row.questionCount : 0,
           answeredCount: typeof row.answeredCount === "number" ? row.answeredCount : 0
@@ -4401,7 +4405,17 @@
               const list = [...out.values()].filter(function(item) {
                 return item.name !== "";
               });
-              return { rows, bodies, groups: list };
+              const ownerOf = /* @__PURE__ */ new Map();
+              for (const group of list) {
+                for (const member of group.members) {
+                  if (!ownerOf.has(member)) ownerOf.set(member, []);
+                  ownerOf.get(member).push(group.id);
+                }
+              }
+              const rowsWithGroups = rows.map(function(row) {
+                return Object.assign({}, row, { groupsOf: ownerOf.get(row.id) || [] });
+              });
+              return { rows: rowsWithGroups, bodies, groups: list };
             }).catch(function() {
               return { rows, bodies, groups: [] };
             });
