@@ -1126,6 +1126,41 @@ async function archiveSubtree(id, archived) {
 }
 
 
+/*
+ * ---------------------------------------------------------------------------
+ * 标签（tags）
+ * ---------------------------------------------------------------------------
+ *
+ * 用户原话：
+ *   > 他可以被标记为什么 tag，例如用户风格。
+ *   > 让 ai 看不是当前任务组的时候知道看什么。
+ *   > 也可以看里面有没有描述了现在用的库的使用方法。
+ *
+ * 所以 tag 和分组是**两个维度**：
+ *   · 分组 = 这件事属于哪次工作（**一个，不能改**）
+ *   · tag  = 这条记录讲的是什么（**多个，随便加**）
+ *
+ * 典型用法：某个分组里有一条记录写了"这个库怎么用"，
+ * 给它打 `库用法`；以后在别的分组里，AI 可以按 tag 找到它——
+ * 这正是用户说的"看不是当前任务组的时候知道看什么"。
+ *
+ * 与「不做 tag」不冲突：用户当时拒绝的是**用 tag 代替枚举语义**
+ * （分类、状态、可见性）。这种"跨组检索的标记"是另一回事。
+ */
+async function setTags(id, tags) {
+	return withWrite(async () => {
+		const task = await readTask(id);
+		if (task === undefined) throw new Error(`没有这份计划：${id}`);
+		const list = Array.isArray(tags)
+			? [...new Set(tags.map((tag) => String(tag).trim()).filter((tag) => tag !== ''))]
+			: [];
+		const next = Object.assign({}, task, { tags: list });
+		await saveTask(next);
+		return next;
+	});
+}
+
+
 /** 只认识 `key: value` 行的极简头解析，够用且不怕正文里的冒号。 */
 function parseTask(raw, file) {
 	const lines = String(raw ?? '').split(/\r?\n/u);
@@ -1697,6 +1732,8 @@ function registerCommands(ctx) {
 							archived: head.archived === true,
 							/* 属于哪些分组（id 数组）。 */
 							groupsOf: groupOfTask.get(head.id) ?? [],
+							/* 标签：多个，自由字符串。用于跨组检索。 */
+							tags: Array.isArray(head.tags) ? head.tags : [],
 						});
 					}),
 				),
@@ -2348,15 +2385,17 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_group',
 			description:
-				'管理「分组」：把事项按项目/主题分成集合，面板可以只看某一组。' +
-				'分组与父子树正交（一条事项可属于多个分组），也与九态正交（不是状态）。' +
-				'action：list 列出所有分组 / create 新建 / rename 改名 / add 加入成员 / ' +
-				'remove 移出成员 / delete 删除分组。',
+				'管理「分组」：**一个分组 = 一件事 / 一个项目**，不是主题分类。' +
+				'用户原话：「分组是没有关联的事情。一个程序做的怎么样跟另一个程序无关。' +
+				'而用户一个时候只会验收一个程序，只有一个主要目标。」' +
+				'**硬规则：一条事项只能属于一个分组，且建好后不能迁移**（分组代表' +
+				'"这件事是哪次工作里提出的"，事后改归属会让历史失真）。' +
+				'action：list 列出 / create 新建 / rename 改名 / add 认领成员 / delete 删除。',
 			parameters: {
-				action: { type: 'string', required: true, description: 'list/create/rename/add/remove/delete' },
+				action: { type: 'string', required: true, description: 'list/create/rename/add/delete' },
 				group: { type: 'string', description: '分组 id（create 时可留空自动编号）' },
 				name: { type: 'string', description: '分组名字（create/rename 用）' },
-				ids: { type: 'string', description: '成员 id，逗号分隔（add/remove 用）' },
+				ids: { type: 'string', description: '成员 id，逗号分隔（add 用）' },
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
@@ -2399,23 +2438,37 @@ function registerExtraTools(ctx) {
 					await saveGroup({ id, name: '', members: [], createdAt: found.createdAt });
 					return { text: `已删除分组 ${id}（成员事项本身没动）` };
 				}
-				if (action === 'add' || action === 'remove') {
+				if (action === 'add') {
 					const wanted = String(args.ids ?? '')
 						.split(/[,，\s]+/u)
 						.map((part) => part.trim())
 						.filter((part) => part !== '');
-					if (wanted.length === 0) throw new Error(`${action} 需要 ids`);
-					const members = new Set(found.members);
-					for (const member of wanted) {
-						if (action === 'add') members.add(member);
-						else members.delete(member);
+					if (wanted.length === 0) throw new Error('add 需要 ids');
+					/* **一条事项只能属于一个分组，且不能迁移。**
+					 *
+					 * 用户原话：「任务只能在一个组里面创建。……
+					 * 但任务是不能迁移到另一个组的。」
+					 *
+					 * 所以这里不是"加进去"，是**认领**：已被别的组认领的直接拒绝，
+					 * 并告诉它现在在哪。这样分组代表的事实是稳定的——
+					 * 一条事项的归属不会因为后来有人点了另一个组而变。 */
+					const taken = new Map();
+					for (const group of groups) {
+						if (group.id === id) continue;
+						for (const member of group.members) taken.set(member, group.id);
 					}
+					const conflicts = wanted.filter((member) => taken.has(member));
+					if (conflicts.length > 0) {
+						const detail = conflicts.map((member) => `${member} 已在 ${taken.get(member)}`).join('、');
+						throw new Error(
+							`这些事项已经属于别的分组，不能迁移（${detail}）。\n` +
+								'分组代表"这件事是哪次工作里提出的"，事后改归属会让历史失真。',
+						);
+					}
+					const members = new Set(found.members);
+					for (const member of wanted) members.add(member);
 					await saveGroup({ id, name: found.name, members: [...members], createdAt: found.createdAt });
-					return {
-						text:
-							`分组 ${id} · ${found.name} 现在有 ${members.size} 条` +
-							(action === 'add' ? `（加了 ${wanted.length} 条）` : `（移出 ${wanted.length} 条）`),
-					};
+					return { text: `分组 ${id} · ${found.name} 现在有 ${members.size} 条（认领了 ${wanted.length} 条）` };
 				}
 				throw new Error(`不认识的 action：${action}`);
 			},
@@ -2444,6 +2497,40 @@ function registerExtraTools(ctx) {
 				const answered = Object.keys(task.answers ?? {}).length;
 				const total = extractQuestions(task.body).length;
 				return { text: `已记录 ${task.id} 第 ${args.question} 问的回答（已答 ${answered}/${total} 条）` };
+			},
+		}),
+	);
+
+	ctx.tools.register(
+		defineTool({
+			name: 'task_tag',
+			description:
+				'给事项打**标签**（多个，自由字符串）。与分组的区别：' +
+				'分组 = 这件事属于哪次工作（一个，不能改）；tag = 这条讲的是什么（多个，随便加）。' +
+				'用途（用户原话）：「他可以被标记为什么 tag，例如用户风格。' +
+				'让 ai 看不是当前任务组的时候知道看什么。' +
+				'也可以看里面有没有描述了现在用的库的使用方法。」' +
+				'给空数组表示清掉全部标签。',
+			parameters: {
+				id: { type: 'string', required: true, description: '计划 id' },
+				tags: { type: 'string', required: true, description: '标签，逗号分隔；空串 = 清空' },
+			},
+			output: {
+				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
+				render: (_args, value) => [{ type: 'text', text: value.text }],
+			},
+			async execute(args) {
+				const list = String(args.tags ?? '')
+					.split(/[,，\s]+/u)
+					.map((tag) => tag.trim())
+					.filter((tag) => tag !== '');
+				const task = await setTags(args.id, list);
+				return {
+					text:
+						(task.tags ?? []).length === 0
+							? `已清空 ${task.id} 的标签`
+							: `${task.id} 的标签：${(task.tags ?? []).join('、')}`,
+				};
 			},
 		}),
 	);

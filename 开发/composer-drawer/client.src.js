@@ -3299,6 +3299,26 @@ window.__ModuleLoader__.load({
         return item.archived === true;
       }).length;
       data.archivedCount = archivedCount;
+      /* 有哪些标签，各多少条（用于标签筛选条）。 */
+      const allTags = React.useMemo(
+        function () {
+          const counts = Object.create(null);
+          allTasks.forEach(function (item) {
+            (Array.isArray(item.tags) ? item.tags : []).forEach(function (tag) {
+              counts[tag] = (counts[tag] || 0) + 1;
+            });
+          });
+          return Object.keys(counts)
+            .map(function (name) {
+              return { name, count: counts[name] };
+            })
+            .sort(function (left, right) {
+              if (right.count !== left.count) return right.count - left.count;
+              return left.name < right.name ? -1 : 1;
+            });
+        },
+        [allTasks],
+      );
 
       /** 过滤：按组（进行/搁置/完成/草稿）+ 搜索（id 或标题）+ 归档。 */
       const tasks = React.useMemo(
@@ -3332,7 +3352,7 @@ window.__ModuleLoader__.load({
             return true;
           });
         },
-        [allTasks, groupFilter, search, showArchived, groupPick],
+        [allTasks, groupFilter, search, showArchived, groupPick, tagPick],
       );
 
       const graph = React.useMemo(
@@ -3636,6 +3656,42 @@ window.__ModuleLoader__.load({
                 }
                 return buttons;
               })(),
+            )
+          : null,
+        /* 标签筛选（与分组并列，但**维度不同**）。
+         *
+         * 用户原话：「他可以被标记为什么 tag，例如用户风格。
+         * 让 ai 看不是当前任务组的时候知道看什么。
+         * 也可以看里面有没有描述了现在用的库的使用方法。」
+         *
+         * 分组 = 这件事属于哪次工作（一个，不能改）
+         * 标签 = 这条讲的是什么（多个，随便加，**可以跨组检索**）
+         *
+         * 所以单独一行：看某个分组时能按标签再收窄；
+         * 清掉分组只看某个标签，就是"看不是当前任务组的东西"。 */
+        allTags.length > 0
+          ? h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+              h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', flex: 'none' } }, '标签'),
+              allTags.map(function (entry) {
+                const active = tagPick === entry.name;
+                return h(
+                  'button',
+                  {
+                    key: 'tag-' + entry.name,
+                    type: 'button',
+                    onClick: function () {
+                      setTagPick(active ? '' : entry.name);
+                    },
+                    style: Object.assign({}, buttonBase(active), {
+                      padding: '2px 10px',
+                      opacity: active ? 1 : 0.75,
+                    }),
+                  },
+                  '#' + entry.name + '（' + entry.count + '）',
+                );
+              }),
             )
           : null,
         /* 过滤条（T-020）：按组 + 搜索。 */
