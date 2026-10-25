@@ -3,20 +3,26 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
+  "description": "任务板的工作区 UI：在右侧栏加入口，与抽屉共用同一个视图",
   "main": "index.js",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
-    "./locale/*.json": "./locale/*.json"
+    "./package.json": "./package.json"
   },
   "files": [
     "index.js",
     "client.js",
-    "icon.svg",
-    "locale"
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg"
   ],
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "immediately": true,

@@ -10,10 +10,6 @@
     "./templates": "./packages/templates/index.js",
     "./plan-preset": "./packages/plan-preset/index.js",
     "./workspace": "./packages/workspace/index.js",
-    "./ui-drawer": "./packages/ui-drawer/index.js",
-    "./ui-drawer/client": "./packages/ui-drawer/client.js",
-    "./ui-sidebar": "./packages/ui-sidebar/index.js",
-    "./ui-sidebar/client": "./packages/ui-sidebar/client.js",
     "./icon": "./icon.svg",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"

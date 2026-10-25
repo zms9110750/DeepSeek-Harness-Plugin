@@ -1,26 +1,30 @@
-# 输入框上方抽屉（@local/composer-drawer）
+# composer-drawer —— 任务板客户端的源码仓库
 
-在对话输入框上方左侧加一个向上箭头按钮；点击后向上展开一个面板，**只有再点该按钮才收起**，点面板外面不会关闭。
+**这个包不再安装到 profile 里。**
 
-## 组成
+它的产物构建到两个独立包：
 
-| 文件 | 作用 |
-| --- | --- |
-| `client.js` | Web UI 部分：向 `conversation.input.dock`（输入框卡片上方的整行扩展区）注册一个条目，渲染按钮 + 面板 |
-| `index.js` | Host 部分：本 bundle 的 Host 侧没有逻辑，仅用于让 bundle 被列出并加载客户端 |
-| `cordis.patch.yml` | 插入 `composer-drawer` 行 |
-| `locale/*.json` | 插件在插件管理里的标题/描述（中英） |
-| `icon.svg` | 插件图标 |
+    ../taskboard-ui-drawer/client.js    从输入栏旁边的箭头打开
+    ../taskboard-ui-sidebar/client.js   在右侧栏加入口
 
-## 行为
+## 为什么拆成两个包
 
-- 按钮是一个 30×30 的圆角方钮，内含向上箭头（展开时箭头翻转朝下、颜色加深）。
-- **锚点**：条目宽度上限对齐输入框卡片（1274px 居中），按钮用负外边距向右贴住卡片的左边框、并在负下边距作用下悬出到卡片顶部左侧约 5px 处；由于它挂在卡片正上方的那一行，卡片变高（多行输入）时这一行整体上移，按钮跟着卡片的顶边一起走。
-- 悬出的部分会盖到输入框容器上方，因此这一行加了 `position: relative; z-index: 2`，否则点击会被后面的输入框容器吃掉。
-- 面板状态是组件本地 state：不订阅点击外部、不监听 Escape、不随滚动或失焦关闭。
-- 面板内容目前是占位文案，后续要放什么直接在 `ComposerDrawer` 的 `panel` 里替换。
+客户端半边靠**包级** `dsh.client` 声明（在 package.json 上）被发现，
+而加载器扫的是 loader entry 模块名对应的那个 package.json。
+同一个包只能声明一次 `dsh.client`，所以两个 UI 必须是两个包。
 
-## 安装
+写在子目录里扫不到 —— 那正是之前 UI 消失的原因。
 
-用 `plugin_manager` 的 `install_bundle`，target 为本目录绝对路径。
-安装后刷新页面即可看到（客户端模块是页面级加载的）。
+## 为什么共用一份源码
+
+两个 UI **共用同一个 TaskBoard 视图**（用户原话：「他们拥有相同的视图」）。
+抄成两份会立刻分叉，所以 build-client.mjs 用一份源码 + 不同参数产出两份：
+
+    parts=['drawer']   → ui-drawer
+    parts=['sidebar']  → ui-sidebar
+
+## 构建
+
+    node build-client.mjs
+
+改完 client.src.js 后必须重跑，然后刷新页面。

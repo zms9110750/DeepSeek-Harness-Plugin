@@ -1,22 +1,25 @@
-# 任务板 —— 一个包，七个插件。
+# 任务板 —— 一个包，四个插件。
 #
 # 每个条目都是**独立插件**（独立的 row id），在设置页有自己的开关。
-# 这与官方「智能体团队」包的结构一样：一个 profile bundle 由多个 row 组成。
+# 结构与官方「智能体团队」一致：一个 profile bundle 由多个 row 组成。
 #
-# 关掉某个 row 不会影响其它 —— 想只要右侧栏不要输入框抽屉，就关掉 ui-drawer。
+# 两个 UI 不在这里 —— 它们各自是**独立的包**：
+#   @local/taskboard-ui-drawer    从输入栏旁边的箭头打开
+#   @local/taskboard-ui-sidebar   在右侧栏加入口
+#
+# 为什么 UI 必须独立成包：客户端半边靠**包级** `dsh.client` 声明发现，
+# 而加载器扫的是 loader entry 模块名对应的那个 package.json。
+# 写在子目录里扫不到 —— 那正是之前 UI 消失的原因。
 #
 # 依赖顺序（下面的 insert 顺序就是加载顺序）：
-#   core → templates → plan-preset → workspace → 三个 UI
-#
-# 每个 UI row 都是**客户端**插件（dsh.client），只负责显示；
-# 它们不依赖权限，权限也不依赖它们。
+#   core → templates → plan-preset → workspace
 
 - insert:
     # ① 后端实现：存储、事项模型、状态机、AI 工具、命令
     - id: taskboard
       name: '@local/taskboard/core'
 
-    # ② 默认任务模板：27 个模板的注册与读取
+    # ② 默认任务模板：附加的 23 个（内置 4 个在 core 里）
     - id: taskboard-templates
       name: '@local/taskboard/templates'
 
@@ -27,11 +30,3 @@
     # ④ 子工作空间：可写范围限制在里面（依赖 ③）
     - id: taskboard-workspace
       name: '@local/taskboard/workspace'
-
-    # ⑤ 抽屉 UI：输入栏旁边的箭头打开
-    - id: taskboard-ui-drawer
-      name: '@local/taskboard/ui-drawer'
-
-    # ⑥ 工作区 UI：在右边的工作区加入口
-    - id: taskboard-ui-sidebar
-      name: '@local/taskboard/ui-sidebar'
