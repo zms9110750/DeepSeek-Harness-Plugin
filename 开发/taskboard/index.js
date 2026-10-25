@@ -1380,6 +1380,8 @@ async function listGroups() {
 			name: String(group.name || id),
 			members: Array.isArray(group.members) ? group.members.map(String) : [],
 			createdAt: String(group.createdAt || ''),
+			/* 归档是对分组归档的。 */
+			archived: group.archived === true,
 		});
 	}
 	return [...byId.values()];
@@ -1388,6 +1390,15 @@ async function listGroups() {
 /** 写一个分组（追加一行）。 */
 async function saveGroup(group) {
 	await mkdir(dirname(GROUPS_FILE), { recursive: true });
+	/* 没显式传 archived 时沿用现有值。
+	 *
+	 * 为什么要这样：改名、加成员这些操作不该意外把分组从归档里拉出来。
+	 * 之前每个调用点都要自己传 archived，漏一个就是隐形 bug。 */
+	let archived = group.archived;
+	if (archived === undefined) {
+		const existing = (await listGroups()).find((entry) => entry.id === group.id);
+		archived = existing?.archived === true;
+	}
 	const event = {
 		op: 'upsert',
 		ts: new Date().toISOString(),
@@ -1397,6 +1408,10 @@ async function saveGroup(group) {
 			name: group.name,
 			members: group.members,
 			createdAt: group.createdAt || new Date().toISOString(),
+			/* 归档是对**分组**归档的（用户要求）：
+			 * 「归档是对分组归档的。」所以在组上放一个布尔，
+			 * 而不是给每条事项都打 archived。 */
+			archived: archived === true,
 		},
 	};
 	await appendFile(GROUPS_FILE, JSON.stringify(event) + '\n', 'utf8');
@@ -2858,6 +2873,37 @@ function registerExtraCommands(ctx) {
 			/* 名字为空 = 墓碑（已删除），不返回给面板。 */
 			const groups = (await listGroups()).filter((group) => group.name !== '');
 			return { kind: 'success', text: JSON.stringify(groups) };
+		},
+	});
+
+	ctx.commands.register({
+		name: 'task-group-archive',
+		description: '归档 / 取回一个分组（面板调用；JSON：{group,archived}）。事项数据不动。',
+		input: { hint: '{"group":"g-1","archived":true}' },
+		recordInput: false,
+		async handler({ rawInput }) {
+			let parsed = null;
+			try {
+				parsed = JSON.parse(String(rawInput ?? '').trim() || '{}');
+			} catch (error) {
+				return { kind: 'error', text: '参数不是合法 JSON' };
+			}
+			const wanted = String(parsed?.group ?? '').trim();
+			if (wanted === '') return { kind: 'error', text: '要说明归档哪个分组' };
+			const groups = (await listGroups()).filter((entry) => entry.name !== '');
+			const hit = groups.find((entry) => entry.id === wanted);
+			if (hit === undefined) return { kind: 'error', text: `没有这个分组：${wanted}` };
+			await saveGroup({
+				id: hit.id,
+				name: hit.name,
+				members: hit.members,
+				createdAt: hit.createdAt,
+				archived: parsed?.archived === true,
+			});
+			return {
+				kind: 'success',
+				text: JSON.stringify({ group: hit.id, archived: parsed?.archived === true, members: hit.members.length }),
+			};
 		},
 	});
 

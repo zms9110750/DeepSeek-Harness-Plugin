@@ -3003,6 +3003,8 @@ window.__ModuleLoader__.load({
                       id: event.group.id,
                       name: String(event.group.name || ''),
                       members: Array.isArray(event.group.members) ? event.group.members.map(String) : [],
+                      /* 归档是对分组归档的（用户要求）。 */
+                      archived: event.group.archived === true,
                     });
                   });
               }
@@ -3047,7 +3049,21 @@ window.__ModuleLoader__.load({
           })
           .then(function (result) {
             setData({ tasks: result.rows.map(fromApi), bodies: result.bodies, live: true, error: '' });
-            setGroups(result.groups || []);
+            const loaded = result.groups || [];
+            setGroups(loaded);
+            /* 分组条已经**没有「全部」**（用户要求），所以必须始终选中一个。
+             * 当前选的那个没了（被删/首次加载）就落到第一个非归档组上。
+             * 不自动选的话列表会空着，看起来像数据丢了。 */
+            setGroupPick(function (previous) {
+              const still = loaded.some(function (group) {
+                return group.id === previous && !group.archived;
+              });
+              if (still) return previous;
+              const first = loaded.find(function (group) {
+                return !group.archived;
+              });
+              return first === undefined ? '' : first.id;
+            });
           })
           .catch(function (error) {
             /* 不再静默降级成样例数据冒充真数据：说清楚读不到，并保留样例做视觉占位。 */
@@ -3223,6 +3239,39 @@ window.__ModuleLoader__.load({
           });
       };
 
+      /** 新建分组（用户要求「要有地方创建分组」）。
+       *
+       * 走命令 /task-group-save（JSON 入参），因为分组名可能含空格和中文，
+       * 用空格切参的写法会被切坏。建完立刻刷新并切到新组——用户显然想马上用它。 */
+      const createGroup = function () {
+        const name = newGroupName.trim();
+        if (name === '') return;
+        setNewGroupName('');
+        runCommand('/task-group-save ' + JSON.stringify({ name: name, members: [] }), sessionId)
+          .then(function (settled) {
+            const text = commandText(settled);
+            let saved = null;
+            try {
+              saved = JSON.parse(text);
+            } catch (failure) {
+              saved = null;
+            }
+            if (saved !== null && typeof saved.id === 'string') {
+              setGroupPick(saved.id);
+              return runCommand(
+                '/task-group-select ' + JSON.stringify({ group: saved.id, session: sessionId }),
+                sessionId,
+              ).catch(function () {});
+            }
+            return null;
+          })
+          .then(function () {
+            load();
+          })
+          .catch(function (error) {
+            setAction({ busy: false, error: String((error && error.message) || error) });
+          });
+      };
 
       const openCreate = function () {
         setEditId('');
@@ -3311,6 +3360,10 @@ window.__ModuleLoader__.load({
       const tagPickState = React.useState('');
       const tagPick = tagPickState[0];
       const setTagPick = tagPickState[1];
+      /* 新建分组的输入框内容。 */
+      const newGroupState = React.useState('');
+      const newGroupName = newGroupState[0];
+      const setNewGroupName = newGroupState[1];
       const filterState = React.useState('');
       const groupFilter = filterState[0];
       const setGroupFilter = filterState[1];
@@ -3351,17 +3404,23 @@ window.__ModuleLoader__.load({
           const needle = search.trim().toLowerCase();
           return allTasks.filter(function (node) {
             /* 归档：默认不显示。用户要求"归档以后界面不显示，
-               但索引还在，可以显示已归档"。 */
-            if (node.archived && !showArchived) return false;
-            /* 分组筛选：`''` 不筛；`__none__` 只看没归组的。 */
-            if (groupPick !== '') {
-              const own = Array.isArray(node.groupsOf) ? node.groupsOf : [];
-              if (groupPick === '__none__') {
-                if (own.length > 0) return false;
-              } else if (own.indexOf(groupPick) === -1) {
-                return false;
-              }
+               但索引还在，可以显示已归档"。
+               ⚠️ 归档是**分组**的属性，不是事项的。所以这里判断的是
+               "这条事项所属的组都被归档了吗"，而不是 node.archived。 */
+            const ownGroups = Array.isArray(node.groupsOf) ? node.groupsOf : [];
+            if (!showArchived && ownGroups.length > 0) {
+              const live = ownGroups.some(function (id) {
+                const group = groups.find(function (item) {
+                  return item.id === id;
+                });
+                return group !== undefined && !group.archived;
+              });
+              if (!live) return false;
             }
+            /* 分组筛选：**必须选中一个**（没有「全部」）。
+               没选中 = 什么都不显示，逼用户选一个组——这正是设计意图。 */
+            if (groupPick === '') return false;
+            if (ownGroups.indexOf(groupPick) === -1) return false;
             if (groupFilter !== '') {
               const groups = groupsOf(node.status);
               if (node.status === '未指定') {
@@ -3377,7 +3436,7 @@ window.__ModuleLoader__.load({
             return true;
           });
         },
-        [allTasks, groupFilter, search, showArchived, groupPick, tagPick],
+        [allTasks, groupFilter, search, showArchived, groupPick, tagPick, groups],
       );
 
       const graph = React.useMemo(
@@ -3593,86 +3652,146 @@ window.__ModuleLoader__.load({
          * 用户原话：「肯定要分组啊。我这里打插件要这些任务。
          * 等下我写程序还要这些任务干什么？」
          *
-         * 所以这是**主筛选器**，放在最上面。切换分组 = 切换手头的项目。
+         * 所以这是**主筛选器**。切换分组 = 切换手头的项目。
          * 分组是独立的命名集合（存在 groups.jsonl），**不是** workspace 字段——
-         * 那是"能读哪个目录"的权限，用户为了读别的项目把它设成了仓库根目录。 */
-        groups.length > 0
-          ? h(
-              'div',
-              { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
-              h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', flex: 'none' } }, '分组'),
-              (function () {
-                const buttons = [
+         * 那是"能读哪个目录"的权限，用户为了读别的项目把它设成了仓库根目录。
+         *
+         * **没有「全部」**（用户要求）：「这个分组不能有全部。」
+         * 理由：分组是"一件事"，同时看所有事没有意义；而且每条事项必属某组，
+         * 「全部」等于把两件互不相关的事混在一起看。
+         * 所以任何时候都**必须选中一个分组**。 */
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+          h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', flex: 'none' } }, '分组'),
+          (function () {
+            const buttons = [];
+            /* 存档的分组默认不显示；点「显示已归档」才出来，并且带「取回」。 */
+            const visible = groups.filter(function (group) {
+              return !group.archived || showArchived;
+            });
+            visible.forEach(function (group) {
+              const count = allTasks.filter(function (item) {
+                return Array.isArray(item.groupsOf) && item.groupsOf.indexOf(group.id) !== -1;
+              }).length;
+              const active = groupPick === group.id;
+              buttons.push(
+                h(
+                  'span',
+                  { key: 'gpw-' + group.id, style: { display: 'inline-flex', alignItems: 'center', gap: 2 } },
                   h(
                     'button',
                     {
-                      key: 'gp-all',
                       type: 'button',
+                      title: group.members.length + ' 条' + (group.archived ? '（已归档）' : ''),
                       onClick: function () {
-                        setGroupPick('');
+                        /* 点已归档的组也能看（只是默认不显示在列表里）。 */
+                        setGroupPick(group.id);
+                        runCommand(
+                          '/task-group-select ' + JSON.stringify({ group: group.id, session: sessionId }),
+                          sessionId,
+                        ).catch(function () {
+                          /* 失败不影响界面筛选，只是工具的默认范围没跟着变。 */
+                        });
                       },
-                      style: Object.assign({}, buttonBase(groupPick === ''), { padding: '2px 10px' }),
+                      style: Object.assign({}, buttonBase(active), {
+                        padding: '2px 10px',
+                        opacity: active ? 1 : group.archived ? 0.5 : 0.75,
+                        fontStyle: group.archived ? 'italic' : 'normal',
+                      }),
                     },
-                    '全部',
+                    group.name + '（' + count + '）',
                   ),
-                ];
-                groups.forEach(function (group) {
-                  const count = allTasks.filter(function (item) {
-                    return Array.isArray(item.groupsOf) && item.groupsOf.indexOf(group.id) !== -1;
-                  }).length;
-                  const active = groupPick === group.id;
-                  buttons.push(
-                    h(
-                      'button',
-                      {
-                        key: 'gp-' + group.id,
-                        type: 'button',
-                        title: group.members.length + ' 条',
-                        onClick: function () {
-                          const next = active ? '' : group.id;
-                          setGroupPick(next);
-                          /* 同步给宿主当「当前分组」：工具默认只看这一组。
-                           * 用户原话：「需要有一个当前组。工具的查找是默认对当前组里面找的。」 */
-                          runCommand('/task-group-select ' + JSON.stringify({ group: next, session: sessionId }), sessionId).catch(function () {
-                            /* 失败不影响界面筛选，只是工具的默认范围没跟着变。 */
-                          });
+                  /* 归档 / 取回：**只在「显示已归档」打开时出现**。
+                   * 用户原话：「在点开显示已归档后，要有按钮把分组进行归档。」
+                   * 平时不显示，是为了让分组条保持干净——归档不是高频动作。 */
+                  showArchived
+                    ? h(
+                        'button',
+                        {
+                          type: 'button',
+                          title: group.archived ? '把这个分组取回来（事项数据不动）' : '归档这个分组（事项数据不动）',
+                          onClick: function () {
+                            runCommand(
+                              '/task-group-archive ' + JSON.stringify({ group: group.id, archived: !group.archived }),
+                              sessionId,
+                            )
+                              .then(function () {
+                                load();
+                              })
+                              .catch(function () {});
+                          },
+                          style: Object.assign({}, buttonBase(false), {
+                            padding: '0 6px',
+                            fontSize: 11,
+                            lineHeight: '18px',
+                          }),
                         },
-                        style: Object.assign({}, buttonBase(active), {
-                          padding: '2px 10px',
-                          opacity: active ? 1 : 0.75,
-                        }),
-                      },
-                      group.name + '（' + count + '）',
-                    ),
-                  );
-                });
-                /* 不再有「未归组」——用户明确要求：
-                 * 「元组是不能有未归组。因为闲聊是不会创建出来任务的。」
-                 * 每条事项都必须属于一个分组（见宿主 task_submit 的强制校验）。 */
-                return buttons;
-              })(),
-              /* 「显示已归档」放在这里，不放工具栏。
-               *
-               * 用户原话：「归档是对分组归档的。所以"显示已归档"的按钮你要考虑ux，
-               * 他是不是放这里。他只对组有用的。」
-               *
-               * 对：归档的粒度是整组（一条事项跟着它的组一起进出视图），
-               * 所以开关紧挨着分组条才有意义，飞到工具栏上是无主的。 */
-              h('span', { style: { flex: 1, minWidth: 8 } }),
+                        group.archived ? '⟲' : '📦',
+                      )
+                    : null,
+                ),
+              );
+            });
+            /* **创建分组**（用户要求：「要有地方创建分组」）。
+             * 用一个输入框 + 回车/按钮，不弹模态——建分组是轻动作。 */
+            buttons.push(
               h(
-                'button',
-                {
-                  type: 'button',
-                  title: '归档的分组默认不显示；这里可以翻出来看',
-                  onClick: function () {
-                    setShowArchived(!showArchived);
+                'span',
+                { key: 'gp-new', style: { display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6 } },
+                h('input', {
+                  value: newGroupName,
+                  placeholder: '新建分组…',
+                  onChange: function (event) {
+                    setNewGroupName(event.target.value);
                   },
-                  style: Object.assign({}, buttonBase(showArchived), { padding: '2px 10px' }),
-                },
-                showArchived ? '隐藏已归档' : '显示已归档' + (archivedCount > 0 ? '（' + archivedCount + '）' : ''),
+                  onKeyDown: function (event) {
+                    if (event.key === 'Enter') createGroup();
+                  },
+                  style: Object.assign({}, formInputStyle, {
+                    width: 120,
+                    flex: 'none',
+                    padding: '2px 8px',
+                    fontSize: 11,
+                  }),
+                }),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    disabled: newGroupName.trim() === '',
+                    onClick: createGroup,
+                    style: Object.assign({}, buttonBase(true, newGroupName.trim() === ''), {
+                      padding: '2px 8px',
+                      fontSize: 11,
+                    }),
+                  },
+                  '＋',
+                ),
               ),
-            )
-          : null,
+            );
+            return buttons;
+          })(),
+          /* 「显示已归档」放在这里，不放工具栏。
+           *
+           * 用户原话：「归档是对分组归档的。所以"显示已归档"的按钮你要考虑ux，
+           * 他是不是放这里。他只对组有用的。」
+           *
+           * 对：归档的粒度是整组，所以开关紧挨着分组条才有意义。 */
+          h('span', { style: { flex: 1, minWidth: 8 } }),
+          h(
+            'button',
+            {
+              type: 'button',
+              title: '归档的分组默认不显示；这里可以翻出来看，也能归档/取回',
+              onClick: function () {
+                setShowArchived(!showArchived);
+              },
+              style: Object.assign({}, buttonBase(showArchived), { padding: '2px 10px' }),
+            },
+            showArchived ? '隐藏已归档' : '显示已归档' + (archivedCount > 0 ? '（' + archivedCount + '）' : ''),
+          ),
+        ),
         /* 标签筛选（与分组并列，但**维度不同**）。
          *
          * 用户原话：「他可以被标记为什么 tag，例如用户风格。

@@ -4398,7 +4398,9 @@
                   out.set(event.group.id, {
                     id: event.group.id,
                     name: String(event.group.name || ""),
-                    members: Array.isArray(event.group.members) ? event.group.members.map(String) : []
+                    members: Array.isArray(event.group.members) ? event.group.members.map(String) : [],
+                    /* 归档是对分组归档的（用户要求）。 */
+                    archived: event.group.archived === true
                   });
                 });
               }
@@ -4428,7 +4430,18 @@
             return loadViaFiles(paths);
           }).then(function(result) {
             setData({ tasks: result.rows.map(fromApi), bodies: result.bodies, live: true, error: "" });
-            setGroups(result.groups || []);
+            const loaded = result.groups || [];
+            setGroups(loaded);
+            setGroupPick(function(previous) {
+              const still = loaded.some(function(group) {
+                return group.id === previous && !group.archived;
+              });
+              if (still) return previous;
+              const first = loaded.find(function(group) {
+                return !group.archived;
+              });
+              return first === void 0 ? "" : first.id;
+            });
           }).catch(function(error) {
             setData({
               tasks: SAMPLE_TASKS,
@@ -4538,6 +4551,33 @@
             if (typeof onError === "function") onError(String(error && error.message || error));
           });
         };
+        const createGroup = function() {
+          const name = newGroupName.trim();
+          if (name === "") return;
+          setNewGroupName("");
+          runCommand("/task-group-save " + JSON.stringify({ name, members: [] }), sessionId).then(function(settled) {
+            const text = commandText(settled);
+            let saved = null;
+            try {
+              saved = JSON.parse(text);
+            } catch (failure) {
+              saved = null;
+            }
+            if (saved !== null && typeof saved.id === "string") {
+              setGroupPick(saved.id);
+              return runCommand(
+                "/task-group-select " + JSON.stringify({ group: saved.id, session: sessionId }),
+                sessionId
+              ).catch(function() {
+              });
+            }
+            return null;
+          }).then(function() {
+            load();
+          }).catch(function(error) {
+            setAction({ busy: false, error: String(error && error.message || error) });
+          });
+        };
         const openCreate = function() {
           setEditId("");
           setCreate({ open: true, busy: false, error: "", key: String(Date.now()) });
@@ -4603,6 +4643,9 @@
         const tagPickState = React.useState("");
         const tagPick = tagPickState[0];
         const setTagPick = tagPickState[1];
+        const newGroupState = React.useState("");
+        const newGroupName = newGroupState[0];
+        const setNewGroupName = newGroupState[1];
         const filterState = React.useState("");
         const groupFilter = filterState[0];
         const setGroupFilter = filterState[1];
@@ -4635,15 +4678,18 @@
           function() {
             const needle = search.trim().toLowerCase();
             return allTasks.filter(function(node) {
-              if (node.archived && !showArchived) return false;
-              if (groupPick !== "") {
-                const own = Array.isArray(node.groupsOf) ? node.groupsOf : [];
-                if (groupPick === "__none__") {
-                  if (own.length > 0) return false;
-                } else if (own.indexOf(groupPick) === -1) {
-                  return false;
-                }
+              const ownGroups = Array.isArray(node.groupsOf) ? node.groupsOf : [];
+              if (!showArchived && ownGroups.length > 0) {
+                const live = ownGroups.some(function(id) {
+                  const group = groups.find(function(item) {
+                    return item.id === id;
+                  });
+                  return group !== void 0 && !group.archived;
+                });
+                if (!live) return false;
               }
+              if (groupPick === "") return false;
+              if (ownGroups.indexOf(groupPick) === -1) return false;
               if (groupFilter !== "") {
                 const groups2 = groupsOf(node.status);
                 if (node.status === "\u672A\u6307\u5B9A") {
@@ -4659,7 +4705,7 @@
               return true;
             });
           },
-          [allTasks, groupFilter, search, showArchived, groupPick, tagPick]
+          [allTasks, groupFilter, search, showArchived, groupPick, tagPick, groups]
         );
         const graph = React.useMemo(
           function() {
@@ -4841,55 +4887,116 @@
            * 用户原话：「肯定要分组啊。我这里打插件要这些任务。
            * 等下我写程序还要这些任务干什么？」
            *
-           * 所以这是**主筛选器**，放在最上面。切换分组 = 切换手头的项目。
+           * 所以这是**主筛选器**。切换分组 = 切换手头的项目。
            * 分组是独立的命名集合（存在 groups.jsonl），**不是** workspace 字段——
-           * 那是"能读哪个目录"的权限，用户为了读别的项目把它设成了仓库根目录。 */
-          groups.length > 0 ? h(
+           * 那是"能读哪个目录"的权限，用户为了读别的项目把它设成了仓库根目录。
+           *
+           * **没有「全部」**（用户要求）：「这个分组不能有全部。」
+           * 理由：分组是"一件事"，同时看所有事没有意义；而且每条事项必属某组，
+           * 「全部」等于把两件互不相关的事混在一起看。
+           * 所以任何时候都**必须选中一个分组**。 */
+          h(
             "div",
             { style: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" } },
             h("span", { style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)", flex: "none" } }, "\u5206\u7EC4"),
             (function() {
-              const buttons = [
-                h(
-                  "button",
-                  {
-                    key: "gp-all",
-                    type: "button",
-                    onClick: function() {
-                      setGroupPick("");
-                    },
-                    style: Object.assign({}, buttonBase(groupPick === ""), { padding: "2px 10px" })
-                  },
-                  "\u5168\u90E8"
-                )
-              ];
-              groups.forEach(function(group) {
+              const buttons = [];
+              const visible = groups.filter(function(group) {
+                return !group.archived || showArchived;
+              });
+              visible.forEach(function(group) {
                 const count = allTasks.filter(function(item) {
                   return Array.isArray(item.groupsOf) && item.groupsOf.indexOf(group.id) !== -1;
                 }).length;
                 const active = groupPick === group.id;
                 buttons.push(
                   h(
-                    "button",
-                    {
-                      key: "gp-" + group.id,
-                      type: "button",
-                      title: group.members.length + " \u6761",
-                      onClick: function() {
-                        const next = active ? "" : group.id;
-                        setGroupPick(next);
-                        runCommand("/task-group-select " + JSON.stringify({ group: next, session: sessionId }), sessionId).catch(function() {
-                        });
+                    "span",
+                    { key: "gpw-" + group.id, style: { display: "inline-flex", alignItems: "center", gap: 2 } },
+                    h(
+                      "button",
+                      {
+                        type: "button",
+                        title: group.members.length + " \u6761" + (group.archived ? "\uFF08\u5DF2\u5F52\u6863\uFF09" : ""),
+                        onClick: function() {
+                          setGroupPick(group.id);
+                          runCommand(
+                            "/task-group-select " + JSON.stringify({ group: group.id, session: sessionId }),
+                            sessionId
+                          ).catch(function() {
+                          });
+                        },
+                        style: Object.assign({}, buttonBase(active), {
+                          padding: "2px 10px",
+                          opacity: active ? 1 : group.archived ? 0.5 : 0.75,
+                          fontStyle: group.archived ? "italic" : "normal"
+                        })
                       },
-                      style: Object.assign({}, buttonBase(active), {
-                        padding: "2px 10px",
-                        opacity: active ? 1 : 0.75
-                      })
-                    },
-                    group.name + "\uFF08" + count + "\uFF09"
+                      group.name + "\uFF08" + count + "\uFF09"
+                    ),
+                    /* 归档 / 取回：**只在「显示已归档」打开时出现**。
+                     * 用户原话：「在点开显示已归档后，要有按钮把分组进行归档。」
+                     * 平时不显示，是为了让分组条保持干净——归档不是高频动作。 */
+                    showArchived ? h(
+                      "button",
+                      {
+                        type: "button",
+                        title: group.archived ? "\u628A\u8FD9\u4E2A\u5206\u7EC4\u53D6\u56DE\u6765\uFF08\u4E8B\u9879\u6570\u636E\u4E0D\u52A8\uFF09" : "\u5F52\u6863\u8FD9\u4E2A\u5206\u7EC4\uFF08\u4E8B\u9879\u6570\u636E\u4E0D\u52A8\uFF09",
+                        onClick: function() {
+                          runCommand(
+                            "/task-group-archive " + JSON.stringify({ group: group.id, archived: !group.archived }),
+                            sessionId
+                          ).then(function() {
+                            load();
+                          }).catch(function() {
+                          });
+                        },
+                        style: Object.assign({}, buttonBase(false), {
+                          padding: "0 6px",
+                          fontSize: 11,
+                          lineHeight: "18px"
+                        })
+                      },
+                      group.archived ? "\u27F2" : "\u{1F4E6}"
+                    ) : null
                   )
                 );
               });
+              buttons.push(
+                h(
+                  "span",
+                  { key: "gp-new", style: { display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6 } },
+                  h("input", {
+                    value: newGroupName,
+                    placeholder: "\u65B0\u5EFA\u5206\u7EC4\u2026",
+                    onChange: function(event) {
+                      setNewGroupName(event.target.value);
+                    },
+                    onKeyDown: function(event) {
+                      if (event.key === "Enter") createGroup();
+                    },
+                    style: Object.assign({}, formInputStyle, {
+                      width: 120,
+                      flex: "none",
+                      padding: "2px 8px",
+                      fontSize: 11
+                    })
+                  }),
+                  h(
+                    "button",
+                    {
+                      type: "button",
+                      disabled: newGroupName.trim() === "",
+                      onClick: createGroup,
+                      style: Object.assign({}, buttonBase(true, newGroupName.trim() === ""), {
+                        padding: "2px 8px",
+                        fontSize: 11
+                      })
+                    },
+                    "\uFF0B"
+                  )
+                )
+              );
               return buttons;
             })(),
             /* 「显示已归档」放在这里，不放工具栏。
@@ -4897,14 +5004,13 @@
              * 用户原话：「归档是对分组归档的。所以"显示已归档"的按钮你要考虑ux，
              * 他是不是放这里。他只对组有用的。」
              *
-             * 对：归档的粒度是整组（一条事项跟着它的组一起进出视图），
-             * 所以开关紧挨着分组条才有意义，飞到工具栏上是无主的。 */
+             * 对：归档的粒度是整组，所以开关紧挨着分组条才有意义。 */
             h("span", { style: { flex: 1, minWidth: 8 } }),
             h(
               "button",
               {
                 type: "button",
-                title: "\u5F52\u6863\u7684\u5206\u7EC4\u9ED8\u8BA4\u4E0D\u663E\u793A\uFF1B\u8FD9\u91CC\u53EF\u4EE5\u7FFB\u51FA\u6765\u770B",
+                title: "\u5F52\u6863\u7684\u5206\u7EC4\u9ED8\u8BA4\u4E0D\u663E\u793A\uFF1B\u8FD9\u91CC\u53EF\u4EE5\u7FFB\u51FA\u6765\u770B\uFF0C\u4E5F\u80FD\u5F52\u6863/\u53D6\u56DE",
                 onClick: function() {
                   setShowArchived(!showArchived);
                 },
@@ -4912,7 +5018,7 @@
               },
               showArchived ? "\u9690\u85CF\u5DF2\u5F52\u6863" : "\u663E\u793A\u5DF2\u5F52\u6863" + (archivedCount > 0 ? "\uFF08" + archivedCount + "\uFF09" : "")
             )
-          ) : null,
+          ),
           /* 标签筛选（与分组并列，但**维度不同**）。
            *
            * 用户原话：「他可以被标记为什么 tag，例如用户风格。
