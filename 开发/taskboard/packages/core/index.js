@@ -2010,12 +2010,11 @@ export function apply(ctx) {
 	} catch (failure) {
 		/* 没有 provide 能力时只是少一个口子 */
 	}
-	try {
-		const prompts = ctx.get('systemPrompt');
-		if (prompts && typeof prompts.section === 'function') {
-			ctx.effect(() => prompts.section({ name: 'taskboard', order: 60, text: PROMPT_TEXT }));
-		}
-	} catch (failure) {
-		/* 没有 systemPrompt 服务时只是少一段约定，不影响工具 */
-	}
+	/*
+	 * 系统提示不在这里：它讲的是"怎么用这套工具"，跟工具面是一体的，
+	 * 所以搬到了 @local/taskboard-tools。
+	 *
+	 * 之前这里还留着一句 `text: PROMPT_TEXT`，但 PROMPT_TEXT 已经迁走，
+	 * core 里没有这个符号 —— effect 回调执行时直接 ReferenceError。
+	 */
 }
