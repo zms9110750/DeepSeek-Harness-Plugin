@@ -1403,7 +1403,6 @@ export function apply(ctx) {
 	registerExtraTools(ctx);
 	registerExtraCommands(ctx);
 	registerUpdate(ctx);
-	registerUpdate(ctx);
 
 	/* 系统提示：告诉模型这套工具怎么用。 */
 	try {

@@ -147,6 +147,19 @@ function makeCtx() {
 	const ctx = {
 		tools: {
 			register(definition) {
+				/*
+				 * 真实宿主**不允许**同名工具注册两次：dsh-tools 的 NamedEntries
+				 * 会抛 `tool "X" is already registered`，整个插件的 apply 失败。
+				 *
+				 * 这里必须照抄这个约束 —— 原来用的是 Map.set，会静默覆盖，
+				 * 于是「重复注册」的 bug 测不出来。真实踩过：apply 里
+				 * `registerUpdate(ctx)` 写了两遍，73 个用例全绿，
+				 * 插件在宿主里却直接不激活。
+				 */
+				assert.ok(
+					!tools.has(definition.name),
+					`工具 ${definition.name} 被注册了两次（宿主会拒绝加载这个插件）`,
+				);
 				tools.set(definition.name, definition);
 			},
 			guard(fn) {
