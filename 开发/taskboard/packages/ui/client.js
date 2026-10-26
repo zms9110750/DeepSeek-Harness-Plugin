@@ -2042,8 +2042,23 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         left: 0,
         right: 0,
         bottom: "calc(100% + 44px)",
-        maxHeight: "min(640px, calc(100vh - 200px))",
-        overflowY: "auto",
+        /*
+         * 高度必须按「按钮上方还剩多少空间」算，不能给个固定上限。
+         *
+         * 面板底边钉在按钮上方 44px 处（`bottom: calc(100% + 44px)`），
+         * 所以面板能用的垂直空间 = 按钮顶边 - 44 - 一点上边距。
+         *
+         * 之前写 `maxHeight: min(640px, 100vh - 200px)`：
+         * 100vh 是整个视口高，但面板底边并不在视口底 —— 它在中下部
+         * （输入框在地面之上）。用 100vh 减去 200 算出来的高度远超实际
+         * 可用空间，于是面板顶边顶出视口，工具栏（列表/新建/刷新）
+         * 被切掉了。
+         *
+         * 现在用一个由 JS 量出来写进 CSS 变量的值 `--tb-drawer-room`
+         * （= 按钮顶边到视口顶边的距离 - 60）。量不出来时退回 60vh，
+         * 至少能显示一大半而不是空白。
+         */
+        maxHeight: "var(--tb-drawer-room, 60vh)",
         boxSizing: "border-box",
         borderRadius: 12,
         background: "var(--dsw-alias-bg-layer-1)",
@@ -2053,7 +2068,11 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         zIndex: 3,
         display: "flex",
         flexDirection: "column",
-        overflow: "hidden"
+        /* 只有一个 overflow：面板本身滚动。原来同时写了
+           `overflowY: 'auto'` 和 `overflow: 'hidden'`，后者覆盖前者，
+           于是内容一多就被裁掉、还滚不动。 */
+        overflowY: "auto",
+        overflowX: "hidden"
       });
       const titleStyle = {
         fontSize: 13,
@@ -2306,7 +2325,15 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const home = guessHomeDirs()[0] || "C:\\Users\\16229\\.dsh";
         PATHS = {
           store: home + "\\taskboard\\plans.jsonl",
-          templates: templateDirCandidates()[0] || ""
+          /*
+           * 模板清单在**数据目录**里，和 plans.jsonl 同级。
+           * 由宿主写出（见 tools 包的 writeIndex）。
+           *
+           * 这里以前写的是 `templateDirCandidates()[0]` —— 一个指向
+           * 本机开发目录的硬编码路径，改了名字之后就 ReferenceError，
+           * 表现是「读不到计划库: templateDirCandidates is not defined」。
+           */
+          templates: home + "\\taskboard\\templates.json"
         };
         return PATHS;
       }
@@ -5485,6 +5512,9 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             }
             const inset = cardLeft === null ? -32 : Math.round(cardLeft - rowLeft - BUTTON_WIDTH - GAP);
             node.style.setProperty("--tb-drawer-inset", `${inset}px`);
+            const buttonTop = node.getBoundingClientRect().top;
+            const room = Math.max(240, Math.round(buttonTop - 60));
+            node.style.setProperty("--tb-drawer-room", `${room}px`);
           };
           apply();
           let observer = null;
