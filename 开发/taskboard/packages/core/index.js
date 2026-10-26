@@ -1980,6 +1980,8 @@ function coreService(ctx) {
 		/** 当前会话 id（由权限守卫在每次工具调用前写入）。 */
 		currentSession: () => CURRENT_SESSION.value,
 		storeFilePath: () => storeFilePath(),
+		/** 内置模板目录（core/templates）。面板要在这里写 INDEX.json 之外的清单，先拿路径。 */
+		templateDir: () => TEMPLATE_DIR,
 		resolveDshHome: (c) => resolveDshHome(c),
 		splitWorkspaces: (raw) => splitWorkspaces(raw),
 

@@ -29,6 +29,15 @@
  *
  * 命令也在这里：它们和工具是同一件事的两个入口（模型用工具、人用命令）。
  */
+/*
+ * node:path / node:fs —— 写模板索引文件要用。
+ *
+ * 这两个是从 core 搬代码时漏掉的：搬过来用了 `join()` 和 `writeFile()`，
+ * 却没搬 import。运行期直接 ReferenceError，被 catch 吞掉，
+ * 于是 INDEX.json 永远写不出来，面板报「读不到模板」。
+ */
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 
 export const name = 'taskboard-tools';
@@ -101,6 +110,14 @@ const dispatchOptions = coreFn('dispatchOptions');
 
 /* 杂项 */
 const storeFilePath = coreFn('storeFilePath');
+/*
+ * 模板目录（core/templates）。
+ *
+ * 这个常量原来在 core 里，拆 tools 时被搬过来用却没定义 ——
+ * `writeFile(join(TEMPLATE_DIR, 'INDEX.json'))` 直接 ReferenceError，
+ * 被 catch 吞掉，于是 INDEX.json 永远不更新，面板就报「读不到模板」。
+ */
+const templateDir = coreFn('templateDir');
 const currentSessionId = coreFn('currentSession');
 const resolveDshHome = coreFn('resolveDshHome');
 const splitWorkspaces = coreFn('splitWorkspaces');
@@ -998,7 +1015,7 @@ function registerExtraCommands(ctx) {
 				kind: 'success',
 				text: JSON.stringify({
 					store: storeFilePath(),
-					templates: TEMPLATE_DIR,
+					templates: templateDir(),
 					home: resolveDshHome(),
 				}),
 			};
@@ -1021,8 +1038,22 @@ function registerExtraCommands(ctx) {
 	 */
 	ctx.effect(() => {
 		const writeIndex = async () => {
+			/*
+			 * availableTypes() 本身也可能抛（templates 服务还没就绪、
+			 * 或者 core 拿不到模板表）。它原来不在 try 里，一抛就整个
+			 * writeIndex 中断 —— 而调用点是 `void writeIndex()`，
+			 * 未处理的 rejection 被静默吞掉，于是 INDEX.json 永远不更新，
+			 * 面板就报「读不到模板」。
+			 */
 			const out = [];
-			for (const type of availableTypes()) {
+			let types = [];
+			try {
+				types = availableTypes();
+			} catch (error) {
+				process.stderr.write(`[taskboard] 取模板类型失败：${String(error)}\n`);
+				types = [];
+			}
+			for (const type of types) {
 				try {
 					out.push({ type, yaml: await loadTemplate(type) });
 				} catch (error) {
@@ -1030,12 +1061,35 @@ function registerExtraCommands(ctx) {
 				}
 			}
 			try {
-				await writeFile(join(TEMPLATE_DIR, 'INDEX.json'), JSON.stringify(out), 'utf8');
+				const target = join(templateDir(), 'INDEX.json');
+				await writeFile(target, JSON.stringify(out), 'utf8');
 			} catch (error) {
-				ctx.logger?.warn?.(`写模板索引失败：${String(error)}`);
+				process.stderr.write(`[taskboard] 写模板索引失败：${String(error)}\n`);
 			}
 		};
-		void writeIndex();
+		/*
+		 * 写索引的**时机**很要紧。
+		 *
+		 * availableTypes() 靠 TEMPLATES_SERVICE，而 templates 是独立插件，
+		 * 它注册提供者的时机不保证在 tools 之前。第一次写的时候如果它还没就绪，
+		 * 只会写出内置那 4 个 —— 正是之前「只有 4 项」的原因。
+		 *
+		 * 所以：先写一次，再隔一会儿写一次；数量变了就再写，直到稳定。
+		 * 三次足够（实测第二轮就齐了），失败不重试（写不出来是配置问题，不是时序）。
+		 */
+		const settle = async () => {
+			let previous = -1;
+			for (let round = 0; round < 5; round += 1) {
+				await writeIndex();
+				const now = availableTypes().length;
+				if (now === previous && now > 0) return;
+				previous = now;
+				await new Promise((resolve) => setTimeout(resolve, 400));
+			}
+		};
+		settle().catch((error) => {
+			process.stderr.write(`[taskboard] 写模板索引异常：${String(error)}\n`);
+		});
 		return () => {};
 	});
 

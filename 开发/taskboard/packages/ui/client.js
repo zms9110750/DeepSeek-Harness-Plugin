@@ -2034,7 +2034,16 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       };
       const buttonSlotStyle = {
         display: "inline-flex",
-        marginLeft: -32,
+        /*
+         * 0 = 贴住这一行的最左边，也就是**卡片外部**的走廊。
+         *
+         * 用户明确要求：「反正我要他在外部。万一别人 mod 也来占位了呢。
+         * 所以就是不能像普遍化的任何东西。」
+         *
+         * 所以它不能借用输入框内部的空间（那是通用区域，别的插件也会往
+         * conversation.input.dock 里注册），必须待在卡片左侧的留白里。
+         */
+        marginLeft: -38,
         pointerEvents: "auto"
       };
       const panelStyle = surfaceStyle({
@@ -2042,7 +2051,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         left: 0,
         right: 0,
         bottom: "calc(100% + 44px)",
-        maxHeight: 640,
+        maxHeight: "min(640px, calc(100vh - 200px))",
+        overflowY: "auto",
         boxSizing: "border-box",
         borderRadius: 12,
         background: "var(--dsw-alias-bg-layer-1)",

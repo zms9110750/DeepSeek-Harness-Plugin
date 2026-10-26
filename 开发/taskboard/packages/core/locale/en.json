@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Taskboard core",
-    "description": "Stores tasks, manages status, claims and cascades; fourteen tools for the AI."
+    "description": "Tasks, status, claims and cascades, plus the slash commands typed in the composer."
   }
 }

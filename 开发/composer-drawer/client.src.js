@@ -178,22 +178,53 @@ window.__ModuleLoader__.load({
       pointerEvents: 'none',
     };
 
-    /** Flush against the composer card's left border, outside it. */
+    /*
+     * 按钮的位置。
+     *
+     * 原来用 `marginLeft: -32` 把按钮**甩到输入框左边界外面**，靠负边距悬挂。
+     * 这个办法依赖父容器的实际宽度：dock 那一行铺满整个会话列（maxWidth 1274），
+     * 而输入框卡片比它窄且居中，两边一错开，按钮就飘到卡片外面去了。
+     * 用户看到的就是「抽屉偏离的有点远」，而且点不动（它悬在空白处）。
+     *
+     * 现在改成**贴住卡片内侧**：不借用负边距，靠 padding 让按钮落在卡片左边
+     * 内缘。这样无论容器多宽、卡片多窄，按钮都跟着卡片走。
+     */
     const buttonSlotStyle = {
       display: 'inline-flex',
-      marginLeft: -32,
+      /*
+       * 0 = 贴住这一行的最左边，也就是**卡片外部**的走廊。
+       *
+       * 用户明确要求：「反正我要他在外部。万一别人 mod 也来占位了呢。
+       * 所以就是不能像普遍化的任何东西。」
+       *
+       * 所以它不能借用输入框内部的空间（那是通用区域，别的插件也会往
+       * conversation.input.dock 里注册），必须待在卡片左侧的留白里。
+       */
+      marginLeft: -38,
       pointerEvents: 'auto',
     };
 
-    /* 面板必须浮起来：dock 那一行被输入框区域的高度夹住，在流里最高只能长到
-       ~260px，装不下一张有向无环图。所以脱离流、贴在这一行上方，让图的画布
-       有固定高度，展开时不再挤压输入框。 */
+    /*
+     * 面板必须浮起来：dock 那一行被输入框区域的高度夹住，在流里最高只能长到
+     * ~260px，装不下一张有向无环图。所以脱离流、贴在这一行上方，让图的画布
+     * 有固定高度，展开时不再挤压输入框。
+     *
+     * ⚠️ 高度要用**视口相对**的限制。
+     *
+     * 原来是写死的 `maxHeight: 640`：面板底边固定在按钮上方 44px，
+     * 再加 640px 高度，面板顶边就跑到视口外面了 ——
+     * 用户看到的是「面板顶部被切掉，新建按钮看不见」。
+     *
+     * 改成 `min(640px, 100vh - 200px)`：屏幕够高就用 640，
+     * 不够就按视口缩，保证顶边始终留出上边距。
+     */
     const panelStyle = surfaceStyle({
       position: 'absolute',
       left: 0,
       right: 0,
       bottom: 'calc(100% + 44px)',
-      maxHeight: 640,
+      maxHeight: 'min(640px, calc(100vh - 200px))',
+      overflowY: 'auto',
       boxSizing: 'border-box',
       borderRadius: 12,
       background: 'var(--dsw-alias-bg-layer-1)',

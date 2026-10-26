@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "任务板工具",
-    "description": "给 agent 的工具面：十四个工具 + 面板命令。依赖 core，不喜欢就整个换掉。"
+    "description": "给 AI 的十四个工具。依赖 core，不喜欢就整个换掉。"
   }
 }

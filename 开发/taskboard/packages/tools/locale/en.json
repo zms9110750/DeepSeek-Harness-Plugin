@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Taskboard Tools",
-    "description": "Model-facing tool surface: fourteen tools plus panel commands. Depends on core; replaceable if you dislike it."
+    "title": "Taskboard tools",
+    "description": "Fourteen tools for the AI. Depends on core; replace it wholesale if you dislike it."
   }
 }
