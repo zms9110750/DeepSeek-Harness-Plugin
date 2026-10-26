@@ -4258,6 +4258,26 @@ window.__ModuleLoader__.load({
      * 值变了就返回 null（不渲染）。注册留着，渲染撤掉 —— 视觉上就是消失。
      * 这样不依赖任何重挂机制，也不用跟 slot 生命周期较劲。
      */
+    /*
+     * 配置表单的入口。
+     *
+     * `plugins.bundle.config` 的组件**拿不到 `props.form`** —— 官方
+     * cot-translation 是自己 `ctx.configForms.get(ns)` 再传进 inject 的。
+     * 我们这里简化：apply 时把两个 ConfigFormController 记下来，
+     * 卡片直接读。controller 自带 getSnapshot/subscribe/mutate。
+     */
+    const settingForms = new Map();
+
+    /** 取某条 row 的配置表单（可能还没有）。 */
+    function settingForm(namespace) {
+      return settingForms.get(namespace);
+    }
+
+    /** apply 时登记。 */
+    function rememberSettingForm(namespace, form) {
+      if (form !== undefined && form !== null) settingForms.set(namespace, form);
+    }
+
     let liveUi = { drawer: true, sidebar: true, extras: true };
     /*
      * 清空模板缓存。由 TaskBoard 组件挂上来 —— 模板是组件内状态，
@@ -4451,15 +4471,31 @@ window.__ModuleLoader__.load({
        *
        * 快照结构：{ value, revision, ... }。写入要带上 revision 做乐观并发控制。
        */
-      const form = props.form;
+      /*
+       * `props.form` 对 `plugins.bundle.config` **不会自动给**。
+       *
+       * 官方 cot-translation 的做法是自己在 apply 里
+       * `ctx.configForms.get(ns)`，再把表单塞进 register 的 inject 里：
+       *
+       *   const scope = ctx.configForms.get('cot-translation');
+       *   const form = new XxxForm(scope);
+       *   ctx.slots.register({
+       *     name: 'plugins.bundle.config', key: '<bundle>',
+       *     inject: () => ({ ...form.inject(), hooks: {...} }),
+       *   }, Component);
+       *
+       * 所以这里不从 props 取，而是用 apply 时算好的 uiForm / templatesForm。
+       */
+      const form = props.form ?? settingForm('taskboard-ui');
       if (form === undefined || form === null) return null;
-      const state = form.state;
+      const state = form.state ?? (typeof form.getSnapshot === 'function' ? form.getSnapshot() : undefined);
       const document = state && state.value;
 
-      /* 当前值：从快照里取 ui.drawer / ui.sidebar，缺省 true。 */
+      /* 当前值：Config 现在是**平铺**的（drawer / sidebar），不再嵌在 ui 下面。 */
       const valueOf = function (key) {
-        const ui = document && typeof document === 'object' ? document.ui : undefined;
-        if (ui !== null && typeof ui === 'object' && typeof ui[key] === 'boolean') return ui[key];
+        if (document !== null && typeof document === 'object' && typeof document[key] === 'boolean') {
+          return document[key];
+        }
         return true;
       };
 
@@ -4475,7 +4511,7 @@ window.__ModuleLoader__.load({
        * 嵌套字段就把 path 写成多段：['ui', 'drawer']。 */
       const write = function (key, value) {
         const revision = state && typeof state.revision === 'number' ? state.revision : undefined;
-        return form.mutate([{ op: 'set', path: ['ui', key], value: value }], revision);
+        return form.mutate([{ op: 'set', path: [key], value: value }], revision);
       };
 
       const rowStyle = {
@@ -4554,6 +4590,102 @@ window.__ModuleLoader__.load({
         ),
         renderToggle('drawer', '抽屉', '输入框旁边的箭头按钮', 'taskboard-ui-drawer'),
         renderToggle('sidebar', '右侧栏', '右侧工作区的「任务」标签页', 'taskboard-ui-sidebar'),
+      );
+    }
+
+    /*
+     * 领域模板的配置卡片（`taskboard-templates` 那条 row）。
+     *
+     * 用户要求：
+     *   > 这里写"程序，项目"，"小说"，"绘画"这些特定领域的模板。
+     *   > 并且这些都要作为一个 ui 的 bool 可以开关。
+     *
+     * 空模板和「通用」分类在 core 里，关掉这个开关它们照样在。
+     */
+    function TemplatesSettingsCard(props) {
+      const view = props.view;
+      if (view === 'summary') return '领域模板：程序 / 项目 / 小说 / 绘画…';
+
+      const form = props.form ?? settingForm('taskboard-templates');
+      if (form === undefined || form === null) return null;
+      const state = form.state ?? (typeof form.getSnapshot === 'function' ? form.getSnapshot() : undefined);
+      const document = state && state.value;
+
+      const on =
+        document !== null && typeof document === 'object' && typeof document.enabled === 'boolean'
+          ? document.enabled
+          : true;
+
+      const toggle = function () {
+        const revision = state && typeof state.revision === 'number' ? state.revision : undefined;
+        return form.mutate([{ op: 'set', path: ['enabled'], value: !on }], revision);
+      };
+
+      return h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 760 } },
+        h('h3', { style: { margin: '0 0 4px', fontSize: 18, fontWeight: 600 } }, '领域模板'),
+        h(
+          'p',
+          { style: { margin: '0 0 8px', fontSize: 13, color: 'var(--dsw-alias-label-tertiary)' } },
+          '空模板和「通用」分类始终可用，关掉这个只是去掉特定领域的那些。',
+        ),
+        h(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              padding: '10px 0',
+              borderTop: '0.5px solid var(--dsw-alias-border-l2)',
+            },
+          },
+          h(
+            'div',
+            null,
+            h('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-primary)' } }, '领域模板'),
+            h(
+              'div',
+              { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', marginTop: 2 } },
+              '程序 / 项目 / 小说 / 绘画 等特定领域的模板',
+            ),
+          ),
+          h(
+            'button',
+            {
+              id: 'taskboard-templates-enabled',
+              type: 'button',
+              role: 'switch',
+              'aria-checked': on,
+              onClick: toggle,
+              style: {
+                width: 40,
+                height: 22,
+                flex: 'none',
+                borderRadius: 11,
+                border: 'none',
+                cursor: 'pointer',
+                position: 'relative',
+                background: on ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)',
+                transition: 'background 120ms',
+              },
+            },
+            h('span', {
+              style: {
+                position: 'absolute',
+                top: 2,
+                left: on ? 20 : 2,
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: '#fff',
+                transition: 'left 120ms',
+              },
+            }),
+          ),
+        ),
       );
     }
 
@@ -4920,13 +5052,100 @@ window.__ModuleLoader__.load({
          *   }
          *
          * **宿主替我们接好了表单控制器**，不需要自己 `configForms.get()`。
-         * 注册上去之后，那一行就会多出一个"配置"控件，点开就是我的页面。 */
-        ctx.slots.inject('plugins.row.config', function () {
-          return ctx.slots.register(
-            { name: 'plugins.row.config', key: '@local/taskboard#taskboard' },
-            TaskboardSettingsCard,
+         * 注册上去之后，那一行就会多出一个"配置"控件，点开就是我的页面。
+         *
+         * ## 拆包之后 key 变了
+         *
+         * key 是 **`<包名>#<row id>`**，而拆成八个独立包之后，
+         * 原来的 `@local/taskboard#taskboard` **不再对应任何一个 row**：
+         *
+         *   row id              包名
+         *   taskboard-ui        @local/taskboard-ui        ← 抽屉 / 右侧栏两个 bool
+         *   taskboard-templates @local/taskboard-templates ← 领域模板一个 bool
+         *
+         * 之前只注册了旧 key，`occupants` 一直是空的，所以界面上
+         * 完全没有配置入口 —— 这就是「改有子配置的都没有」。
+         *
+         * 现在两条都注册，各自绑自己的 Config：
+         * `TaskboardSettingsCard` 认 `drawer` / `sidebar`，
+         * `TemplatesSettingsCard` 认 `enabled`。 */
+        /*
+         * 往 `plugins.bundle.config` 注册一块配置。
+         *
+         * 这个 slot 的 key 是 **bundle 包名**，同一 key 只能有一个 occupant
+         * （再注册会替换掉前一个）。所以两块配置合成一个组件渲染，
+         * 而不是注册两次。
+         */
+        let bundleSections = [];
+        const registerBundleConfig = function (key, render, id) {
+          bundleSections.push({ render, id });
+        };
+
+        /** 把所有区块渲染成一个组件。 */
+        const renderBundleConfig = function (props) {
+          return h(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column', gap: 24 } },
+            ...bundleSections.map(function (section, index) {
+              return h('div', { key: section.id || index }, section.render(props));
+            }),
           );
-        });
+        };
+
+        /*
+         * key = **bundle 包名** + row id（不是 row 自己那个包的包名）。
+         *
+         * 依据 dsh-client-ui-plugin-manager：
+         *
+         *   function rowConfigKey(bundle, rowId) { return `${bundle}#${rowId}`; }
+         *
+         *   const key = rowConfigKey(pkg.name, row.rowId);
+         *   has: (row) => ledger.rows.has(rowConfigKey(pkg.name, row.rowId))
+         *
+         * 而 `pkg.name` 是**正在被打开的那个 bundle 的名字** —— 我们现在
+         * 是站在 `@local/taskboard` 这个 bundle 里看它的八个 row，
+         * 所以前半段永远是 `@local/taskboard`，后半段才是 row id。
+         */
+        console.warn('[taskboard] 准备注册 row.config，slots 可用:', typeof ctx.slots, '| inject 里有 slots:', true);
+        /*
+         * 任务板**自己就是一个 bundle**，所以它的配置走
+         * `plugins.bundle.config`，key = **bundle 包名**。
+         *
+         * 这是照 @deepseek-ai/dsh-experimental-client-ui-cot-translation 抄的：
+         *
+         *   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+         *     name: 'plugins.bundle.config',
+         *     key: '@deepseek-ai/dsh-experimental-cot-translation-bundle',
+         *     locale: NS,
+         *     inject: () => ({ ... }),
+         *   }, Component));
+         *
+         * 而 `plugins.row.config` 是给**行**用的（key 要 bundle#row），
+         * 我们八行里只有 UI 和 templates 自己有 Config，但用户的诉求是
+         * 「整个任务库一个卡片，配置在卡片上」，所以用 bundle 级。
+         *
+         * 一个卡片上两块配置：界面入口 + 领域模板。 */
+        /* 先把两个 ConfigFormController 记下来，卡片渲染时要用。 */
+        try {
+          rememberSettingForm('taskboard-ui', ctx.configForms.get('taskboard-ui'));
+          rememberSettingForm('taskboard-templates', ctx.configForms.get('taskboard-templates'));
+        } catch (failure) {
+        }
+
+        registerBundleConfig('@local/taskboard', TaskboardSettingsCard, 'ui');
+        registerBundleConfig('@local/taskboard', TemplatesSettingsCard, 'templates');
+
+        /* 现在把合并后的组件注册到 bundle.config。 */
+        try {
+          ctx.slots.inject('plugins.bundle.config', function () {
+            const d = ctx.slots.register(
+              { name: 'plugins.bundle.config', key: '@local/taskboard' },
+              renderBundleConfig,
+            );
+            return d;
+          });
+        } catch (failure) {
+        }
       },
     };
   },

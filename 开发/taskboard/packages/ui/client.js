@@ -5384,6 +5384,13 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           return this.props.children;
         }
       }
+      const settingForms = /* @__PURE__ */ new Map();
+      function settingForm(namespace) {
+        return settingForms.get(namespace);
+      }
+      function rememberSettingForm(namespace, form) {
+        if (form !== void 0 && form !== null) settingForms.set(namespace, form);
+      }
       let liveUi = { drawer: true, sidebar: true, extras: true };
       let templatesReset = null;
       const uiListeners = /* @__PURE__ */ new Set();
@@ -5500,18 +5507,19 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       function TaskboardSettingsCard(props) {
         const view = props.view;
         if (view === "summary") return "\u4EFB\u52A1\u9762\u677F\uFF1A\u62BD\u5C49\u4E0E\u53F3\u4FA7\u680F\u4E24\u4E2A\u5165\u53E3";
-        const form = props.form;
+        const form = props.form ?? settingForm("taskboard-ui");
         if (form === void 0 || form === null) return null;
-        const state = form.state;
+        const state = form.state ?? (typeof form.getSnapshot === "function" ? form.getSnapshot() : void 0);
         const document = state && state.value;
         const valueOf = function(key) {
-          const ui = document && typeof document === "object" ? document.ui : void 0;
-          if (ui !== null && typeof ui === "object" && typeof ui[key] === "boolean") return ui[key];
+          if (document !== null && typeof document === "object" && typeof document[key] === "boolean") {
+            return document[key];
+          }
           return true;
         };
         const write = function(key, value) {
           const revision = state && typeof state.revision === "number" ? state.revision : void 0;
-          return form.mutate([{ op: "set", path: ["ui", key], value }], revision);
+          return form.mutate([{ op: "set", path: [key], value }], revision);
         };
         const rowStyle = {
           display: "flex",
@@ -5585,6 +5593,85 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           ),
           renderToggle("drawer", "\u62BD\u5C49", "\u8F93\u5165\u6846\u65C1\u8FB9\u7684\u7BAD\u5934\u6309\u94AE", "taskboard-ui-drawer"),
           renderToggle("sidebar", "\u53F3\u4FA7\u680F", "\u53F3\u4FA7\u5DE5\u4F5C\u533A\u7684\u300C\u4EFB\u52A1\u300D\u6807\u7B7E\u9875", "taskboard-ui-sidebar")
+        );
+      }
+      function TemplatesSettingsCard(props) {
+        const view = props.view;
+        if (view === "summary") return "\u9886\u57DF\u6A21\u677F\uFF1A\u7A0B\u5E8F / \u9879\u76EE / \u5C0F\u8BF4 / \u7ED8\u753B\u2026";
+        const form = props.form ?? settingForm("taskboard-templates");
+        if (form === void 0 || form === null) return null;
+        const state = form.state ?? (typeof form.getSnapshot === "function" ? form.getSnapshot() : void 0);
+        const document = state && state.value;
+        const on2 = document !== null && typeof document === "object" && typeof document.enabled === "boolean" ? document.enabled : true;
+        const toggle = function() {
+          const revision = state && typeof state.revision === "number" ? state.revision : void 0;
+          return form.mutate([{ op: "set", path: ["enabled"], value: !on2 }], revision);
+        };
+        return h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: 4, maxWidth: 760 } },
+          h("h3", { style: { margin: "0 0 4px", fontSize: 18, fontWeight: 600 } }, "\u9886\u57DF\u6A21\u677F"),
+          h(
+            "p",
+            { style: { margin: "0 0 8px", fontSize: 13, color: "var(--dsw-alias-label-tertiary)" } },
+            "\u7A7A\u6A21\u677F\u548C\u300C\u901A\u7528\u300D\u5206\u7C7B\u59CB\u7EC8\u53EF\u7528\uFF0C\u5173\u6389\u8FD9\u4E2A\u53EA\u662F\u53BB\u6389\u7279\u5B9A\u9886\u57DF\u7684\u90A3\u4E9B\u3002"
+          ),
+          h(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: "10px 0",
+                borderTop: "0.5px solid var(--dsw-alias-border-l2)"
+              }
+            },
+            h(
+              "div",
+              null,
+              h("div", { style: { fontSize: 13, color: "var(--dsw-alias-label-primary)" } }, "\u9886\u57DF\u6A21\u677F"),
+              h(
+                "div",
+                { style: { fontSize: 12, color: "var(--dsw-alias-label-tertiary)", marginTop: 2 } },
+                "\u7A0B\u5E8F / \u9879\u76EE / \u5C0F\u8BF4 / \u7ED8\u753B \u7B49\u7279\u5B9A\u9886\u57DF\u7684\u6A21\u677F"
+              )
+            ),
+            h(
+              "button",
+              {
+                id: "taskboard-templates-enabled",
+                type: "button",
+                role: "switch",
+                "aria-checked": on2,
+                onClick: toggle,
+                style: {
+                  width: 40,
+                  height: 22,
+                  flex: "none",
+                  borderRadius: 11,
+                  border: "none",
+                  cursor: "pointer",
+                  position: "relative",
+                  background: on2 ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)",
+                  transition: "background 120ms"
+                }
+              },
+              h("span", {
+                style: {
+                  position: "absolute",
+                  top: 2,
+                  left: on2 ? 20 : 2,
+                  width: 18,
+                  height: 18,
+                  borderRadius: "50%",
+                  background: "#fff",
+                  transition: "left 120ms"
+                }
+              })
+            )
+          )
         );
       }
       return {
@@ -5798,12 +5885,37 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             }, "taskboard: \u9886\u57DF\u6A21\u677F\u5F00\u5173\u540C\u6B65\u5230 UI store");
           } catch (failure) {
           }
-          ctx.slots.inject("plugins.row.config", function() {
-            return ctx.slots.register(
-              { name: "plugins.row.config", key: "@local/taskboard#taskboard" },
-              TaskboardSettingsCard
+          let bundleSections = [];
+          const registerBundleConfig = function(key, render, id) {
+            bundleSections.push({ render, id });
+          };
+          const renderBundleConfig = function(props) {
+            return h(
+              "div",
+              { style: { display: "flex", flexDirection: "column", gap: 24 } },
+              ...bundleSections.map(function(section, index) {
+                return h("div", { key: section.id || index }, section.render(props));
+              })
             );
-          });
+          };
+          console.warn("[taskboard] \u51C6\u5907\u6CE8\u518C row.config\uFF0Cslots \u53EF\u7528:", typeof ctx.slots, "| inject \u91CC\u6709 slots:", true);
+          try {
+            rememberSettingForm("taskboard-ui", ctx.configForms.get("taskboard-ui"));
+            rememberSettingForm("taskboard-templates", ctx.configForms.get("taskboard-templates"));
+          } catch (failure) {
+          }
+          registerBundleConfig("@local/taskboard", TaskboardSettingsCard, "ui");
+          registerBundleConfig("@local/taskboard", TemplatesSettingsCard, "templates");
+          try {
+            ctx.slots.inject("plugins.bundle.config", function() {
+              const d = ctx.slots.register(
+                { name: "plugins.bundle.config", key: "@local/taskboard" },
+                renderBundleConfig
+              );
+              return d;
+            });
+          } catch (failure) {
+          }
         }
       };
     }
