@@ -1055,9 +1055,23 @@ function registerExtraCommands(ctx) {
 			}
 			for (const type of types) {
 				try {
-					out.push({ type, yaml: await loadTemplate(type) });
+					const yaml = await loadTemplate(type);
+					/*
+					 * 带上 `domain`，客户端要靠它做那三个开关的过滤。
+					 *
+					 * 宿主自己**不按开关过滤**——它拿不到解析后的 config
+					 * （`default(true).volatile()` 的布尔字段传进来是 `{}`，
+					 * 值丢了，见 templates 包里的说明）。所以宿主只管把
+					 * 全集交出去，过滤留给拿得到真值的客户端。
+					 */
+					const hit = String(yaml)
+						.split('\n')
+						.slice(0, 20)
+						.find((line) => line.startsWith('domain:'));
+					const domain = hit === undefined ? 'general' : hit.slice('domain:'.length).trim();
+					out.push({ type, domain, yaml });
 				} catch (error) {
-					out.push({ type, yaml: '' });
+					out.push({ type, domain: 'general', yaml: '' });
 				}
 			}
 			/*
@@ -1103,20 +1117,48 @@ function registerExtraCommands(ctx) {
 		 * 所以：先写一次，再隔一会儿写一次；数量变了就再写，直到稳定。
 		 * 三次足够（实测第二轮就齐了），失败不重试（写不出来是配置问题，不是时序）。
 		 */
-		const settle = async () => {
-			let previous = -1;
-			for (let round = 0; round < 5; round += 1) {
-				await writeIndex();
-				const now = availableTypes().length;
-				if (now === previous && now > 0) return;
-				previous = now;
-				await new Promise((resolve) => setTimeout(resolve, 400));
+		/*
+		 * 常驻监听，不是"写几次就停"。
+		 *
+		 * 模板清单会**在运行期变**：
+		 *   · 用户在插件页关掉 templates 包 → 领域模板整体消失
+		 *   · 在模板的配置里关掉「绘画」→ 只剩代码/小说/通用
+		 *   · 新建 / 删除模板文件
+		 *
+		 * 原来写 5 次就返回，只在启动时正确；之后用户改开关，
+		 * 面板读到的还是那份旧清单 —— 表现就是「关掉模板插件，
+		 * 绘画类的『上色』模板还在」。
+		 *
+		 * 现在改成每秒查一次 availableTypes() 的签名，变了就重写。
+		 * 查询是纯内存的（读一个数组长度 + 拼接），代价可以忽略；
+		 * 真正的写盘只在变化时发生。
+		 */
+		const signature = () => {
+			try {
+				return availableTypes().join(',');
+			} catch (error) {
+				return '';
 			}
 		};
-		settle().catch((error) => {
+		const watch = async () => {
+			let last = '';
+			for (;;) {
+				const now = signature();
+				if (now !== last) {
+					await writeIndex();
+					last = signature();
+				}
+				await new Promise((resolve) => setTimeout(resolve, 1000));
+				if (!alive) return;
+			}
+		};
+		let alive = true;
+		watch().catch((error) => {
 			process.stderr.write(`[taskboard] 写模板索引异常：${String(error)}\n`);
 		});
-		return () => {};
+		return () => {
+			alive = false;
+		};
 	});
 
 

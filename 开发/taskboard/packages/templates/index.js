@@ -109,48 +109,140 @@ export function apply(ctx, config) {
 	 * 通用（general）不受影响：它在 core 的内置模板里，从来不经过这里。
 	 */
 	const setting = config !== null && typeof config === 'object' ? config : {};
-	const domains = {
-		code: setting.code !== false,
-		writing: setting.writing !== false,
-		art: setting.art !== false,
+	/*
+	 * ⚠️ 这三个开关是 `.volatile()` 的 —— 语义是「改完立刻生效，
+	 * 不需要重新挂载插件」。
+	 *
+	 * 但 `apply` 只在挂载时跑一次，所以如果只在这里读一次 config，
+	 * 之后用户在设置页改开关，这个模块完全不知道。
+	 *
+	 * 这就是「关掉绘画之后，绘画类的『上色』模板还在」的原因：
+	 * 面板已经重读了 templates.json，但宿主写进去的还是旧内容 ——
+	 * 因为 TYPES 从来没被重新算过。
+	 *
+	 * 下面的 scan() 接受**最新的 config**，配一个订阅来重复调用。
+	 */
+	/**
+	 * 从一个字段值里读出真正的布尔。
+	 *
+	 * 宿主传进来的 config 可能有两种形态：
+	 *   · `true` / `false` —— 明确的布尔
+	 *   · `{}` —— Schemastery 的 `.volatile()` 包装，值在别处（默认值）
+	 *
+	 * 实测：patch 里写 `art: false`，apply 收到的却是 `{"art":{}}`。
+	 * 如果只写 `value !== false`，`{}` 会被当成"没说" → 默认开 →
+	 * 于是「关掉绘画，绘画模板还在」。
+	 *
+	 * 所以：只有明确拿到 `false` 才算关；`{}` 这种拿不到真值的，
+	 * 交给下面的 configForms 订阅去纠正。
+	 */
+	const asBool = (value, fallback) => {
+		if (value === true) return true;
+		if (value === false) return false;
+		if (value !== null && typeof value === 'object') {
+			if (value.value === true) return true;
+			if (value.value === false) return false;
+		}
+		return fallback;
+	};
+
+	let domains = {
+		code: asBool(setting.code, true),
+		writing: asBool(setting.writing, true),
+		art: asBool(setting.art, true),
+	};
+
+	/**
+	 * 扫目录，按当前 domains 过滤，结果写进 TYPES。
+	 *
+	 * @param {object | undefined} latest 最新的 config（省略时用闭包里那份）
+	 * @returns {Promise<void>}
+	 */
+	const scan = async (latest) => {
+		if (latest !== null && typeof latest === 'object') {
+			domains = {
+				code: asBool(latest.code, domains.code),
+				writing: asBool(latest.writing, domains.writing),
+				art: asBool(latest.art, domains.art),
+			};
+		}
+		try {
+			const files = await readdir(TEMPLATE_DIR);
+			const all = files
+				.filter((file) => file.endsWith('.yml'))
+				.map((file) => file.replace(/\.yml$/u, '').toUpperCase())
+				.sort();
+			/*
+			 * **不在这里按开关过滤。**
+			 *
+			 * 原因：宿主侧拿不到解析后的 config。
+			 *
+			 * 实测（加日志打的）：
+			 *
+			 *   patch 里写   config: { code: true, writing: true, art: false }
+			 *   apply 收到   { code: {}, writing: {}, art: {} }
+			 *
+			 * —— `default(true).volatile()` 的布尔字段到这里变成空对象，
+			 * 值丢了。宿主无从判断用户到底关没关。
+			 *
+			 * 而**客户端**能拿到真值：它用 `ctx.configForms.get(ns)` +
+			 * `getSnapshot()`，那条路是通的（抽屉 / 右侧栏两个开关就是这么工作的）。
+			 *
+			 * 于是分工改成：
+			 *   宿主   —— 扫出全部模板，写进清单
+			 *   客户端 —— 按三个开关过滤显示
+			 *
+			 * 这样开关立刻生效（客户端本来就订阅 config 变化），
+			 * 也不依赖宿主能不能读懂 config。
+			 */
+			const kept = [];
+			for (const type of all) {
+				try {
+					await readFile(join(TEMPLATE_DIR, `${type}.yml`), 'utf8');
+					kept.push(type);
+				} catch (failure) {
+					/* 读不出来就跳过 */
+				}
+			}
+			TYPES = kept;
+		} catch (failure) {
+			TYPES = [];
+		}
 	};
 
 	/* 扫目录拿 TYPES。放 ctx.effect 里是为了热重载时能重新扫。 */
 	ctx.effect(() => {
 		let alive = true;
-		void (async () => {
-			try {
-				const files = await readdir(TEMPLATE_DIR);
-				const all = files
-					.filter((file) => file.endsWith('.yml'))
-					.map((file) => file.replace(/\.yml$/u, '').toUpperCase())
-					.sort();
-				/*
-				 * 按 domain 过滤。domain 写在模板 YAML 里，读头部几行就够了 ——
-				 * 整个文件解析太重，而 domain 一定在开头。
-				 */
-				const kept = [];
-				for (const type of all) {
-					let domain = 'general';
-					try {
-						const source = await readFile(join(TEMPLATE_DIR, `${type}.yml`), 'utf8');
-						const hit = source.split('\n').slice(0, 20).find((line) => line.startsWith('domain:'));
-						if (hit !== undefined) domain = hit.slice('domain:'.length).trim();
-					} catch (failure) {
-						/* 读不出来就当通用，宁可多列一个也不少列 */
-					}
-					/* general 永远保留；其余看开关。 */
-					if (domain === 'general' || domains[domain] !== false) kept.push(type);
-				}
-				if (alive) TYPES = kept;
-			} catch (failure) {
-				if (alive) TYPES = [];
-			}
-		})();
+		void scan().then(() => {
+			if (!alive) TYPES = [];
+		});
 		return () => {
 			alive = false;
 		};
 	}, 'taskboard-templates: 扫描模板目录');
+
+	/*
+	 * 订阅配置变化，重新扫。
+	 *
+	 * 用 `ctx.configForms.get(key)` —— key 是 patch 里的 **id**
+	 * （`taskboard-templates`），不是包名。
+	 *
+	 * 拿不到 configForms（老宿主 / 独立测试）就退化成"只在挂载时算一次"，
+	 * 功能仍然可用，只是改开关要重启。
+	 */
+	try {
+		const form = ctx.configForms?.get?.('taskboard-templates');
+		if (form !== undefined && form !== null && typeof form.subscribe === 'function') {
+			ctx.effect(() => {
+				return form.subscribe(() => {
+					const snapshot = typeof form.getSnapshot === 'function' ? form.getSnapshot() : undefined;
+					void scan(snapshot?.value);
+				});
+			}, 'taskboard-templates: 领域开关变化重新扫描');
+		}
+	} catch (failure) {
+		/* 没有 configForms 就只按挂载时的 config 走 */
+	}
 
 	try {
 		ctx.provide('taskboardTemplates', service);

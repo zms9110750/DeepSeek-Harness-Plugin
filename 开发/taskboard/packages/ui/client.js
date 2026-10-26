@@ -4588,7 +4588,6 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           });
         };
         const loadTemplates = function(onError) {
-          if (Object.keys(templates).length > 0) return;
           ensurePaths().then(function(paths) {
             const files = fileRpc();
             if (paths === null || files === null) throw new Error("\u6CA1\u6709\u6587\u4EF6\u901A\u9053");
@@ -4614,13 +4613,19 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             };
             return attempt(6);
           }).then(function(list) {
-            const map = {};
-            (list || []).forEach(function(item) {
-              if (item && typeof item.type === "string" && item.type !== "" && item.yaml) {
-                map[item.type] = item.yaml;
-              }
-            });
             if (list === null) throw new Error("\u8BFB\u4E0D\u5230 templates.json\uFF08\u5BBF\u4E3B\u8FD8\u6CA1\u5199\u51FA\u6A21\u677F\u6E05\u5355\uFF09");
+            const flags = templateFlags();
+            const map = {};
+            let dropped = 0;
+            (list || []).forEach(function(item) {
+              if (!item || typeof item.type !== "string" || item.type === "" || !item.yaml) return;
+              const domain = typeof item.domain === "string" ? item.domain : "general";
+              if (domain !== "general" && flags[domain] === false) {
+                dropped += 1;
+                return;
+              }
+              map[item.type] = item.yaml;
+            });
             if (Object.keys(map).length === 0) throw new Error("templates.json \u91CC\u6CA1\u6709\u6A21\u677F");
             setTemplates(map);
           }).catch(function(error) {
@@ -4650,7 +4655,6 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const openCreate = function() {
           setEditId("");
           setCreate({ open: true, busy: false, error: "", key: String(Date.now()) });
-          if (Object.keys(templates).length > 0) return;
           loadTemplates(function(message) {
             setCreate({ open: true, busy: false, error: message });
           });
@@ -4660,7 +4664,6 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           setEditMode(mode);
           setEditId(node.id);
           setCreate({ open: false, busy: false, error: "" });
-          if (Object.keys(templates).length > 0) return;
           loadTemplates(function(message) {
             setCreate({ open: false, busy: false, error: message });
           });
@@ -5416,6 +5419,23 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       function rememberSettingForm(namespace, form) {
         if (form !== void 0 && form !== null) settingForms.set(namespace, form);
       }
+      function templateFlags() {
+        const form = settingForm("taskboard-templates");
+        if (form === void 0) return { code: true, writing: true, art: true };
+        let document;
+        try {
+          const snapshot = typeof form.getSnapshot === "function" ? form.getSnapshot() : form.state;
+          document = snapshot && snapshot.value;
+        } catch (failure) {
+          return { code: true, writing: true, art: true };
+        }
+        if (document === null || typeof document !== "object") return { code: true, writing: true, art: true };
+        return {
+          code: document.code !== false,
+          writing: document.writing !== false,
+          art: document.art !== false
+        };
+      }
       let liveUi = { drawer: true, sidebar: true, extras: true };
       let templatesReset = null;
       const uiListeners = /* @__PURE__ */ new Set();
@@ -5425,18 +5445,19 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       function setLiveUi(next) {
         const changed = next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar || next.extras !== liveUi.extras;
         if (!changed) return;
-        if (next.extras !== liveUi.extras && templatesReset !== null) {
-          try {
-            templatesReset();
-          } catch (failure) {
-          }
-        }
         liveUi = next;
         for (const listener of [...uiListeners]) {
           try {
             listener();
           } catch (failure) {
           }
+        }
+      }
+      function resetTemplateCache() {
+        if (templatesReset === null) return;
+        try {
+          templatesReset();
+        } catch (failure) {
         }
       }
       function subscribeLiveUi(listener) {
@@ -5944,6 +5965,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           const onConfigChanged = function() {
             setLiveUi(readUiFlags());
             syncSidebar();
+            resetTemplateCache();
           };
           try {
             const mirror = ctx.configForms.describe();

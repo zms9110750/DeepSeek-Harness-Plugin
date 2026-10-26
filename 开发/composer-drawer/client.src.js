@@ -3406,8 +3406,22 @@ window.__ModuleLoader__.load({
        * 现在改成读宿主生成的 `templates/INDEX.json`（纯读，不进日志）。
        */
       const loadTemplates = function (onError) {
-        /* 已经加载过就不再读盘：切来切去不该反复 IO。 */
-        if (Object.keys(templates).length > 0) return;
+        /*
+         * **每次打开都重新读**，不再"读过就短路"。
+         *
+         * 原来有 `if (Object.keys(templates).length > 0) return;`，
+         * 出发点是不想反复 IO。但模板清单是**会变的**：
+         *
+         *   · 用户在插件页关掉 templates 包 → 领域模板整体消失
+         *   · 用户在模板的配置里关掉「绘画」→ 只剩代码/小说/通用
+         *   · 新建/删除模板文件
+         *
+         * 短路之后，第一次读到的清单会一直用下去，于是出现
+         * 「关掉模板插件，绘画类的『上色』模板还在」。
+         *
+         * templates.json 几十 KB，读一次的开销远小于显示一份过期清单。
+         * 真要省 IO，该在宿主写入侧做缓存，不是在这边猜"不会变"。
+         */
         ensurePaths()
           .then(function (paths) {
             const files = fileRpc();
@@ -3469,13 +3483,29 @@ window.__ModuleLoader__.load({
             return attempt(6);
           })
           .then(function (list) {
-            const map = {};
-            (list || []).forEach(function (item) {
-              if (item && typeof item.type === 'string' && item.type !== '' && item.yaml) {
-                map[item.type] = item.yaml;
-              }
-            });
             if (list === null) throw new Error('读不到 templates.json（宿主还没写出模板清单）');
+            /*
+             * **在这里按三个领域开关过滤**，不在宿主侧。
+             *
+             * 宿主拿不到解析后的 config：`default(true).volatile()` 的布尔
+             * 字段传到 apply 是 `{}`，值丢了。而客户端能拿到真值
+             * （`ctx.configForms.get(ns).getSnapshot()`），抽屉 / 右侧栏
+             * 两个开关就是这么工作的。
+             *
+             * `general` 永远保留 —— 它是「通用」，不属于这三个领域。
+             */
+            const flags = templateFlags();
+            const map = {};
+            let dropped = 0;
+            (list || []).forEach(function (item) {
+              if (!item || typeof item.type !== 'string' || item.type === '' || !item.yaml) return;
+              const domain = typeof item.domain === 'string' ? item.domain : 'general';
+              if (domain !== 'general' && flags[domain] === false) {
+                dropped += 1;
+                return;
+              }
+              map[item.type] = item.yaml;
+            });
             if (Object.keys(map).length === 0) throw new Error('templates.json 里没有模板');
             setTemplates(map);
           })
@@ -3523,7 +3553,7 @@ window.__ModuleLoader__.load({
            不加的话 React 复用旧组件，上次选的「记录」会留到下一次。
            error 也在这里清空 —— 上一次的失败提示不该跟着新对话框进来。 */
         setCreate({ open: true, busy: false, error: '', key: String(Date.now()) });
-        if (Object.keys(templates).length > 0) return;
+        /* 每次都重新读：模板清单会随插件开关变（见 loadTemplates 的注释）。 */
         loadTemplates(function (message) {
           setCreate({ open: true, busy: false, error: message });
         });
@@ -3536,7 +3566,6 @@ window.__ModuleLoader__.load({
         setEditId(node.id);
         /* 同样清掉上一次的错误 */
         setCreate({ open: false, busy: false, error: '' });
-        if (Object.keys(templates).length > 0) return;
         loadTemplates(function (message) {
           setCreate({ open: false, busy: false, error: message });
         });
@@ -4434,6 +4463,36 @@ window.__ModuleLoader__.load({
       if (form !== undefined && form !== null) settingForms.set(namespace, form);
     }
 
+    /**
+     * 读 `taskboard-templates` 那三个领域开关的当前值。
+     *
+     * 为什么由**客户端**读、而不是宿主：宿主侧拿不到解析后的 config。
+     * 实测 patch 里写 `art: false`，到了 apply 里变成 `{ art: {} }`——
+     * `default(true).volatile()` 的布尔值在传递过程中丢了。
+     * 而客户端这条路是通的（`getSnapshot().value` 拿得到真布尔），
+     * 抽屉 / 右侧栏两个开关本来就是这么工作的。
+     *
+     * 拿不到表单时**一律当成开**：宁可多显示几个模板，
+     * 也不要在配置还没就绪时让模板列表空掉。
+     */
+    function templateFlags() {
+      const form = settingForm('taskboard-templates');
+      if (form === undefined) return { code: true, writing: true, art: true };
+      let document;
+      try {
+        const snapshot = typeof form.getSnapshot === 'function' ? form.getSnapshot() : form.state;
+        document = snapshot && snapshot.value;
+      } catch (failure) {
+        return { code: true, writing: true, art: true };
+      }
+      if (document === null || typeof document !== 'object') return { code: true, writing: true, art: true };
+      return {
+        code: document.code !== false,
+        writing: document.writing !== false,
+        art: document.art !== false,
+      };
+    }
+
     let liveUi = { drawer: true, sidebar: true, extras: true };
     /*
      * 清空模板缓存。由 TaskBoard 组件挂上来 —— 模板是组件内状态，
@@ -4452,15 +4511,6 @@ window.__ModuleLoader__.load({
       const changed =
         next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar || next.extras !== liveUi.extras;
       if (!changed) return;
-      /* extras 变了要清模板缓存：loadTemplates 有"读过就不再读"的短路，
-       * 不清的话关掉开关模板还在。 */
-      if (next.extras !== liveUi.extras && templatesReset !== null) {
-        try {
-          templatesReset();
-        } catch (failure) {
-          /* 重置失败不影响开关本身 */
-        }
-      }
       liveUi = next;
       for (const listener of [...uiListeners]) {
         try {
@@ -4468,6 +4518,29 @@ window.__ModuleLoader__.load({
         } catch (failure) {
           /* 单个订阅者出错不影响其它 */
         }
+      }
+    }
+
+    /**
+     * 清掉模板缓存，下次打开对话框会重新读 templates.json。
+     *
+     * 这个必须**单独暴露**，不能只在 `extras` 变化时做。
+     *
+     * 历史：领域模板的三个开关（代码 / 小说 / 绘画）原来挂在 `taskboard-ui`
+     * 的 `extras` 上，所以 `setLiveUi` 里比较 `extras` 就能触发清理。
+     * 后来按用户要求把它们搬到了 `taskboard-templates` 包自己的 Config 上
+     * （`code` / `writing` / `art` 三个 bool），`extras` 就不再变化了 ——
+     * 于是出现「关掉模板插件，模板还在」。
+     *
+     * 现在由 `onConfigChanged` 无条件调用：任何一条 config 变了都清一次。
+     * 清缓存很便宜（只是置空一个对象），下一次打开对话框才真正读盘。
+     */
+    function resetTemplateCache() {
+      if (templatesReset === null) return;
+      try {
+        templatesReset();
+      } catch (failure) {
+        /* 重置失败不影响开关本身 */
       }
     }
 
@@ -5262,6 +5335,14 @@ window.__ModuleLoader__.load({
         const onConfigChanged = function () {
           setLiveUi(readUiFlags());
           syncSidebar();
+          /*
+           * 模板缓存也要清 —— 无论变的是哪一条 config。
+           *
+           * 领域模板那三个开关在 `taskboard-templates` 的 Config 上，
+           * 它们不参与 `liveUi`（`setLiveUi` 只看 drawer/sidebar/extras），
+           * 所以不能指望 `setLiveUi` 顺带处理。
+           */
+          resetTemplateCache();
         };
 
         try {
