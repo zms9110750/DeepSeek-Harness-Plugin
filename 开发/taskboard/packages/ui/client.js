@@ -2041,7 +2041,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         position: "absolute",
         left: 0,
         right: 0,
-        bottom: "calc(100% + 44px)",
+        bottom: "calc(100% + 12px)",
         /*
          * 高度必须按「按钮上方还剩多少空间」算，不能给个固定上限。
          *
@@ -4593,17 +4593,26 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             const files = fileRpc();
             if (paths === null || files === null) throw new Error("\u6CA1\u6709\u6587\u4EF6\u901A\u9053");
             const indexFile = templateIndexPath(paths);
-            return Promise.resolve(files.read(sessionId, indexFile, void 0, void 0)).then(
-              function(result) {
-                if (!result || result.ok !== true) return null;
-                try {
-                  const parsed = JSON.parse(String(result.value.text || ""));
-                  return Array.isArray(parsed) ? parsed : null;
-                } catch (failure) {
-                  return null;
+            const attempt = function(remaining) {
+              return Promise.resolve(files.read(sessionId, indexFile, {}, void 0)).then(
+                function(result) {
+                  if (result && result.ok === true) {
+                    try {
+                      const parsed = JSON.parse(String(result.value.text || ""));
+                      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                    } catch (failure) {
+                    }
+                  }
+                  if (remaining <= 1) return null;
+                  return new Promise(function(resolve) {
+                    setTimeout(resolve, 500);
+                  }).then(function() {
+                    return attempt(remaining - 1);
+                  });
                 }
-              }
-            );
+              );
+            };
+            return attempt(6);
           }).then(function(list) {
             const map = {};
             (list || []).forEach(function(item) {
@@ -4650,6 +4659,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           setSelected(node.id);
           setEditMode(mode);
           setEditId(node.id);
+          setCreate({ open: false, busy: false, error: "" });
           if (Object.keys(templates).length > 0) return;
           loadTemplates(function(message) {
             setCreate({ open: false, busy: false, error: message });
@@ -5513,7 +5523,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             const inset = cardLeft === null ? -32 : Math.round(cardLeft - rowLeft - BUTTON_WIDTH - GAP);
             node.style.setProperty("--tb-drawer-inset", `${inset}px`);
             const buttonTop = node.getBoundingClientRect().top;
-            const room = Math.max(240, Math.round(buttonTop - 60));
+            const room = Math.max(240, Math.round(buttonTop - 24));
             node.style.setProperty("--tb-drawer-room", `${room}px`);
           };
           apply();

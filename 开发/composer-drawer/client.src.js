@@ -244,7 +244,7 @@ window.__ModuleLoader__.load({
       position: 'absolute',
       left: 0,
       right: 0,
-      bottom: 'calc(100% + 44px)',
+      bottom: 'calc(100% + 12px)',
       /*
        * 高度必须按「按钮上方还剩多少空间」算，不能给个固定上限。
        *
@@ -3424,17 +3424,49 @@ window.__ModuleLoader__.load({
              * 只有一处真相，不会两边各过滤一遍。
              */
             const indexFile = templateIndexPath(paths);
-            return Promise.resolve(files.read(sessionId, indexFile, undefined, undefined)).then(
-              function (result) {
-                if (!result || result.ok !== true) return null;
-                try {
-                  const parsed = JSON.parse(String(result.value.text || ''));
-                  return Array.isArray(parsed) ? parsed : null;
-                } catch (failure) {
-                  return null;
-                }
-              },
-            );
+            /*
+             * 重试几次。
+             *
+             * `templates.json` 是**宿主启动时**写的，而面板可能比它更早
+             * 被打开 —— 那时文件还不存在，读到 null 就报「宿主还没写出
+             * 模板清单」。这个报错在文件生成后并不会自动消失，
+             * 于是用户看到"模板明明是好的，却挂着一条错误"。
+             *
+             * 所以：读不到就等一会儿再读，最多 6 次（约 3 秒）。
+             * 宿主那边写这份清单是启动即做的，3 秒足够。
+             */
+            const attempt = function (remaining) {
+              /*
+               * ⚠️ 第三个参数必须是对象，不能是 undefined。
+               *
+               * 传 undefined 会得到：
+               *   RemoteError: typert gateway: workspaceFiles/read:
+               *   args fields do not match the descriptor: missing "range"
+               *
+               * RPC 的参数是按描述符逐字段校验的，缺了 range 字段直接被拒。
+               * 而同目录的 groups.jsonl 读得通，是因为它传的是 { limit: 2000 }。
+               * 这一个小差别让"模板读不到"查了很久。
+               */
+              return Promise.resolve(files.read(sessionId, indexFile, {}, undefined)).then(
+                function (result) {
+                  if (result && result.ok === true) {
+                    try {
+                      const parsed = JSON.parse(String(result.value.text || ''));
+                      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                    } catch (failure) {
+                      /* 解析失败也走重试：可能正写到一半 */
+                    }
+                  }
+                  if (remaining <= 1) return null;
+                  return new Promise(function (resolve) {
+                    setTimeout(resolve, 500);
+                  }).then(function () {
+                    return attempt(remaining - 1);
+                  });
+                },
+              );
+            };
+            return attempt(6);
           })
           .then(function (list) {
             const map = {};
@@ -3488,7 +3520,8 @@ window.__ModuleLoader__.load({
       const openCreate = function () {
         setEditId('');
         /* key 用时间戳：每次打开都换一个新实例，表单重置回默认值。
-           不加的话 React 复用旧组件，上次选的「记录」会留到下一次。 */
+           不加的话 React 复用旧组件，上次选的「记录」会留到下一次。
+           error 也在这里清空 —— 上一次的失败提示不该跟着新对话框进来。 */
         setCreate({ open: true, busy: false, error: '', key: String(Date.now()) });
         if (Object.keys(templates).length > 0) return;
         loadTemplates(function (message) {
@@ -3501,6 +3534,8 @@ window.__ModuleLoader__.load({
         setSelected(node.id);
         setEditMode(mode);
         setEditId(node.id);
+        /* 同样清掉上一次的错误 */
+        setCreate({ open: false, busy: false, error: '' });
         if (Object.keys(templates).length > 0) return;
         loadTemplates(function (message) {
           setCreate({ open: false, busy: false, error: message });
@@ -4574,7 +4609,7 @@ window.__ModuleLoader__.load({
            * 给个下限避免被压成一条缝。
            */
           const buttonTop = node.getBoundingClientRect().top;
-          const room = Math.max(240, Math.round(buttonTop - 60));
+          const room = Math.max(240, Math.round(buttonTop - 24));
           node.style.setProperty('--tb-drawer-room', `${room}px`);
         };
         apply();
