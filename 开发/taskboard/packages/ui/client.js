@@ -4778,6 +4778,10 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 const hay = (node.id + " " + node.title).toLowerCase();
                 if (hay.indexOf(needle) === -1) return false;
               }
+              if (tagPick !== "") {
+                const own = Array.isArray(node.tags) ? node.tags : [];
+                if (own.indexOf(tagPick) === -1) return false;
+              }
               return true;
             });
           },

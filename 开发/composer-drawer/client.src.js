@@ -3717,6 +3717,20 @@ window.__ModuleLoader__.load({
               const hay = (node.id + ' ' + node.title).toLowerCase();
               if (hay.indexOf(needle) === -1) return false;
             }
+            /*
+             * 标签筛选。
+             *
+             * 这里原来是**漏的**：`tagPick` 只进了下面 useMemo 的依赖数组、
+             * 也参与了按钮的选中态，但过滤逻辑从头到尾没读过它。
+             * 结果就是「点标签按钮，按钮变黑，列表纹丝不动」——
+             * 最伤信任的那类 bug。
+             *
+             * 语义：选中一个标签 = 只看带这个标签的事项（再和分组/状态/搜索取交集）。
+             */
+            if (tagPick !== '') {
+              const own = Array.isArray(node.tags) ? node.tags : [];
+              if (own.indexOf(tagPick) === -1) return false;
+            }
             return true;
           });
         },
