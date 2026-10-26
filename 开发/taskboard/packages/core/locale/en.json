@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Taskboard Backend",
-    "description": "Item storage, state machine, claim and cascade, plus the model tools and panel commands."
+    "title": "Taskboard core",
+    "description": "Stores tasks, manages status, claims and cascades; fourteen tools for the AI."
   }
 }

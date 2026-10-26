@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Taskboard Extra Workspaces",
-    "description": "Additional workspaces beyond the main one (placeholder, not yet implemented)."
+    "title": "Temporary workspace",
+    "description": "Scratch directories outside the main workspace (placeholder, not implemented)."
   }
 }

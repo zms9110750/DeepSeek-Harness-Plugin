@@ -5595,83 +5595,99 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           renderToggle("sidebar", "\u53F3\u4FA7\u680F", "\u53F3\u4FA7\u5DE5\u4F5C\u533A\u7684\u300C\u4EFB\u52A1\u300D\u6807\u7B7E\u9875", "taskboard-ui-sidebar")
         );
       }
-      function TemplatesSettingsCard(props) {
-        const view = props.view;
-        if (view === "summary") return "\u9886\u57DF\u6A21\u677F\uFF1A\u7A0B\u5E8F / \u9879\u76EE / \u5C0F\u8BF4 / \u7ED8\u753B\u2026";
-        const form = props.form ?? settingForm("taskboard-templates");
-        if (form === void 0 || form === null) return null;
+      const cardRowStyle = {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        padding: "10px 0",
+        borderTop: "0.5px solid var(--dsw-alias-border-l2)"
+      };
+      const cardTitleStyle = { margin: "0 0 4px", fontSize: 18, fontWeight: 600 };
+      const cardHintStyle = { margin: "0 0 8px", fontSize: 13, color: "var(--dsw-alias-label-tertiary)" };
+      const rowLabelStyle = { fontSize: 13, color: "var(--dsw-alias-label-primary)" };
+      const rowHintStyle = { fontSize: 12, color: "var(--dsw-alias-label-tertiary)", marginTop: 2 };
+      function CardSwitch(id, on2, onClick) {
+        return h(
+          "button",
+          {
+            id,
+            type: "button",
+            role: "switch",
+            "aria-checked": on2,
+            onClick,
+            style: {
+              width: 40,
+              height: 22,
+              flex: "none",
+              borderRadius: 11,
+              border: "none",
+              cursor: "pointer",
+              position: "relative",
+              background: on2 ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)",
+              transition: "background 120ms"
+            }
+          },
+          h("span", {
+            style: {
+              position: "absolute",
+              top: 2,
+              left: on2 ? 20 : 2,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: "#fff",
+              transition: "left 120ms"
+            }
+          })
+        );
+      }
+      function CardRow(id, title, hint, on2, onClick) {
+        return h(
+          "div",
+          { key: id, style: cardRowStyle },
+          h("div", null, h("div", { style: rowLabelStyle }, title), h("div", { style: rowHintStyle }, hint)),
+          CardSwitch(id, on2, onClick)
+        );
+      }
+      function formAccess(form, namespace) {
         const state = form.state ?? (typeof form.getSnapshot === "function" ? form.getSnapshot() : void 0);
         const document = state && state.value;
-        const on2 = document !== null && typeof document === "object" && typeof document.enabled === "boolean" ? document.enabled : true;
-        const toggle = function() {
-          const revision = state && typeof state.revision === "number" ? state.revision : void 0;
-          return form.mutate([{ op: "set", path: ["enabled"], value: !on2 }], revision);
+        const revision = state && typeof state.revision === "number" ? state.revision : void 0;
+        return {
+          read: function(key) {
+            if (document !== null && typeof document === "object" && typeof document[key] === "boolean") {
+              return document[key];
+            }
+            return true;
+          },
+          write: function(key, value) {
+            return form.mutate([{ op: "set", path: [key], value }], revision);
+          }
+        };
+      }
+      function TemplatesSettingsCard(props) {
+        if (props.view === "summary") return "\u9886\u57DF\u6A21\u677F\uFF1A\u4EE3\u7801 / \u5C0F\u8BF4 / \u7ED8\u753B";
+        const form = props.form ?? settingForm("taskboard-templates");
+        if (form === void 0 || form === null) return null;
+        const access = formAccess(form, "taskboard-templates");
+        const toggle = function(key) {
+          return access.write(key, !access.read(key));
         };
         return h(
           "div",
           { style: { display: "flex", flexDirection: "column", gap: 4, maxWidth: 760 } },
-          h("h3", { style: { margin: "0 0 4px", fontSize: 18, fontWeight: 600 } }, "\u9886\u57DF\u6A21\u677F"),
-          h(
-            "p",
-            { style: { margin: "0 0 8px", fontSize: 13, color: "var(--dsw-alias-label-tertiary)" } },
-            "\u7A7A\u6A21\u677F\u548C\u300C\u901A\u7528\u300D\u5206\u7C7B\u59CB\u7EC8\u53EF\u7528\uFF0C\u5173\u6389\u8FD9\u4E2A\u53EA\u662F\u53BB\u6389\u7279\u5B9A\u9886\u57DF\u7684\u90A3\u4E9B\u3002"
-          ),
-          h(
-            "div",
-            {
-              style: {
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                padding: "10px 0",
-                borderTop: "0.5px solid var(--dsw-alias-border-l2)"
-              }
-            },
-            h(
-              "div",
-              null,
-              h("div", { style: { fontSize: 13, color: "var(--dsw-alias-label-primary)" } }, "\u9886\u57DF\u6A21\u677F"),
-              h(
-                "div",
-                { style: { fontSize: 12, color: "var(--dsw-alias-label-tertiary)", marginTop: 2 } },
-                "\u7A0B\u5E8F / \u9879\u76EE / \u5C0F\u8BF4 / \u7ED8\u753B \u7B49\u7279\u5B9A\u9886\u57DF\u7684\u6A21\u677F"
-              )
-            ),
-            h(
-              "button",
-              {
-                id: "taskboard-templates-enabled",
-                type: "button",
-                role: "switch",
-                "aria-checked": on2,
-                onClick: toggle,
-                style: {
-                  width: 40,
-                  height: 22,
-                  flex: "none",
-                  borderRadius: 11,
-                  border: "none",
-                  cursor: "pointer",
-                  position: "relative",
-                  background: on2 ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)",
-                  transition: "background 120ms"
-                }
-              },
-              h("span", {
-                style: {
-                  position: "absolute",
-                  top: 2,
-                  left: on2 ? 20 : 2,
-                  width: 18,
-                  height: 18,
-                  borderRadius: "50%",
-                  background: "#fff",
-                  transition: "left 120ms"
-                }
-              })
-            )
-          )
+          h("h3", { style: cardTitleStyle }, "\u9886\u57DF\u6A21\u677F"),
+          h("p", { style: cardHintStyle }, "\u901A\u7528\u6A21\u677F\u59CB\u7EC8\u81EA\u5E26\uFF0C\u8FD9\u51E0\u4E2A\u5F00\u5173\u53EA\u51B3\u5B9A\u8FD8\u8981\u4E0D\u8981\u7279\u5B9A\u9886\u57DF\u7684\u90A3\u4E9B\u3002"),
+          CardRow("taskboard-templates-code", "\u4EE3\u7801", "\u63A5\u53E3 / \u8BC4\u5BA1 / \u5B9E\u73B0 / \u4FEE bug\u2026", access.read("code"), function() {
+            toggle("code");
+          }),
+          CardRow("taskboard-templates-writing", "\u5C0F\u8BF4", "\u6784\u601D / \u7AE0\u8282 / \u5199\u4F5C\u2026", access.read("writing"), function() {
+            toggle("writing");
+          }),
+          CardRow("taskboard-templates-art", "\u7ED8\u753B", "\u753B\u4F5C / \u5B9A\u8C03 / \u51FA\u56FE\u2026", access.read("art"), function() {
+            toggle("art");
+          })
         );
       }
       return {
@@ -5885,37 +5901,18 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             }, "taskboard: \u9886\u57DF\u6A21\u677F\u5F00\u5173\u540C\u6B65\u5230 UI store");
           } catch (failure) {
           }
-          let bundleSections = [];
-          const registerBundleConfig = function(key, render, id) {
-            bundleSections.push({ render, id });
-          };
-          const renderBundleConfig = function(props) {
-            return h(
-              "div",
-              { style: { display: "flex", flexDirection: "column", gap: 24 } },
-              ...bundleSections.map(function(section, index) {
-                return h("div", { key: section.id || index }, section.render(props));
-              })
-            );
-          };
-          console.warn("[taskboard] \u51C6\u5907\u6CE8\u518C row.config\uFF0Cslots \u53EF\u7528:", typeof ctx.slots, "| inject \u91CC\u6709 slots:", true);
           try {
             rememberSettingForm("taskboard-ui", ctx.configForms.get("taskboard-ui"));
             rememberSettingForm("taskboard-templates", ctx.configForms.get("taskboard-templates"));
           } catch (failure) {
           }
-          registerBundleConfig("@local/taskboard", TaskboardSettingsCard, "ui");
-          registerBundleConfig("@local/taskboard", TemplatesSettingsCard, "templates");
-          try {
-            ctx.slots.inject("plugins.bundle.config", function() {
-              const d = ctx.slots.register(
-                { name: "plugins.bundle.config", key: "@local/taskboard" },
-                renderBundleConfig
-              );
-              return d;
+          const registerRowConfig = function(key, render) {
+            return ctx.slots.inject("plugins.row.config", function() {
+              return ctx.slots.register({ name: "plugins.row.config", key }, render);
             });
-          } catch (failure) {
-          }
+          };
+          registerRowConfig("@local/taskboard#taskboard-ui", TaskboardSettingsCard);
+          registerRowConfig("@local/taskboard#taskboard-templates", TemplatesSettingsCard);
         }
       };
     }

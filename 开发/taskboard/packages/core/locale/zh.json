@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "任务板后端",
+    "title": "任务板core",
     "description": "存事项、管状态、领取与级联，给 AI 十四个工具。"
   }
 }

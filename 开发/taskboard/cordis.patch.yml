@@ -54,7 +54,9 @@
     - id: taskboard-templates
       name: '@local/taskboard-templates'
       config:
-        enabled: true
+        code: true
+        writing: true
+        art: true
 
     # ⑥ 按计划的权限：一个新的权限档，按事项给出的权限干活
     - id: taskboard-plan-preset

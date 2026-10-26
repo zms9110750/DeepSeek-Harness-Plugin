@@ -37,8 +37,22 @@ export const name = 'taskboard-templates';
  * .volatile() 是设置页能渲染表单的硬条件（dsh-settings 的 volatileForm
  * 会把非 volatile 字段整个丢掉）。改完立刻生效。
  */
+/*
+ * 三个领域开关。
+ *
+ * 用户原话：
+ *   > 通用任务模板始终自带。
+ *   > 领域任务模板在这里打开。并给他加配置。
+ *   > 配置内容是：代码，小说，绘画。三个 bool
+ *
+ * 模板文件里本来就有 `domain:` 字段，取值是 general / code / writing / art。
+ * 「通用」（general）**不属于这个包** —— 它在 core 的内置模板里，
+ * 所以这里只有三个领域，而且关掉本包也不影响通用那批。
+ */
 export const Config = z.object({
-	enabled: z.boolean().default(true).description('领域模板（程序 / 项目 / 小说 / 绘画…）').volatile(),
+	code: z.boolean().default(true).description('代码类模板（接口 / 评审 / 实现 / 修 bug…）').volatile(),
+	writing: z.boolean().default(true).description('小说类模板（构思 / 章节 / 写作…）').volatile(),
+	art: z.boolean().default(true).description('绘画类模板（画作 / 定调 / 出图…）').volatile(),
 });
 
 /* 只往 ctx 上 provide，不需要任何前置服务。 */
@@ -86,23 +100,49 @@ const service = {
 };
 
 export function apply(ctx, config) {
-	const enabled = config === null || config === undefined || config.enabled !== false;
+	/*
+	 * 三个领域开关，缺省都是开。
+	 *
+	 * 关掉某个领域 = 那类模板**不进 TYPES** → core 的 availableTypes()
+	 * 就不会列出它们，选择器里也看不到。
+	 *
+	 * 通用（general）不受影响：它在 core 的内置模板里，从来不经过这里。
+	 */
+	const setting = config !== null && typeof config === 'object' ? config : {};
+	const domains = {
+		code: setting.code !== false,
+		writing: setting.writing !== false,
+		art: setting.art !== false,
+	};
+
 	/* 扫目录拿 TYPES。放 ctx.effect 里是为了热重载时能重新扫。 */
 	ctx.effect(() => {
 		let alive = true;
 		void (async () => {
 			try {
-				/* 关掉时不扫目录：TYPES 空 → core 的 availableTypes() 只剩内置。 */
-				if (!enabled) {
-					if (alive) TYPES = [];
-					return;
-				}
 				const files = await readdir(TEMPLATE_DIR);
-				const found = files
+				const all = files
 					.filter((file) => file.endsWith('.yml'))
 					.map((file) => file.replace(/\.yml$/u, '').toUpperCase())
 					.sort();
-				if (alive) TYPES = found;
+				/*
+				 * 按 domain 过滤。domain 写在模板 YAML 里，读头部几行就够了 ——
+				 * 整个文件解析太重，而 domain 一定在开头。
+				 */
+				const kept = [];
+				for (const type of all) {
+					let domain = 'general';
+					try {
+						const source = await readFile(join(TEMPLATE_DIR, `${type}.yml`), 'utf8');
+						const hit = source.split('\n').slice(0, 20).find((line) => line.startsWith('domain:'));
+						if (hit !== undefined) domain = hit.slice('domain:'.length).trim();
+					} catch (failure) {
+						/* 读不出来就当通用，宁可多列一个也不少列 */
+					}
+					/* general 永远保留；其余看开关。 */
+					if (domain === 'general' || domains[domain] !== false) kept.push(type);
+				}
+				if (alive) TYPES = kept;
 			} catch (failure) {
 				if (alive) TYPES = [];
 			}
