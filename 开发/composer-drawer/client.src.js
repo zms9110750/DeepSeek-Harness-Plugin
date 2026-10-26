@@ -189,33 +189,40 @@ window.__ModuleLoader__.load({
      * 现在改成**贴住卡片内侧**：不借用负边距，靠 padding 让按钮落在卡片左边
      * 内缘。这样无论容器多宽、卡片多窄，按钮都跟着卡片走。
      */
+    /*
+     * 按钮挂在卡片**左侧外**的走廊里。
+     *
+     * 这里不再用魔法数字，改用运行时量出来的 CSS 变量
+     * `--tb-drawer-inset`（由 ComposerDrawer 的 useLayoutEffect 写入）。
+     *
+     * ## 为什么不再写死
+     *
+     * 这个值原本是 `-32`，后来先后改成 `-38`、`-16`，每次都是
+     * "在 web 的某个宽度下量一量、算个差"。问题在于：
+     *
+     *   wrapper（dock 这一行）和卡片不是同一个元素，宽度差取决于
+     *   卡片的左右内边距。web 下是 16（左右各 8），桌面版 Electron
+     *   窗口的留白不同，这个差就不一定是 16 —— 于是 GUI 里又偏了。
+     *
+     * 用户的话说得很准：「反正我要他在外部。万一别人 mod 也来占位了呢。
+     * 所以就是不能像普遍化的任何东西。」——所以位置不能靠猜布局，
+     * 得直接量。
+     *
+     * ## 怎么算
+     *
+     *   wrapperLeft  = 这一行的左边
+     *   cardLeft     = 卡片的左边
+     *   btnRight     = wrapperLeft + inset + 30（按钮宽）
+     *
+     * 想要 btnRight = cardLeft - 2，解出：
+     *
+     *   inset = cardLeft - wrapperLeft - 32
+     *
+     * 变量没算出来时（首帧）退回 -16，视觉上不会跳太多。
+     */
     const buttonSlotStyle = {
       display: 'inline-flex',
-      /*
-       * 按钮挂在卡片**左侧外**的走廊里。
-       *
-       * ## 这个数值怎么来的（web 下实测）
-       *
-       *   wrapper（这一行）左边缘 601，宽 984
-       *   卡片左边缘              617，宽 948
-       *
-       * **wrapper 比卡片宽 16px**（左右各 8）。所以：
-       *
-       *   marginLeft: -32  →  按钮右边缘 = 601 - 32 + 30 = 599
-       *                       卡片左边 617  →  **空隙 18px**，看着就飘
-       *
-       * 原作者写 -32 是假设 wrapper 宽度**等于**卡片宽度（那样按钮右边缘
-       * 正好贴住卡片左边缘 2px）。实际多了 16px，于是偏出去 16。
-       *
-       * 折回等效效果：-32 + 16 = **-16** → 按钮右边缘 615，卡片 617，缝 2px。
-       *
-       * ## 注意
-       *
-       * 这是按 **web（浏览器）** 量的。桌面版是 Electron 窗口，两侧留白不同，
-       * wrapper 与卡片的宽度差可能不是 16。GUI 里如果还偏，只需要改这一个数字：
-       * 偏左就往小（正）调，偏右就往大（负）调。
-       */
-      marginLeft: -16,
+      marginLeft: 'var(--tb-drawer-inset, -16px)',
       pointerEvents: 'auto',
     };
 
@@ -577,18 +584,35 @@ window.__ModuleLoader__.load({
      * 面板要的是**全部 27 个**，所以两份 INDEX.json 都要读、合并、按类型去重
      * （同编号时附加的覆盖内置的，与宿主 core 的 loadTemplate 口径一致）。
      */
-    function templateDirCandidates() {
-      const root = 'X:\\temp\\dsh\\开发\\taskboard\\packages';
-      const dirs = [root + '\\core\\templates'];
-      /*
-       * 附加模板由 UI 的 `extras` 开关控制（用户要求：
-       * 「这里写"程序，项目"，"小说"，"绘画"这些特定领域的模板。
-       *   并且这些都要作为一个 ui 的 bool 可以开关。」）。
-       *
-       * 关掉时**不读第二份 INDEX.json** —— 模板选择器里就只剩空模板和通用分类。
-       */
-      if (readLiveUi().extras) dirs.push(root + '\\templates\\templates');
-      return dirs;
+    /*
+     * 模板清单**只有一个来源**：数据目录里的 templates.json。
+     *
+     * 这里是踩过的坑，值得记下来：
+     *
+     * 原来写的是
+     *
+     *     const root = 'X:\\temp\\dsh\\开发\\taskboard\\packages';
+     *     dirs = [root + '\\core\\templates', root + '\\templates\\templates'];
+     *
+     * ——**把本机的开发目录写死在源码里**。换台机器、或者把包装到别处，
+     * 这两条路径就不存在，面板报「读不到 templates/INDEX.json」。
+     *
+     * 根因是「client 在猜宿主文件在哪」。宿主那边从来不用硬编码：
+     *
+     *     const TEMPLATE_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'templates');
+     *
+     * 它用**自己模块的位置**推导。但 client 跑在浏览器里，没有 import.meta.url，
+     * 也看不到宿主的文件系统布局，所以它**没有资格**推导。
+     *
+     * 正确的分工：宿主负责把清单放到一个双方都认同的位置，client 只读。
+     * 那个位置就是数据目录 —— client 本来就在读同目录的 plans.jsonl /
+     * groups.jsonl / current.json，不需要任何新通道。
+     *
+     * 合并逻辑（内置 4 + 附加 23，同编号后者覆盖前者）已经在宿主侧做完了，
+     * 所以这里拿到的就是**最终清单**，不用再合并两份。
+     */
+    function templateIndexPath(paths) {
+      return String(paths.store || '').replace(/[\\/][^\\/]+$/u, '') + '\\templates.json';
     }
 
     /** 初始化路径：纯本地推导，不发任何命令。 */
@@ -3167,14 +3191,41 @@ window.__ModuleLoader__.load({
              * 优先落到宿主的当前组上——那通常就是"我手头在做的事"。
              * 当前组没了（被删/归档/首次）就落到第一个非归档组。
              * 不自动选的话列表会空着，看起来像数据丢了。 */
+            /*
+             * 分组条已经**没有「全部」**（用户要求），所以必须始终选中一个。
+             *
+             * ## 这里修掉的是「重启后不处于当前」
+             *
+             * 原来的逻辑是：
+             *
+             *     if (usable(previous)) return previous;    ← 先看上次选的
+             *     if (usable(result.current)) return result.current;
+             *     ...落到第一个非归档组
+             *
+             * `previous` 的优先级高于宿主的当前组。于是出现这个症状：
+             *
+             *   用户上次在面板里点过「测试任务板」（previous = g-3），
+             *   之后在别处（或 AI 工具）把当前组设成 g-2，
+             *   面板一刷新 —— previous 还可用，就直接回到 g-3，
+             *   分组条上 g-2 并不会标成当前，而 g-3 明明不是宿主的当前组，
+             *   却又显示「设为当前」按钮。
+             *
+             * 用户描述得很准：
+             *   「他再次启动后不处于『当前』，并且『当前』的依然可以设置为『当前』」
+             *
+             * 正确的优先级：**每次加载都以宿主的当前组为准**。
+             * previous 只在宿主当前组不可用时兜底（比如那组刚被删掉）。
+             */
             setGroupPick(function (previous) {
               const usable = function (id) {
                 return loaded.some(function (group) {
                   return group.id === id && !group.archived;
                 });
               };
-              if (usable(previous)) return previous;
+              /* 宿主的当前组优先——它是唯一真相。 */
               if (usable(result.current)) return result.current;
+              /* 宿主的当前组不可用才退回上次选的 */
+              if (usable(previous)) return previous;
               const first = loaded.find(function (group) {
                 return !group.archived;
               });
@@ -3334,42 +3385,39 @@ window.__ModuleLoader__.load({
           .then(function (paths) {
             const files = fileRpc();
             if (paths === null || files === null) throw new Error('没有文件通道');
-            /* **两份 INDEX.json 都要读**：内置 4 个在 core，附加 23 个在 templates。
-             * 少读一份就只剩一部分模板——这正是之前那个 bug 的样子。 */
-            const dirs = templateDirCandidates();
-            return Promise.all(
-              dirs.map(function (dir) {
-                const indexPath = String(dir || '').replace(/[\\/]+$/u, '') + '\\INDEX.json';
-                return Promise.resolve(files.read(sessionId, indexPath, undefined, undefined)).then(
-                  function (result) {
-                    if (!result || result.ok !== true) return null;
-                    try {
-                      const parsed = JSON.parse(String(result.value.text || ''));
-                      return Array.isArray(parsed) ? { dir: dir, list: parsed } : null;
-                    } catch (failure) {
-                      return null;
-                    }
-                  },
-                );
-              }),
+            /*
+             * 只读一份：数据目录里的 templates.json。
+             *
+             * 宿主已经把「内置 4 + 附加 23」合并好写进去了，
+             * 所以这里不需要再读两份 INDEX.json 去合并。
+             *
+             * `extras` 开关也不再在这里过滤 —— 那三个领域开关
+             * （代码 / 小说 / 绘画）由宿主在读模板表时决定，
+             * 面板拿到的就是过滤后的结果。这样「开关改了什么」
+             * 只有一处真相，不会两边各过滤一遍。
+             */
+            const indexFile = templateIndexPath(paths);
+            return Promise.resolve(files.read(sessionId, indexFile, undefined, undefined)).then(
+              function (result) {
+                if (!result || result.ok !== true) return null;
+                try {
+                  const parsed = JSON.parse(String(result.value.text || ''));
+                  return Array.isArray(parsed) ? parsed : null;
+                } catch (failure) {
+                  return null;
+                }
+              },
             );
           })
-          .then(function (readings) {
+          .then(function (list) {
             const map = {};
-            let ok = 0;
-            (readings || []).forEach(function (reading) {
-              if (reading === null) return;
-              ok += 1;
-              reading.list.forEach(function (item) {
-                if (item && typeof item.type === 'string' && item.type !== '' && item.yaml) {
-                  /* 后读的覆盖先读的：附加模板可以替换同名内置模板，
-                   * 与宿主 core 的 loadTemplate 口径一致。 */
-                  map[item.type] = item.yaml;
-                }
-              });
+            (list || []).forEach(function (item) {
+              if (item && typeof item.type === 'string' && item.type !== '' && item.yaml) {
+                map[item.type] = item.yaml;
+              }
             });
-            if (ok === 0) throw new Error('读不到 templates/INDEX.json');
-            if (Object.keys(map).length === 0) throw new Error('INDEX.json 里没有模板');
+            if (list === null) throw new Error('读不到 templates.json（宿主还没写出模板清单）');
+            if (Object.keys(map).length === 0) throw new Error('templates.json 里没有模板');
             setTemplates(map);
           })
           .catch(function (error) {
@@ -4435,7 +4483,80 @@ window.__ModuleLoader__.load({
         h(Chevron, { open: open }),
       );
 
-      return h('div', { style: wrapperStyle }, panel, h('div', { style: buttonSlotStyle }, button));
+      /*
+       * 量出按钮该往左缩多少，写进 CSS 变量。
+       *
+       * ## 卡片的"左边缘"到底是哪条线
+       *
+       * 实测（web，1912 视口）：
+       *
+       *   wrapper（dock 这一行）  x=601  宽 984
+       *   卡片 RlGAzG_root/_hero  x=601  宽 984  paddingLeft: 16px
+       *                                       ↑ 内容从 617 开始
+       *
+       * 所以卡片**外框**和 wrapper 是**同一条线**（都是 601），
+       * 那 16px 是卡片自己的内边距，不是外边距。
+       *
+       * 之前的 -32 / -16 都是在凑"卡片的 16px 内边距"，
+       * 结果按钮压在卡片外框上或者缩进卡片内部。
+       *
+       * 用户要的是「在外部」——那就贴住卡片**外框**：
+       *
+       *   按钮右边缘 = wrapperLeft    →   marginLeft = -30（按钮宽 30）
+       *
+       * 留 2px 缝更自然，所以 -32。
+       *
+       * 这次不再写死：读 wrapper 与卡片外框的实际左边界，
+       * 差多少补多少。web / Electron / 任意窗口宽度都自适应。
+       */
+      const anchorRef = React.useRef(null);
+      React.useLayoutEffect(() => {
+        const node = anchorRef.current;
+        if (node === null || node === undefined) return undefined;
+        const BUTTON_WIDTH = 30;
+        const GAP = 2;
+        const apply = function () {
+          const rowLeft = node.getBoundingClientRect().left;
+          /*
+           * 卡片：从 wrapper 往上找 composer 容器，再在它里面找那个
+           * 带内边距的输入框块。用 class 前缀 `_root` / `_hero` 太脆，
+           * 改成"宽度接近 wrapper、高度大于 80、且自身有 paddingLeft"
+           * 的那个 —— 就是它。
+           */
+          let host = node.parentElement;
+          for (let i = 0; i < 3 && host !== null; i += 1) host = host.parentElement;
+          let cardLeft = null;
+          if (host !== null) {
+            for (const candidate of host.querySelectorAll('*')) {
+              const box = candidate.getBoundingClientRect();
+              if (box.height < 80 || box.width < 300) continue;
+              if (Math.abs(box.width - node.getBoundingClientRect().width) > 4) continue;
+              if (cardLeft === null || box.left < cardLeft) cardLeft = box.left;
+            }
+          }
+          /* 找不到卡片就退回"与 wrapper 同左"，即按钮完全在 wrapper 外侧 */
+          const inset = cardLeft === null ? -32 : Math.round(cardLeft - rowLeft - BUTTON_WIDTH - GAP);
+          node.style.setProperty('--tb-drawer-inset', `${inset}px`);
+        };
+        apply();
+        let observer = null;
+        try {
+          observer = new ResizeObserver(apply);
+          observer.observe(node);
+        } catch (failure) {
+          /* 没有 ResizeObserver 就只在挂载时量一次 */
+        }
+        return function () {
+          if (observer !== null) observer.disconnect();
+        };
+      }, []);
+
+      return h(
+        'div',
+        { style: wrapperStyle, ref: anchorRef },
+        panel,
+        h('div', { style: buttonSlotStyle }, button),
+      );
     }
 
     /**

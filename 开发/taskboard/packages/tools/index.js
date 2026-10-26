@@ -36,8 +36,8 @@
  * 却没搬 import。运行期直接 ReferenceError，被 catch 吞掉，
  * 于是 INDEX.json 永远写不出来，面板报「读不到模板」。
  */
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 
 export const name = 'taskboard-tools';
@@ -1060,11 +1060,37 @@ function registerExtraCommands(ctx) {
 					out.push({ type, yaml: '' });
 				}
 			}
+			/*
+			 * **写两份，内容一样。**
+			 *
+			 * 第一份在模板目录里（`core/templates/INDEX.json`）——
+			 * 那是模板自己的家，人看得也方便。
+			 *
+			 * 第二份在**数据目录**（`~/.dsh/taskboard/templates.json`）——
+			 * 这一份是给面板用的。面板跑在浏览器里，拿不到 `import.meta.url`，
+			 * 没法像宿主那样从包位置推导模板目录。它原来把
+			 * `X:\temp\dsh\开发\taskboard\packages` **写死**在源码里，
+			 * 换台机器、换个安装位置就瞎了。
+			 *
+			 * 而数据目录面板本来就知道（它已经在读同目录的 plans.jsonl /
+			 * groups.jsonl / current.json），所以放这里它一定找得到。
+			 */
+			const payload = JSON.stringify(out);
 			try {
-				const target = join(templateDir(), 'INDEX.json');
-				await writeFile(target, JSON.stringify(out), 'utf8');
+				await writeFile(join(templateDir(), 'INDEX.json'), payload, 'utf8');
 			} catch (error) {
 				process.stderr.write(`[taskboard] 写模板索引失败：${String(error)}\n`);
+			}
+			try {
+				/*
+				 * 数据目录 = store 文件所在目录。store 路径由 store 包决定，
+				 * 这里不另猜一份，直接问它拿，保证两边永远一致。
+				 */
+				const dataDir = dirname(storeFilePath());
+				await mkdir(dataDir, { recursive: true });
+				await writeFile(join(dataDir, 'templates.json'), payload, 'utf8');
+			} catch (error) {
+				process.stderr.write(`[taskboard] 写模板清单失败：${String(error)}\n`);
 			}
 		};
 		/*

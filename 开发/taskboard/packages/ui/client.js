@@ -2034,31 +2034,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       };
       const buttonSlotStyle = {
         display: "inline-flex",
-        /*
-         * 按钮挂在卡片**左侧外**的走廊里。
-         *
-         * ## 这个数值怎么来的（web 下实测）
-         *
-         *   wrapper（这一行）左边缘 601，宽 984
-         *   卡片左边缘              617，宽 948
-         *
-         * **wrapper 比卡片宽 16px**（左右各 8）。所以：
-         *
-         *   marginLeft: -32  →  按钮右边缘 = 601 - 32 + 30 = 599
-         *                       卡片左边 617  →  **空隙 18px**，看着就飘
-         *
-         * 原作者写 -32 是假设 wrapper 宽度**等于**卡片宽度（那样按钮右边缘
-         * 正好贴住卡片左边缘 2px）。实际多了 16px，于是偏出去 16。
-         *
-         * 折回等效效果：-32 + 16 = **-16** → 按钮右边缘 615，卡片 617，缝 2px。
-         *
-         * ## 注意
-         *
-         * 这是按 **web（浏览器）** 量的。桌面版是 Electron 窗口，两侧留白不同，
-         * wrapper 与卡片的宽度差可能不是 16。GUI 里如果还偏，只需要改这一个数字：
-         * 偏左就往小（正）调，偏右就往大（负）调。
-         */
-        marginLeft: -16,
+        marginLeft: "var(--tb-drawer-inset, -16px)",
         pointerEvents: "auto"
       };
       const panelStyle = surfaceStyle({
@@ -2322,11 +2298,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         homes.push("C:\\Users\\16229\\.dsh");
         return homes;
       }
-      function templateDirCandidates() {
-        const root = "X:\\temp\\dsh\\\u5F00\u53D1\\taskboard\\packages";
-        const dirs = [root + "\\core\\templates"];
-        if (readLiveUi().extras) dirs.push(root + "\\templates\\templates");
-        return dirs;
+      function templateIndexPath(paths) {
+        return String(paths.store || "").replace(/[\\/][^\\/]+$/u, "") + "\\templates.json";
       }
       async function ensurePaths() {
         if (PATHS !== null) return PATHS;
@@ -4494,8 +4467,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                   return group.id === id && !group.archived;
                 });
               };
-              if (usable(previous)) return previous;
               if (usable(result.current)) return result.current;
+              if (usable(previous)) return previous;
               const first = loaded.find(function(group) {
                 return !group.archived;
               });
@@ -4592,37 +4565,27 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           ensurePaths().then(function(paths) {
             const files = fileRpc();
             if (paths === null || files === null) throw new Error("\u6CA1\u6709\u6587\u4EF6\u901A\u9053");
-            const dirs = templateDirCandidates();
-            return Promise.all(
-              dirs.map(function(dir) {
-                const indexPath = String(dir || "").replace(/[\\/]+$/u, "") + "\\INDEX.json";
-                return Promise.resolve(files.read(sessionId, indexPath, void 0, void 0)).then(
-                  function(result) {
-                    if (!result || result.ok !== true) return null;
-                    try {
-                      const parsed = JSON.parse(String(result.value.text || ""));
-                      return Array.isArray(parsed) ? { dir, list: parsed } : null;
-                    } catch (failure) {
-                      return null;
-                    }
-                  }
-                );
-              })
-            );
-          }).then(function(readings) {
-            const map = {};
-            let ok = 0;
-            (readings || []).forEach(function(reading) {
-              if (reading === null) return;
-              ok += 1;
-              reading.list.forEach(function(item) {
-                if (item && typeof item.type === "string" && item.type !== "" && item.yaml) {
-                  map[item.type] = item.yaml;
+            const indexFile = templateIndexPath(paths);
+            return Promise.resolve(files.read(sessionId, indexFile, void 0, void 0)).then(
+              function(result) {
+                if (!result || result.ok !== true) return null;
+                try {
+                  const parsed = JSON.parse(String(result.value.text || ""));
+                  return Array.isArray(parsed) ? parsed : null;
+                } catch (failure) {
+                  return null;
                 }
-              });
+              }
+            );
+          }).then(function(list) {
+            const map = {};
+            (list || []).forEach(function(item) {
+              if (item && typeof item.type === "string" && item.type !== "" && item.yaml) {
+                map[item.type] = item.yaml;
+              }
             });
-            if (ok === 0) throw new Error("\u8BFB\u4E0D\u5230 templates/INDEX.json");
-            if (Object.keys(map).length === 0) throw new Error("INDEX.json \u91CC\u6CA1\u6709\u6A21\u677F");
+            if (list === null) throw new Error("\u8BFB\u4E0D\u5230 templates.json\uFF08\u5BBF\u4E3B\u8FD8\u6CA1\u5199\u51FA\u6A21\u677F\u6E05\u5355\uFF09");
+            if (Object.keys(map).length === 0) throw new Error("templates.json \u91CC\u6CA1\u6709\u6A21\u677F");
             setTemplates(map);
           }).catch(function(error) {
             if (typeof onError === "function") onError(String(error && error.message || error));
@@ -5501,7 +5464,45 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           },
           h(Chevron, { open })
         );
-        return h("div", { style: wrapperStyle }, panel, h("div", { style: buttonSlotStyle }, button));
+        const anchorRef = React.useRef(null);
+        React.useLayoutEffect(() => {
+          const node = anchorRef.current;
+          if (node === null || node === void 0) return void 0;
+          const BUTTON_WIDTH = 30;
+          const GAP = 2;
+          const apply = function() {
+            const rowLeft = node.getBoundingClientRect().left;
+            let host = node.parentElement;
+            for (let i = 0; i < 3 && host !== null; i += 1) host = host.parentElement;
+            let cardLeft = null;
+            if (host !== null) {
+              for (const candidate of host.querySelectorAll("*")) {
+                const box = candidate.getBoundingClientRect();
+                if (box.height < 80 || box.width < 300) continue;
+                if (Math.abs(box.width - node.getBoundingClientRect().width) > 4) continue;
+                if (cardLeft === null || box.left < cardLeft) cardLeft = box.left;
+              }
+            }
+            const inset = cardLeft === null ? -32 : Math.round(cardLeft - rowLeft - BUTTON_WIDTH - GAP);
+            node.style.setProperty("--tb-drawer-inset", `${inset}px`);
+          };
+          apply();
+          let observer = null;
+          try {
+            observer = new ResizeObserver(apply);
+            observer.observe(node);
+          } catch (failure) {
+          }
+          return function() {
+            if (observer !== null) observer.disconnect();
+          };
+        }, []);
+        return h(
+          "div",
+          { style: wrapperStyle, ref: anchorRef },
+          panel,
+          h("div", { style: buttonSlotStyle }, button)
+        );
       }
       function RightbarPanel(props) {
         const state = React.useState(false);
