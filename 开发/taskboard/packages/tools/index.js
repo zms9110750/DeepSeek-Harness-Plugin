@@ -1142,14 +1142,22 @@ function registerExtraCommands(ctx) {
 		};
 		const watch = async () => {
 			let last = '';
-			for (;;) {
+			/*
+			 * 先查 alive 再睡，不是睡完再查。
+			 *
+			 * 原来的顺序是 `sleep(1000) → if (!alive) return`，
+			 * 清理函数把 alive 置 false 之后，循环还会**再跑一轮**：
+			 * 多一次 signature() + 可能的 writeIndex()。
+			 * 单次代价不大，但 effect 反复挂载/卸载时会累积，
+			 * 而且写盘发生在插件已经卸载之后，属于不该有的副作用。
+			 */
+			while (alive) {
 				const now = signature();
 				if (now !== last) {
 					await writeIndex();
 					last = signature();
 				}
 				await new Promise((resolve) => setTimeout(resolve, 1000));
-				if (!alive) return;
 			}
 		};
 		let alive = true;

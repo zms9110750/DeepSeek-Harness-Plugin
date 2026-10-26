@@ -16,7 +16,13 @@ import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promise
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineTool } from '@deepseek-ai/dsh-tools';
+/*
+ * 这里**不该**有 `import { defineTool } from '@deepseek-ai/dsh-tools'`。
+ *
+ * 工具（14 个）在 `packages/tools` 里注册，core 一个都没定义过。
+ * 那行 import 是拆包时留下的死引用 —— 它让 core 在模块解析层面
+ * 依赖 dsh-tools，而用户的要求是「tools 依赖 core，不是反过来」。
+ */
 /*
  * 这个包拆成四个插件（用户要求「一个包里面可以有多个插件」）：
  *
@@ -117,7 +123,27 @@ function resolveDshHome(configured) {
 }
 export const name = 'taskboard';
 
-export const inject = ['tools', 'commands', 'permissionPresets', 'sessionProjections', 'taskboardStore'];
+/*
+ * 依赖清单。
+ *
+ * ⚠️ **不要在这里加 `tools` 或 `commands`。**
+ *
+ * 用户定的依赖方向是单向的：
+ *
+ *   > tools 直接依赖 core 啊。这个语义是你不喜欢我的 tools，你就自己造你的 tools。
+ *   > 也就是说 core 是要暴露东西的。但依赖确实是 tools 依赖 core。
+ *   > core 是 core 就是假设他不能关的。
+ *
+ * 之前这两个写在 inject 里，但 core 从来没有用过 `ctx.tools` 或
+ * `ctx.commands`（工具和命令都在 tools 包里注册）。那是**反向依赖**：
+ * 它会让 core 等着 tools 就绪，而 tools 又依赖 core —— 顺序上绕了一圈，
+ * 而且违背了「core 不能关、tools 可换」的设定。
+ *
+ * 现在只留 core 真正用到的：
+ *   permissionPresets / sessionProjections —— 权限预设与会话投影
+ *   taskboardStore                        —— 持久化（store 包提供）
+ */
+export const inject = ['permissionPresets', 'sessionProjections', 'taskboardStore'];
 
 /** 老格式目录（一份计划一个 md），只在首次启动时迁移用。 */
 const LEGACY_DIR = process.env.TASKBOARD_ROOT || 'X:\\temp\\dsh\\任务';
@@ -471,8 +497,8 @@ function resolveKindArg(raw, type) {
 /* 计划状态复用 A2A 的九态（见 计划\19-A2A调研\README.md）。 */
 const STATUS = ['未指定', '提交', '处理中', '需要补充', '需要授权', '完成', '失败', '取消', '拒绝'];
 
-/** 只有「提交」（已采纳）的计划能被领取。 */
-const CLAIMABLE = ['提交'];
+/* 领取决定的常量在 task_claim 里（CLAIMABLE_FROM），
+   原来这里还有一个 `CLAIMABLE = ['提交']`，改完就没用了。 */
 
 /*
  * 九态 → 分组。一个状态**可以属于多个组**：
@@ -1367,13 +1393,30 @@ async function setStateInner(id, next, agent, byUser, note) {
 					'只有「工作」需要领取（一次只能做一个）；目标是推导的、设计等你回答、记录写出来就完。',
 			);
 		}
-		/* 领取前置：必须是「提交」。转移规则已经保证草稿进不来，
-		   但这里再挡一次——两个会话同时领同一张时，后到的那个读到的是
-		   「处理中」而不是「提交」，必须被拒（T-018 并发双领）。 */
-		if (from !== '提交') {
+		/*
+		 * 领取前置：从「提交」或**搁置态**都能领。
+		 *
+		 * 原来只认「提交」，于是这条链会永久卡死：
+		 *
+		 *   领取 → 处理中
+		 *   AI 卡住 → 置为「需要补充」（setStateInner 会清掉 CLAIMS）
+		 *   用户补完信息 → 状态还是「需要补充」
+		 *   AI 想接着做 → task_claim 要求 from === '提交' → 拒绝
+		 *
+		 * 「需要补充」「需要授权」的语义是**进行中的暂停**，不是终结
+		 * （见 GROUP_OF：它们同时属于「进行」和「搁置」）。暂停之后
+		 * 当然要能恢复，否则这张计划只能被取消重开。
+		 *
+		 * 并发双领仍由下面两道挡住：
+		 *   · 草稿进不来（transitionBlocker 拦了「未指定」→「处理中」）
+		 *   · 已被别人领走的会读成「处理中」，而「处理中」不在这里的白名单
+		 */
+		const CLAIMABLE_FROM = ['提交', '需要补充', '需要授权'];
+		if (!CLAIMABLE_FROM.includes(from)) {
 			throw new Error(
-				`${task.id} 当前状态是「${from}」，只有「提交」的计划能被领取` +
-					(from === '处理中' ? `（已被其他会话领走）` : ''),
+				`${task.id} 当前状态是「${from}」，不能领取。` +
+					`只有「${CLAIMABLE_FROM.join('」/「')}」的计划能被领取` +
+					(from === '处理中' ? '（已被其他会话领走）' : ''),
 			);
 		}
 		const running = await activeClaimOf(agent);

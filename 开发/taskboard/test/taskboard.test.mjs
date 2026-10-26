@@ -548,6 +548,38 @@ test('失败必须有理由：记录类子事项就算理由，不必非得是�
 	assert.equal(taskOf(id).status, '失败');
 });
 
+test('搁置后能重新领取（「需要补充」不是死路）', async () => {
+	/*
+	 * 这条回归锁的是子 AI 审查发现的一个功能级死路：
+	 *
+	 *   领取 → 处理中
+	 *   AI 卡住 → task_state 置为「需要补充」（setStateInner 里会清掉 CLAIMS）
+	 *   用户补完信息 → 状态仍是「需要补充」
+	 *   AI 想接着做 → task_claim 要求 from === '提交' → 拒绝
+	 *
+	 * 「需要补充」「需要授权」的语义是**进行中的暂停**（GROUP_OF 里它们
+	 * 同时属于「进行」和「搁置」），暂停之后必须能恢复，否则这张计划
+	 * 只能被取消重开。
+	 */
+	const id = await submit({ title: '要先问清楚', type: 'WI' });
+	await approve(id);
+
+	const session = newSession();
+	await claim(id, session);
+	assert.equal(taskOf(id).status, '处理中', '领取后应该是处理中');
+
+	/* 遇到障碍，挂起等用户补充 */
+	await tool('task_state').execute({ id, status: '需要补充' });
+	assert.equal(taskOf(id).status, '需要补充');
+
+	/* 用户补了信息，AI 重新领取继续做 —— 这一步原来会抛「只有提交能领取」 */
+	const again = await tool('task_claim').execute({ id }, { agent: { id: session } });
+	/* 成功时返回「已领取 WI-01：…」；失败时会是「不能领取」之类的错误文本 */
+	assert.doesNotMatch(String(again.text), /不能领取|只有「提交」/u, '重新领取不该被拒：' + String(again.text).slice(0, 200));
+	assert.match(String(again.text), /已领取/u, '重新领取应当成功');
+	assert.equal(taskOf(id).status, '处理中', '重新领取后应该回到处理中');
+});
+
 test('关系类型：相关无向无行为，约束软提示不阻断，参考只是提示', async () => {
 	/* 用户原话：「例如一期，二期。意味着他们是一件事情。……
 	   还需要有"约束"，"参考"之类的关系。」
