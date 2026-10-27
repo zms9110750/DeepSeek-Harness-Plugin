@@ -95,7 +95,7 @@ function openCreator(init) {
   if (initial) { picker.kind = initial.kind; picker.domain = initial.domain; }
 
   const mask = el('div', {class:'mask'});
-  const box = el('div', {class:'modal', style:{width:'min(880px,100%)'}});
+  const box = el('div', {class:'modal'});
 
   box.appendChild(el('div', {class:'modal-head'},
     el('b', null, '新建事项'),

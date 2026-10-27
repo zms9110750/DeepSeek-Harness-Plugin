@@ -251,13 +251,32 @@ const html = `<!DOCTYPE html>
   .writer-row{display:flex;align-items:center;gap:9px;margin-top:9px;font-size:11.5px;color:var(--text-3)}
   .saved{color:var(--work);font-weight:600}
 
+  /*
+   * 遮罩层。
+   *
+   * overscroll-behavior: contain —— 弹窗里滚到底时不要把滚轮传给页面。
+   * 用户原话：「滚轮连着左边一起滚」（就是滚动联动）。
+   *
+   * 用 flex 而不是 grid 居中：grid 的 place-items 在内容超高时
+   * 会让盒子溢出到视口外（顶部被切掉），flex 的 margin:auto 更稳。
+   */
   .mask{position:fixed;inset:0;z-index:100;background:rgba(20,22,26,.32);
-    display:grid;place-items:center;padding:24px}
+    display:flex;align-items:center;justify-content:center;padding:24px;
+    overscroll-behavior:contain}
+  /*
+   * 对话框。
+   *
+   * 宽度给足 —— 新建事项是两栏（左字段 / 右正文），680px 太窄，
+   * 正文区会被挤成一行几个字。900px 是两栏都能用的下限。
+   *
+   * overscroll-behavior: contain 同样是为了不让滚轮传给外层。
+   */
   .modal{background:#fff;border-radius:10px;box-shadow:0 24px 60px rgba(16,18,22,.28);
-    width:min(680px,100%);max-height:86vh;display:flex;flex-direction:column;overflow:hidden}
+    width:min(900px,100%);max-height:86vh;display:flex;flex-direction:column;
+    overflow:hidden;overscroll-behavior:contain}
   .modal-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border)}
   .modal-head b{font-size:14px;font-weight:650}
-  .modal-body{padding:14px 16px;overflow:auto;display:grid;gap:11px}
+  .modal-body{padding:14px 16px;overflow:auto;display:grid;gap:11px;overscroll-behavior:contain}
   .modal-foot{display:flex;align-items:center;gap:9px;padding:11px 16px;border-top:1px solid var(--border);background:#fcfcfd}
   .hint{font-size:10.5px;color:var(--text-3)}
 
