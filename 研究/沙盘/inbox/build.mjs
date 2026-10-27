@@ -1,17 +1,21 @@
 /**
- * 组装沙盘两份 HTML。
+ * 收件箱的构建脚本。
  *
- * ## 为什么不用模板式生成
+ * ## 这个目录是什么
  *
- * 之前试过「基线 + 文本替换」的方式，失败了很多次：
- *   · 替换区间算错，把中间的内容一起删掉
- *   · 替换文本里有 `$`，被当成 `$&` 展开
- *   · 脚本自己也被反复改坏
+ * **只服务于一件事：用户派活给 AI。**
  *
- * 现在改成：**完全拼装**。不复用旧 HTML 的任何代码，所有片段都在这里定义。
- * 代价是 HTML 结构要重写一遍，好处是每一步都可预测。
+ * 界面冻在用户派 GU-03/GU-04 时的样子（2026-10-27 21:53）。
+ * 之后 AI 的所有改版都在 ../work/ 里做，不动这里。
  *
- * 用法：node build-sandbox.mjs
+ * 为什么隔离：之前两个页面从同一份源码生成，AI 每改一次版就
+ * 直接把用户的收件箱换掉 —— 用户派活派到一半，界面变了。
+ *
+ * ## 只生成一个文件
+ *
+ * 收件箱.html。不再生成工作区。
+ *
+ * 用法：node build.mjs
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -24,46 +28,29 @@ const STYLES = read('_src/styles.css');
 const SEED = read('_src/seed.js');
 const STORE = read('_src/store.js');
 const TREE = read('_src/tree.js');
-const SECTIONS = read('_src/sections.js');
-const MODAL = read('_src/modal.js');
 const BODY = read('_src/body.js');
 const RENDER = read('_src/render.js');
+const MODAL = read('_src/modal.js');
 const BOOT = read('_src/boot.js');
-const FILTERS = read('_src/filters.js');
 
-/**
- * 生成一份页面。
- *
- * @param {object} o
- * @param {string} o.title
- * @param {string} o.lede
- * @param {string} o.api        'inbox' 或 'work'
- * @param {string} o.newLabel
- * @param {string} o.linkHref
- * @param {string} o.linkText
- * @param {string} o.draftTitle
- * @param {string} o.draftHint
- * @returns {string}
- */
-function page(o) {
-	const code = [
-		SEED,
-		STORE.replace("const API = '/api/inbox';", "const API = '/api/" + o.api + "';"),
-		SECTIONS,
-		TREE,
-		BODY,
-		RENDER,
-		MODAL,
-		FILTERS,
-		BOOT
-	].join('\n\n');
+/** sections.js 是可选的（冻版里可能没有）。 */
+let SECTIONS = '';
+try {
+	SECTIONS = read('_src/sections.js');
+} catch {
+	SECTIONS = '';
+}
 
-	return `<!DOCTYPE html>
+const code = [SEED, STORE, SECTIONS, TREE, BODY, RENDER, MODAL, BOOT]
+	.filter((part) => part !== '')
+	.join('\n\n');
+
+const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${o.title}</title>
+<title>收件箱 · 给 AI 派活</title>
 <style>
   :root{
     --bg:#f4f5f6; --card:#fff; --border:#e4e6e8; --border-2:#d3d6da;
@@ -213,9 +200,9 @@ function page(o) {
   .prose th{background:#f2f4f6;font-weight:650;white-space:nowrap}
   .prose td code{font-size:11px}
   .prose pre.code{margin:0 0 9px;padding:9px 11px;background:#f7f8f9;border:1px solid var(--border);
-    border-radius:6px;overflow:auto;font-size:11.5px;line-height:1.55}
+    border-radius:6px;overflow-x:auto;font-size:11.5px;line-height:1.6}
   .prose pre.code code{background:transparent;padding:0;font-family:ui-monospace,Menlo,Consolas,monospace;
-    color:var(--text);white-space:pre}
+    color:var(--text);white-space:pre;font-size:inherit}
   .prose pre.code code[data-lang]::before{content:attr(data-lang);display:block;font-size:10px;
     color:var(--text-3);margin-bottom:4px;font-family:inherit}
 
@@ -224,13 +211,13 @@ function page(o) {
     font-weight:650;margin-bottom:8px}
   .inter-cap .src{font-size:10px;font-weight:500;color:var(--text-3);padding:0 5px;
     border-radius:3px;background:#eceef0}
-  .choice{display:flex;align-items:center;gap:8px;width:100%;padding:8px 11px;margin-bottom:6px;
+  .choice{display:flex;align-items:flex-start;gap:8px;width:100%;padding:8px 11px;margin-bottom:6px;
     font:inherit;font-size:12.5px;text-align:left;color:var(--text);background:#fff;
     border:1px solid var(--border-2);border-radius:7px;cursor:pointer}
   .choice:hover{border-color:var(--brand);background:#f7faff}
   .choice.on{border-color:var(--brand);background:#f7faff;color:var(--brand);font-weight:600}
   .choice .radio{flex:none;width:13px;height:13px;border-radius:50%;border:1.5px solid var(--border-2);
-    display:grid;place-items:center}
+    display:grid;place-items:center;margin-top:2px}
   .choice.on .radio{border-color:var(--brand)}
   .choice.on .radio::after{content:'';width:6px;height:6px;border-radius:50%;background:var(--brand)}
   .rank-row{display:flex;align-items:center;gap:8px;padding:6px 9px;margin-bottom:4px;
@@ -276,22 +263,32 @@ ${STYLES}
 </head>
 <body>
 
-<a class="toplink" href="${o.linkHref}">${o.linkText}</a>
-<h1>${o.title}</h1>
-${o.lede}
+<a class="toplink" href="/work">切换到工作区 →</a>
+<h1>收件箱 · 给 AI 派活</h1>
+<p class="sub">
+  <b>这一份是你写给我看的。</b>改动会落盘到 <code>研究/沙盘/inbox/收件箱.json</code>，
+  我直接读文件就能拿到 —— 不用复制粘贴，也不用在对话里复述。
+  这一页的界面已经冻结（2026-10-27 21:53 版），我的改版都在工作区里，不会动它。
+  <br><span id="syncState" style="color:var(--work)">正在连接…</span>
+</p>
 
 <div class="layout">
   <div class="panel">
     <div class="panel-head">
       <span class="panel-title">任务</span>
       <span class="count" id="count">共 0 条</span>
-      <span class="legend" id="legend"></span>
+      <span class="legend" id="legend">
+        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
+          stroke="var(--border-2)" stroke-width="1.5"/></svg>父子</span>
+        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
+          stroke="var(--brand)" stroke-width="1.5" stroke-dasharray="4 3"/></svg>链接</span>
+      </span>
       <span class="grow"></span>
       <span class="views">
         <button class="vw on" type="button" data-view="tree">科技树</button>
         <button class="vw" type="button" data-view="list">列表</button>
       </span>
-      <button class="btn" type="button" id="newBtn">${o.newLabel}</button>
+      <button class="btn" type="button" id="newBtn">派一条</button>
       <button class="btn" type="button" id="resetBtn">重置为样本</button>
     </div>
 
@@ -307,8 +304,8 @@ ${o.lede}
 </div>
 
 <div class="writer">
-  <h2>${o.draftTitle}</h2>
-  <p>${o.draftHint}</p>
+  <h2>要补的话（自由文本）</h2>
+  <p>列表里写不下的东西写这儿 —— 存成 <code>收件箱-草稿.md</code>，我读得到。</p>
   <textarea id="draft"></textarea>
   <div class="writer-row">
     <button class="btn primary" type="button" id="exportBtn">立即保存</button>
@@ -324,63 +321,20 @@ ${code}
 </body>
 </html>
 `;
+
+/* 自检 */
+const s = html.indexOf('<script>') + 8;
+const e = html.indexOf('</script>', s);
+const body = html.slice(s, e);
+const decl = {};
+for (const m of body.matchAll(/function (\w+)\s*\(/gu)) decl[m[1]] = (decl[m[1]] ?? 0) + 1;
+const dups = Object.entries(decl).filter(([, v]) => v > 1);
+if (dups.length > 0) throw new Error('函数重复: ' + dups.map(([k, v]) => k + '×' + v).join(','));
+try {
+	new Function(body);
+} catch (error) {
+	throw new Error('语法错误: ' + error.message);
 }
 
-/* ── 自检 ── */
-function verify(name, html) {
-	const scriptOpen = (html.match(/<script/gu) ?? []).length;
-	const scriptClose = (html.match(/<\/script>/gu) ?? []).length;
-	const htmlClose = (html.match(/<\/html>/gu) ?? []).length;
-	if (scriptOpen !== 1 || scriptClose !== 1 || htmlClose !== 1) {
-		throw new Error(`${name}: 标签异常 script=${scriptOpen}/${scriptClose} html=${htmlClose}`);
-	}
-	const s = html.indexOf('<script>') + 8;
-	const e = html.indexOf('</script>', s);
-	const code = html.slice(s, e);
-	const decl = {};
-	for (const m of code.matchAll(/function (\w+)\s*\(/gu)) decl[m[1]] = (decl[m[1]] ?? 0) + 1;
-	const dups = Object.entries(decl).filter(([, v]) => v > 1);
-	if (dups.length > 0) throw new Error(`${name}: 函数重复 ${dups.map(([k, v]) => k + '×' + v).join(',')}`);
-	try {
-		new Function(code);
-	} catch (error) {
-		throw new Error(`${name}: 语法错误 —— ${error.message}`);
-	}
-	console.log(`${name}: ${(html.length / 1024).toFixed(1)} KB, ${Object.keys(decl).length} 个函数`);
-}
-
-const inbox = page({
-	title: '收件箱 · 给 AI 派活',
-	lede: `<p class="sub">
-  <b>这一份是你写给我看的。</b>改动会落盘到 <code>研究/沙盘/收件箱.json</code>，
-  我直接读文件就能拿到 —— 不用复制粘贴，也不用在对话里复述。
-  <br><span id="syncState" style="color:var(--work)">正在连接…</span>
-</p>`,
-	api: 'inbox',
-	newLabel: '派一条',
-	linkHref: '/work',
-	linkText: '切换到工作区 →',
-	draftTitle: '要补的话（自由文本）',
-	draftHint: '列表里写不下的东西写这儿 —— 存成 <code>收件箱-草稿.md</code>，我读得到。'
-});
-
-const work = page({
-	title: '工作区 · AI 改版沙盘',
-	lede: `<p class="sub">
-  <b>这一份是我改版用的，和你无关。</b>数据完全独立（<code>工作区.json</code>），
-  格式随时会变 —— 有破坏性更新时它可能暂时读不出来，那是我在改，刷新一下就好。
-  <br><span id="syncState" style="color:var(--work)">正在连接…</span>
-</p>`,
-	api: 'work',
-	newLabel: '新建',
-	linkHref: '/',
-	linkText: '切换到收件箱 →',
-	draftTitle: '改版笔记（自由文本）',
-	draftHint: '我改版时记点东西 —— 存成 <code>工作区-笔记.md</code>。'
-});
-
-verify('收件箱', inbox);
-verify('工作区', work);
-writeFileSync(join(HERE, '收件箱.html'), inbox, 'utf8');
-writeFileSync(join(HERE, '工作区.html'), work, 'utf8');
-console.log('✅ 生成完成');
+writeFileSync(join(HERE, '收件箱.html'), html, 'utf8');
+console.log(`收件箱: ${(html.length / 1024).toFixed(1)} KB, ${Object.keys(decl).length} 个函数`);

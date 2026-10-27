@@ -31,17 +31,19 @@ const PORT = Number(process.argv[2] ?? 52310);
 
 /* ── 静态文件 ── */
 const STATIC = {
-	'/': { file: '收件箱.html', type: 'text/html; charset=utf-8' },
-	'/inbox': { file: '收件箱.html', type: 'text/html; charset=utf-8' },
-	'/work': { file: '工作区.html', type: 'text/html; charset=utf-8' },
+	'/': { file: 'inbox/收件箱.html', type: 'text/html; charset=utf-8' },
+	'/inbox': { file: 'inbox/收件箱.html', type: 'text/html; charset=utf-8' },
+	'/work': { file: 'work/工作区.html', type: 'text/html; charset=utf-8' },
 };
 
 /* ── 数据文件 ── */
-const INBOX = join(HERE, '收件箱.json');
-const WORK = join(HERE, '工作区.json');
-const INBOX_LOG = join(HERE, '收件箱-提交记录.jsonl');
-const INBOX_DRAFT = join(HERE, '收件箱-草稿.md');
-const WORK_DRAFT = join(HERE, '工作区-笔记.md');
+/* 两边数据物理隔离：各自的目录下各自的文件。
+   这样即使哪天生成脚本出问题，也不会互相覆盖。 */
+const INBOX = join(HERE, 'inbox', '收件箱.json');
+const WORK = join(HERE, 'work', '工作区.json');
+const INBOX_LOG = join(HERE, 'inbox', '收件箱-提交记录.jsonl');
+const INBOX_DRAFT = join(HERE, 'inbox', '收件箱-草稿.md');
+const WORK_DRAFT = join(HERE, 'work', '工作区-笔记.md');
 
 /** 空数据（第一次打开时用）。 */
 const EMPTY = [];

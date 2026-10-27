@@ -34,3 +34,13 @@ sandbox-write-probe.txt
 研究/沙盘/*.md
 !研究/沙盘/README.md
 研究/沙盘/*.log
+
+# 沙盘拆分后的数据文件
+研究/沙盘/inbox/*.json
+研究/沙盘/inbox/*.jsonl
+研究/沙盘/inbox/*.md
+!研究/沙盘/inbox/build.mjs
+研究/沙盘/work/*.json
+研究/沙盘/work/*.jsonl
+研究/沙盘/work/*.md
+!研究/沙盘/work/build.mjs
