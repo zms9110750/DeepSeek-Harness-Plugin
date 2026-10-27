@@ -220,9 +220,9 @@
   .vw.on{background:var(--black);color:#fff;font-weight:600}
 
   /* ── 图例：解释连线颜色，不是视图切换 ── */
-  .legend{display:inline-flex;align-items:center;gap:12px}
+  .legend{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap}
   .legend[hidden]{display:none}
-  .lg{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-3)}
+  .lg{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:var(--text-3);white-space:nowrap}
   .lg svg{display:block}
 
   /* ── 科技树 ── */
@@ -395,12 +395,7 @@
     <div class="panel-head">
       <span class="panel-title">任务</span>
       <span class="count" id="count">共 0 条</span>
-      <span class="legend" id="legend">
-        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
-          stroke="var(--border-2)" stroke-width="1.5"/></svg>父子</span>
-        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
-          stroke="var(--brand)" stroke-width="1.5" stroke-dasharray="4 3"/></svg>链接</span>
-      </span>
+      <span class="legend" id="legend"></span>
       <span class="grow"></span>
       <span class="views">
         <button class="vw on" type="button" data-view="tree">科技树</button>
@@ -609,7 +604,10 @@ function createTask(init) {
     note: '',
     workspace: init.workspace || '',
     workspaces: init.workspaces || '',
-    permission: init.permission || ''
+    tmpWorkspace: init.tmpWorkspace || '',
+    permission: init.permission || '',
+    deny: init.deny || '',
+    tags: init.tags ? String(init.tags).split(',').map((x) => x.trim()).filter(Boolean) : []
   };
   DB.push(task);
   scheduleSave();
@@ -783,6 +781,34 @@ const DOMAIN_TREE = [
 ];
 
 
+/* ══════════════════════════════════════════════════════════════
+   关系类型 → 颜色
+
+   用户原话：
+     > 这个图例只有父子和链接。但既然链接关系不多，那就可以给每个关系都做一种图例。
+
+   真实插件里 links 的 label 有六种（core 的 linkPairs 认这些）：
+     依赖 · 派生 · 来源 · 相关 · 约束 · 参考
+
+   每种一个颜色，图例全部列出来。
+   ══════════════════════════════════════════════════════════════ */
+const LINK_KINDS = [
+  { key: 'parent', label: '父子', color: '#9aa0a6', dashed: false },
+  { key: '依赖',   label: '依赖', color: '#c98a20', dashed: false },
+  { key: '派生',   label: '派生', color: '#3b7dd8', dashed: true },
+  { key: '来源',   label: '来源', color: '#7c5cd6', dashed: true },
+  { key: '相关',   label: '相关', color: '#2e9e6b', dashed: true },
+  { key: '约束',   label: '约束', color: '#c0392b', dashed: false },
+  { key: '参考',   label: '参考', color: '#8a9099', dashed: true }
+];
+
+/** 取关系类型的颜色（认不出就用「相关」那档）。 */
+function linkColor(kind) {
+  const found = LINK_KINDS.find((x) => x.key === kind);
+  return found ? found.color : '#8a9099';
+}
+
+
 
 /* ══════════════════════════════════════════════════════════════
    科技树 —— 把事项铺成分层有向图
@@ -819,19 +845,22 @@ function buildTree(tasks) {
 
   const edges = [];
   const seen = new Set();
-  const addEdge = (src, dst, kind) => {
+  const addEdge = (src, dst, kind, label) => {
     if (src === dst || !byId[src] || !byId[dst]) return;
-    const key = src < dst ? src + '\u0000' + dst : dst + '\u0000' + src;
+    /* 去重键带上 kind：父子边和「来源」边指向同一对节点但语义不同，
+       以前只按 id 对去重，先加的父子边把来源边吞掉了。 */
+    const pair = src < dst ? src + '\u0000' + dst : dst + '\u0000' + src;
+    const key = pair + '\u0000' + kind + '\u0000' + (label || '');
     if (seen.has(key)) return;
     seen.add(key);
-    edges.push({ src, dst, kind });
+    edges.push({ src, dst, kind, label });
   };
 
   for (const t of tasks) {
-    if (t.parent) addEdge(t.parent, t.id, 'parent');
+    if (t.parent) addEdge(t.parent, t.id, 'parent', 'parent');
     for (const link of parseLinks(t.links)) {
-      if (link.label === '派生') addEdge(t.id, link.to, 'link');
-      else addEdge(link.to, t.id, 'link');
+      if (link.label === '派生') addEdge(t.id, link.to, 'link', link.label);
+      else addEdge(link.to, t.id, 'link', link.label);
     }
   }
 
@@ -922,7 +951,14 @@ function renderTree(box, tasks) {
   defs.appendChild(marker);
   svg.appendChild(defs);
 
+  /* 同一对节点的多条边（父子 + 来源 + 派生）会画成完全重叠的曲线，
+     看不出是几条。这里按同对出现的序号各自错开一点。 */
+  const pairSeen = new Map();
   for (const edge of tree.edges) {
+    const pairKey = edge.src < edge.dst ? edge.src + '|' + edge.dst : edge.dst + '|' + edge.src;
+    const index = pairSeen.get(pairKey) ?? 0;
+    pairSeen.set(pairKey, index + 1);
+
     const from = tree.placed[edge.src];
     const to = tree.placed[edge.dst];
     const x1 = from.x + TREE_NODE_W;
@@ -930,12 +966,18 @@ function renderTree(box, tasks) {
     const x2 = to.x - 6;
     const y2 = to.y + TREE_NODE_H / 2;
     const dx = Math.max(24, Math.abs(x2 - x1) / 2);
+    /* 第 0 条走中间，第 1 条往上弯、第 2 条往下弯 */
+    const bow = index === 0 ? 0 : (index % 2 === 1 ? -1 : 1) * (18 + Math.floor(index / 2) * 12);
     const path = document.createElementNS(ns, 'path');
-    path.setAttribute('d', 'M' + x1 + ' ' + y1 + ' C' + (x1 + dx) + ' ' + y1 + ' ' + (x2 - dx) + ' ' + y2 + ' ' + x2 + ' ' + y2);
+    path.setAttribute('d', 'M' + x1 + ' ' + y1
+      + ' C' + (x1 + dx) + ' ' + (y1 + bow) + ' ' + (x2 - dx) + ' ' + (y2 + bow) + ' ' + x2 + ' ' + y2);
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', edge.kind === 'link' ? 'var(--brand)' : 'var(--border-2)');
-    path.setAttribute('stroke-width', edge.kind === 'link' ? '1.4' : '1.2');
-    if (edge.kind === 'link') path.setAttribute('stroke-dasharray', '4 3');
+    path.setAttribute('stroke', linkColor(edge.label || edge.kind));
+    path.setAttribute('stroke-width', edge.kind === 'parent' ? '1.2' : '1.5');
+    {
+      const spec = LINK_KINDS.find((x) => x.key === (edge.label || edge.kind));
+      if (spec && spec.dashed) path.setAttribute('stroke-dasharray', '4 3');
+    }
     path.setAttribute('marker-end', 'url(#tree-arrow)');
     path.setAttribute('opacity', '0.55');
     svg.appendChild(path);
@@ -1511,6 +1553,7 @@ const DRAFT_KEY = 'taskboard-draft';
 /* 按视图分发：科技树 or 列表。 */
 function renderAll() {
   renderFilters();
+  renderLegend();
   renderGroups();
   const listBox = document.getElementById('rows');
   const treeBox = document.getElementById('treeview');
@@ -1603,7 +1646,10 @@ function openCreator(init) {
     parent: (init && init.parent) || '',
     workspace: '',
     workspaces: '',
+    tmpWorkspace: '',
     permission: '',
+    deny: '',
+    tags: '',
     body: ''
   };
   picker.domain = 'general';
@@ -1759,10 +1805,15 @@ function openCreator(init) {
     if (box) box.textContent = String(n);
   }
 
-  /* 高级设置面板 */
+  /* 高级设置面板 ──
+   * 用户原话：
+   *   > 这个 ui 要继续想。例如，权限，子工作区，临时工作区，还有一些元数据没放出来
+   */
   const panelAdv = el('div', {class:'tab-panel', hidden:true},
-    field('子工作空间', el('input', {type:'text', placeholder:'空 = 会话目录',
+    field('子工作区', el('input', {type:'text', placeholder:'绝对路径，空 = 会话目录',
       oninput(e) { draft.workspace = e.target.value; }})),
+    field('临时工作区', el('input', {type:'text', placeholder:'本次会话临时可写的目录，逗号分隔',
+      oninput(e) { draft.tmpWorkspace = e.target.value; }})),
     field('额外可读目录', el('input', {type:'text', placeholder:'逗号分隔的绝对路径，可空',
       oninput(e) { draft.workspaces = e.target.value; }})),
     field('权限', el('select', {onchange(e) { draft.permission = e.target.value; }},
@@ -1770,7 +1821,12 @@ function openCreator(init) {
       el('option', {value:'仅可查看'}, '仅可查看'),
       el('option', {value:'工作区内修改'}, '工作区内修改'),
       el('option', {value:'完全权限'}, '完全权限'),
-      el('option', {value:'工具全关'}, '工具全关'))));
+      el('option', {value:'工具全关'}, '工具全关'))),
+    field('再收窄（deny）', el('input', {type:'text', placeholder:'逗号分隔：write / destructive / external / idempotent',
+      oninput(e) { draft.deny = e.target.value; }})),
+    field('标记', el('input', {type:'text', placeholder:'逗号分隔，如：待我处理, 待我审',
+      oninput(e) { draft.tags = e.target.value; }})),
+    el('div', {class:'hint'}, '这些只有会话处于「按计划」档位时才生效'));
 
   /** 同步两个面板的显示。 */
   function syncTabs() {
@@ -1826,7 +1882,10 @@ function openCreator(init) {
         body,
         workspace: draft.workspace,
         workspaces: draft.workspaces,
-        permission: draft.permission
+        tmpWorkspace: draft.tmpWorkspace,
+        permission: draft.permission,
+        deny: draft.deny,
+        tags: draft.tags
       });
       closeModal();
     }}, '提交')));
@@ -2150,6 +2209,36 @@ function togglePick(list, key) {
   const i = list.indexOf(key);
   if (i >= 0) list.splice(i, 1);
   else list.push(key);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   图例 —— 每种关系一种颜色
+
+   用户原话：
+     > 这个图例只有父子和链接。但既然链接关系不多，
+     > 那就可以给每个关系都做一种图例。
+
+   只在科技树视图显示（列表里没有连线，图例没意义）。
+   ══════════════════════════════════════════════════════════════ */
+function renderLegend() {
+  const box = document.getElementById('legend');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const kind of LINK_KINDS) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '8');
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', '0');
+    line.setAttribute('y1', '4');
+    line.setAttribute('x2', '16');
+    line.setAttribute('y2', '4');
+    line.setAttribute('stroke', kind.color);
+    line.setAttribute('stroke-width', '1.6');
+    if (kind.dashed) line.setAttribute('stroke-dasharray', '4 3');
+    svg.appendChild(line);
+    box.appendChild(el('span', {class:'lg', title: kind.label}, svg, kind.label));
+  }
 }
 
 

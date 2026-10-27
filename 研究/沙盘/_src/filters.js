@@ -245,3 +245,33 @@ function togglePick(list, key) {
   if (i >= 0) list.splice(i, 1);
   else list.push(key);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   图例 —— 每种关系一种颜色
+
+   用户原话：
+     > 这个图例只有父子和链接。但既然链接关系不多，
+     > 那就可以给每个关系都做一种图例。
+
+   只在科技树视图显示（列表里没有连线，图例没意义）。
+   ══════════════════════════════════════════════════════════════ */
+function renderLegend() {
+  const box = document.getElementById('legend');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const kind of LINK_KINDS) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '8');
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', '0');
+    line.setAttribute('y1', '4');
+    line.setAttribute('x2', '16');
+    line.setAttribute('y2', '4');
+    line.setAttribute('stroke', kind.color);
+    line.setAttribute('stroke-width', '1.6');
+    if (kind.dashed) line.setAttribute('stroke-dasharray', '4 3');
+    svg.appendChild(line);
+    box.appendChild(el('span', {class:'lg', title: kind.label}, svg, kind.label));
+  }
+}

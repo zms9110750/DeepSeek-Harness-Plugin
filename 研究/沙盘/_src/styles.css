@@ -7,9 +7,9 @@
   .vw.on{background:var(--black);color:#fff;font-weight:600}
 
   /* ── 图例：解释连线颜色，不是视图切换 ── */
-  .legend{display:inline-flex;align-items:center;gap:12px}
+  .legend{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap}
   .legend[hidden]{display:none}
-  .lg{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-3)}
+  .lg{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:var(--text-3);white-space:nowrap}
   .lg svg{display:block}
 
   /* ── 科技树 ── */

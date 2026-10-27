@@ -424,6 +424,7 @@ const DRAFT_KEY = 'taskboard-draft';
 /* 按视图分发：科技树 or 列表。 */
 function renderAll() {
   renderFilters();
+  renderLegend();
   renderGroups();
   const listBox = document.getElementById('rows');
   const treeBox = document.getElementById('treeview');

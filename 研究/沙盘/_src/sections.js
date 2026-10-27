@@ -88,3 +88,31 @@ const DOMAIN_TREE = [
   { key: 'art', label: '绘画', children: [] },
   { key: 'general', label: '通用', children: [] }
 ];
+
+
+/* ══════════════════════════════════════════════════════════════
+   关系类型 → 颜色
+
+   用户原话：
+     > 这个图例只有父子和链接。但既然链接关系不多，那就可以给每个关系都做一种图例。
+
+   真实插件里 links 的 label 有六种（core 的 linkPairs 认这些）：
+     依赖 · 派生 · 来源 · 相关 · 约束 · 参考
+
+   每种一个颜色，图例全部列出来。
+   ══════════════════════════════════════════════════════════════ */
+const LINK_KINDS = [
+  { key: 'parent', label: '父子', color: '#9aa0a6', dashed: false },
+  { key: '依赖',   label: '依赖', color: '#c98a20', dashed: false },
+  { key: '派生',   label: '派生', color: '#3b7dd8', dashed: true },
+  { key: '来源',   label: '来源', color: '#7c5cd6', dashed: true },
+  { key: '相关',   label: '相关', color: '#2e9e6b', dashed: true },
+  { key: '约束',   label: '约束', color: '#c0392b', dashed: false },
+  { key: '参考',   label: '参考', color: '#8a9099', dashed: true }
+];
+
+/** 取关系类型的颜色（认不出就用「相关」那档）。 */
+function linkColor(kind) {
+  const found = LINK_KINDS.find((x) => x.key === kind);
+  return found ? found.color : '#8a9099';
+}

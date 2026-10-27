@@ -115,7 +115,10 @@ function createTask(init) {
     note: '',
     workspace: init.workspace || '',
     workspaces: init.workspaces || '',
-    permission: init.permission || ''
+    tmpWorkspace: init.tmpWorkspace || '',
+    permission: init.permission || '',
+    deny: init.deny || '',
+    tags: init.tags ? String(init.tags).split(',').map((x) => x.trim()).filter(Boolean) : []
   };
   DB.push(task);
   scheduleSave();

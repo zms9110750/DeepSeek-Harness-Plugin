@@ -72,7 +72,10 @@ function openCreator(init) {
     parent: (init && init.parent) || '',
     workspace: '',
     workspaces: '',
+    tmpWorkspace: '',
     permission: '',
+    deny: '',
+    tags: '',
     body: ''
   };
   picker.domain = 'general';
@@ -228,10 +231,15 @@ function openCreator(init) {
     if (box) box.textContent = String(n);
   }
 
-  /* 高级设置面板 */
+  /* 高级设置面板 ──
+   * 用户原话：
+   *   > 这个 ui 要继续想。例如，权限，子工作区，临时工作区，还有一些元数据没放出来
+   */
   const panelAdv = el('div', {class:'tab-panel', hidden:true},
-    field('子工作空间', el('input', {type:'text', placeholder:'空 = 会话目录',
+    field('子工作区', el('input', {type:'text', placeholder:'绝对路径，空 = 会话目录',
       oninput(e) { draft.workspace = e.target.value; }})),
+    field('临时工作区', el('input', {type:'text', placeholder:'本次会话临时可写的目录，逗号分隔',
+      oninput(e) { draft.tmpWorkspace = e.target.value; }})),
     field('额外可读目录', el('input', {type:'text', placeholder:'逗号分隔的绝对路径，可空',
       oninput(e) { draft.workspaces = e.target.value; }})),
     field('权限', el('select', {onchange(e) { draft.permission = e.target.value; }},
@@ -239,7 +247,12 @@ function openCreator(init) {
       el('option', {value:'仅可查看'}, '仅可查看'),
       el('option', {value:'工作区内修改'}, '工作区内修改'),
       el('option', {value:'完全权限'}, '完全权限'),
-      el('option', {value:'工具全关'}, '工具全关'))));
+      el('option', {value:'工具全关'}, '工具全关'))),
+    field('再收窄（deny）', el('input', {type:'text', placeholder:'逗号分隔：write / destructive / external / idempotent',
+      oninput(e) { draft.deny = e.target.value; }})),
+    field('标记', el('input', {type:'text', placeholder:'逗号分隔，如：待我处理, 待我审',
+      oninput(e) { draft.tags = e.target.value; }})),
+    el('div', {class:'hint'}, '这些只有会话处于「按计划」档位时才生效'));
 
   /** 同步两个面板的显示。 */
   function syncTabs() {
@@ -295,7 +308,10 @@ function openCreator(init) {
         body,
         workspace: draft.workspace,
         workspaces: draft.workspaces,
-        permission: draft.permission
+        tmpWorkspace: draft.tmpWorkspace,
+        permission: draft.permission,
+        deny: draft.deny,
+        tags: draft.tags
       });
       closeModal();
     }}, '提交')));

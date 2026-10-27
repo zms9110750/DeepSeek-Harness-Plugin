@@ -285,12 +285,7 @@ ${o.lede}
     <div class="panel-head">
       <span class="panel-title">任务</span>
       <span class="count" id="count">共 0 条</span>
-      <span class="legend" id="legend">
-        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
-          stroke="var(--border-2)" stroke-width="1.5"/></svg>父子</span>
-        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
-          stroke="var(--brand)" stroke-width="1.5" stroke-dasharray="4 3"/></svg>链接</span>
-      </span>
+      <span class="legend" id="legend"></span>
       <span class="grow"></span>
       <span class="views">
         <button class="vw on" type="button" data-view="tree">科技树</button>

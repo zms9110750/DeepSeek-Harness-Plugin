@@ -34,19 +34,22 @@ function buildTree(tasks) {
 
   const edges = [];
   const seen = new Set();
-  const addEdge = (src, dst, kind) => {
+  const addEdge = (src, dst, kind, label) => {
     if (src === dst || !byId[src] || !byId[dst]) return;
-    const key = src < dst ? src + '\u0000' + dst : dst + '\u0000' + src;
+    /* 去重键带上 kind：父子边和「来源」边指向同一对节点但语义不同，
+       以前只按 id 对去重，先加的父子边把来源边吞掉了。 */
+    const pair = src < dst ? src + '\u0000' + dst : dst + '\u0000' + src;
+    const key = pair + '\u0000' + kind + '\u0000' + (label || '');
     if (seen.has(key)) return;
     seen.add(key);
-    edges.push({ src, dst, kind });
+    edges.push({ src, dst, kind, label });
   };
 
   for (const t of tasks) {
-    if (t.parent) addEdge(t.parent, t.id, 'parent');
+    if (t.parent) addEdge(t.parent, t.id, 'parent', 'parent');
     for (const link of parseLinks(t.links)) {
-      if (link.label === '派生') addEdge(t.id, link.to, 'link');
-      else addEdge(link.to, t.id, 'link');
+      if (link.label === '派生') addEdge(t.id, link.to, 'link', link.label);
+      else addEdge(link.to, t.id, 'link', link.label);
     }
   }
 
@@ -137,7 +140,14 @@ function renderTree(box, tasks) {
   defs.appendChild(marker);
   svg.appendChild(defs);
 
+  /* 同一对节点的多条边（父子 + 来源 + 派生）会画成完全重叠的曲线，
+     看不出是几条。这里按同对出现的序号各自错开一点。 */
+  const pairSeen = new Map();
   for (const edge of tree.edges) {
+    const pairKey = edge.src < edge.dst ? edge.src + '|' + edge.dst : edge.dst + '|' + edge.src;
+    const index = pairSeen.get(pairKey) ?? 0;
+    pairSeen.set(pairKey, index + 1);
+
     const from = tree.placed[edge.src];
     const to = tree.placed[edge.dst];
     const x1 = from.x + TREE_NODE_W;
@@ -145,12 +155,18 @@ function renderTree(box, tasks) {
     const x2 = to.x - 6;
     const y2 = to.y + TREE_NODE_H / 2;
     const dx = Math.max(24, Math.abs(x2 - x1) / 2);
+    /* 第 0 条走中间，第 1 条往上弯、第 2 条往下弯 */
+    const bow = index === 0 ? 0 : (index % 2 === 1 ? -1 : 1) * (18 + Math.floor(index / 2) * 12);
     const path = document.createElementNS(ns, 'path');
-    path.setAttribute('d', 'M' + x1 + ' ' + y1 + ' C' + (x1 + dx) + ' ' + y1 + ' ' + (x2 - dx) + ' ' + y2 + ' ' + x2 + ' ' + y2);
+    path.setAttribute('d', 'M' + x1 + ' ' + y1
+      + ' C' + (x1 + dx) + ' ' + (y1 + bow) + ' ' + (x2 - dx) + ' ' + (y2 + bow) + ' ' + x2 + ' ' + y2);
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', edge.kind === 'link' ? 'var(--brand)' : 'var(--border-2)');
-    path.setAttribute('stroke-width', edge.kind === 'link' ? '1.4' : '1.2');
-    if (edge.kind === 'link') path.setAttribute('stroke-dasharray', '4 3');
+    path.setAttribute('stroke', linkColor(edge.label || edge.kind));
+    path.setAttribute('stroke-width', edge.kind === 'parent' ? '1.2' : '1.5');
+    {
+      const spec = LINK_KINDS.find((x) => x.key === (edge.label || edge.kind));
+      if (spec && spec.dashed) path.setAttribute('stroke-dasharray', '4 3');
+    }
     path.setAttribute('marker-end', 'url(#tree-arrow)');
     path.setAttribute('opacity', '0.55');
     svg.appendChild(path);
