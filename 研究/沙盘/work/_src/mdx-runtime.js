@@ -84,7 +84,16 @@ function parseAttrs(source) {
       i += 1;
       let text = '';
       while (i < source.length && source[i] !== quote) {
-        if (source[i] === '\\') { text += source[i + 1]; i += 2; continue; }
+        if (source[i] === '\\') {
+          /* 还原转义：\\n → 换行，\\t → tab，\\" → 引号 */
+          const next = source[i + 1];
+          if (next === 'n') text += '\n';
+          else if (next === 't') text += '\t';
+          else if (next === 'r') text += '\r';
+          else text += next;
+          i += 2;
+          continue;
+        }
         text += source[i];
         i += 1;
       }

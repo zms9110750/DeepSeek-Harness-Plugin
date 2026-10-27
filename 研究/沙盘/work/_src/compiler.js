@@ -208,6 +208,89 @@ function compileSection(key, raw) {
 }
 
 /**
+ * 把旧的字符串正文（`## 标题\n内容`）编译成 mdx。
+ *
+ * ## 为什么不能整段当一个 Markdown
+ *
+ * 旧正文是：
+ *
+ *     ## 要定什么
+ *
+ *     不同模板前缀是否各自独立流水。
+ *
+ *     ## 选项
+ *
+ *     - WF-01 和 GU-01 各自从 01 开始
+ *     - 全部共用一个流水号
+ *
+ * 如果整段包成一个 <Markdown>，**章节结构全丢了** ——
+ * 「选项」这章本该是 ask，结果变成一段文字。
+ *
+ * 所以：按 `## ` 切开，拿标题去章节表里查它是什么行为，
+ * 再用那个行为编译。
+ *
+ * ## 标题对不上时
+ *
+ * 归给 `other` 那一章的行为（通常是 text）。
+ * 还不行就当 markdown。
+ *
+ * @param {object} task
+ * @param {string} body
+ * @returns {string}
+ */
+function compileLegacyString(task, body) {
+  const sections = sectionsOf(task.type);
+
+  /* 按 `## 标题` 切段 */
+  const chunks = [];
+  let current = null;
+  for (const line of String(body).split(/\r?\n/u)) {
+    const m = /^##\s+(.+)$/u.exec(line);
+    if (m !== null) {
+      if (current !== null) chunks.push(current);
+      current = { title: m[1].trim(), lines: [] };
+      continue;
+    }
+    if (current === null) continue;
+    current.lines.push(line);
+  }
+  if (current !== null) chunks.push(current);
+
+  /* 一个 ## 都没有：整段当一个 Markdown */
+  if (chunks.length === 0) {
+    return '<Markdown value=' + lit(body) + ' />';
+  }
+
+  const parts = [];
+  for (const chunk of chunks) {
+    const text = chunk.lines.join('\n').trim();
+
+    /* 拿标题去章节表里查 —— 按 label 或 id 都认 */
+    const section = sections.find(function (s) {
+      return s.label === chunk.title || s.id === chunk.title;
+    });
+
+    /* 查不到：归给 other 那章的行为，再不行当 markdown */
+    const fallback = sections.find(function (s) { return s.id === 'other'; });
+    const action = section ? section.action : (fallback ? fallback.action : 'markdown');
+
+    const raw = { action: action, value: text, label: chunk.title };
+    /* 章节表里有 placeholder 就带上 */
+    if (section && section.placeholder) raw.placeholder = section.placeholder;
+
+    /* ask / rank / derive 这类要结构的，旧数据里没有 —— 降级成 markdown。
+       标题放到 label 上（由外部渲染器画），value 里不留 ##。 */
+    if (action === 'ask' || action === 'rank' || action === 'derive') {
+      parts.push('<Markdown value=' + lit(text) + ' label=' + lit(chunk.title) + ' />');
+      continue;
+    }
+
+    parts.push(compileSection(section ? section.id : chunk.title, raw));
+  }
+  return parts.join('\n');
+}
+
+/**
  * 编译整份正文。
  *
  * @param {object} task
@@ -216,10 +299,10 @@ function compileSection(key, raw) {
 function compileBody(task) {
   const body = task.body;
 
-  /* 旧格式字符串：整段 Markdown，包成 <Markdown> */
+  /* 旧格式字符串：按 `## 标题` 切开，每段按章节表匹配它的行为 */
   if (typeof body === 'string') {
     if (body.trim() === '') return '';
-    return '<Markdown value=' + lit(body) + ' />';
+    return compileLegacyString(task, body);
   }
 
   if (body === null || typeof body !== 'object') return '';
