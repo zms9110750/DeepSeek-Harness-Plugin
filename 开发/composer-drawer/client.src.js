@@ -1,4 +1,17 @@
 import dagre from '@dagrejs/dagre';
+/*
+ * 交互体系三件套。
+ *
+ *   renderers.js   渲染器注册表（name → 组件），外部包可以往里注册
+ *   builtin-*.js   六个内置渲染器
+ *   parse-body.js  把正文 object 变成「可渲染条目列表」
+ *
+ * 必须编进同一份 client.js：DSH 的客户端模块发现只认**裸两段包名**，
+ * 一个包只能有一个客户端入口。
+ */
+import { registerBuiltinRenderers } from './builtin-renderers.js';
+import { parseBody } from './parse-body.js';
+import { parseTemplateSections } from '../taskboard/packages/actions/parse-template.js';
 /* 模块 id 和「装哪一半 UI」由构建时注入（见 build-client.mjs）：
  * 同一份源码产出三个包 —— ui-drawer / ui-sidebar / 合集。
  *
@@ -1803,7 +1816,13 @@ window.__ModuleLoader__.load({
               ? h(
                   'div',
                   { style: { marginTop: 10, color: 'var(--dsw-alias-label-primary)' } },
-                  renderMarkdown(props.body),
+                  /*
+                   * **不再直接 renderMarkdown(props.body)**。
+                   * 正文现在是按章节 id 索引的 object，里面有选择/排序/派生
+                   * 这些不是文字的东西，塞进 Markdown 只会显示 [object Object]。
+                   * 改成按条目分发，每条查自己的渲染器。
+                   */
+                  renderBodyEntries(props.body, props.sections),
                 )
               : null,
           ),
@@ -2080,6 +2099,101 @@ window.__ModuleLoader__.load({
       }
       if (last < text.length) out.push(text.slice(last));
       return out;
+    }
+
+    /**
+     * 渲染正文 —— 按条目分发到各自的渲染器。
+     *
+     * 正文是「按章节 id 索引的 object」：
+     *
+     *     { want: { action:'textarea', value:'…' },
+     *       how:  { action:'choose', options:['A','B'], picked:'A' } }
+     *
+     * 里面的选择器、排序列表、派生按钮**不是文字**，塞进 Markdown
+     * 只会显示成 `[object Object]`。
+     *
+     * 三种情况：
+     *   有渲染器     → 调它画出来
+     *   没渲染器     → 灰色卡片 + 原始 JSON（数据还在，不是坏了）
+     *   旧格式字符串 → parseBody 已经把它包成一个 markdown 条目
+     *
+     * @param {unknown} body
+     * @param {Array} sections 模板章节（决定顺序和标题）
+     * @returns {object|null}
+     */
+    function renderBodyEntries(body, sections) {
+      const entries = parseBody(body, sections);
+      if (entries.length === 0) return null;
+
+      return h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+        entries.map(function (entry, index) {
+          const child = entry.render === null
+            ? renderUnknownAction(entry)
+            : entry.render({ value: entry.value, readOnly: true, h, renderMarkdown });
+
+          if (child === null || child === undefined) return null;
+
+          return h(
+            'div',
+            { key: 'sec-' + entry.id + '-' + index },
+            entry.label === ''
+              ? null
+              : h(
+                  'div',
+                  {
+                    style: {
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: 'var(--dsw-alias-label-secondary)',
+                      letterSpacing: '.04em',
+                      marginBottom: 6,
+                    },
+                  },
+                  entry.label + (entry.required ? ' *' : ''),
+                ),
+            child,
+          );
+        }),
+      );
+    }
+
+    /**
+     * 没有注册渲染器时的兜底：灰色卡片 + 原始 JSON。
+     *
+     * 数据是对的，只是这个界面不认识怎么画它。所以**不能丢**，
+     * 也不能报错 —— 装好渲染器之后它自动变正常。
+     */
+    function renderUnknownAction(entry) {
+      return h(
+        'div',
+        {
+          style: {
+            padding: '9px 11px',
+            border: '1px dashed var(--dsw-alias-border-l1)',
+            borderRadius: 6,
+            background: 'var(--dsw-alias-bg-layer-2)',
+            fontSize: 11.5,
+            color: 'var(--dsw-alias-label-secondary)',
+          },
+        },
+        h('div', { style: { fontWeight: 600, marginBottom: 5 } }, '未注册的交互类型「' + entry.action + '」'),
+        h(
+          'pre',
+          {
+            style: {
+              margin: 0,
+              fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+              fontSize: 11,
+              lineHeight: 1.5,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            },
+          },
+          JSON.stringify(entry.value, null, 2),
+        ),
+      );
     }
 
     function renderMarkdown(source) {
@@ -4283,6 +4397,12 @@ window.__ModuleLoader__.load({
               node: activeNode,
               tasks: tasks,
               body: (data.bodies[activeId] || ''),
+              /*
+               * 模板章节：决定正文条目的**顺序和标题**。
+               * 正文 object 的键顺序不可控（模型生成），模板里 body 的顺序
+               * 才是作者排好的。拿不到模板就传 null，parseBody 退化成按键序显示。
+               */
+              sections: parseTemplateSections(templates[activeNode.typeCode] || ''),
               busy: action.busy,
               error: action.error,
               dispatch: dispatchInfo.id === activeNode.id ? dispatchInfo.items : [],
@@ -5086,6 +5206,25 @@ window.__ModuleLoader__.load({
         /* 领域模板开关属于 templates 包（它才是模板的提供者），
          * 所以在 readUiFlags 里单独从 taskboard-templates 的 namespace 读。 */
         const wantExtras = true;
+
+        /*
+         * 注册六个内置渲染器。
+         *
+         * 放在 apply 最前面：TaskBoard 渲染正文时要查这张表，
+         * 表里没有就是灰色卡片，会让人以为"渲染坏了"。
+         *
+         * `h` 由这里传进去，不是让渲染器自己 import React ——
+         * 整个 client.js 共用同一份 React 实例，自己 import 会拿到另一份，
+         * hooks 直接报错。
+         */
+        try {
+          registerBuiltinRenderers({
+            h: React.createElement,
+            renderMarkdown: (source) => renderMarkdown(source),
+          });
+        } catch (failure) {
+          console.warn('[taskboard] 注册内置渲染器失败：', String((failure && failure.message) || failure));
+        }
 
         /* ── 语言与运行时句柄 ──────────────────────────────────────────────
          * 这两段必须在注册 UI **之前**完成：TaskBoard 里的 t() 依赖 translate。 */
