@@ -32,6 +32,8 @@ const BODY = read('_src/body.js');
 const RENDER = read('_src/render.js');
 const MODAL = read('_src/modal.js');
 const FILTERS = read('_src/filters.js');
+const COMPILER = read('_src/compiler.js');
+const MDX_RUNTIME = read('_src/mdx-runtime.js');
 const BOOT = read('_src/boot.js');
 
 /** sections.js 是可选的（冻版里可能没有）。 */
@@ -42,7 +44,7 @@ try {
 	SECTIONS = '';
 }
 
-const code = [SEED, STORE, SECTIONS, TREE, BODY, RENDER, MODAL, FILTERS, BOOT]
+const code = [SEED, STORE, SECTIONS, TREE, BODY, COMPILER, MDX_RUNTIME, RENDER, MODAL, FILTERS, BOOT]
 	.filter((part) => part !== '')
 	.join('\n\n');
 

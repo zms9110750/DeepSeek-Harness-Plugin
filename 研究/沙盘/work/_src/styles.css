@@ -223,3 +223,9 @@
     background:#fafbfc;padding:8px 10px;max-height:250px;overflow:auto}
   .tpl-sec-count{margin-left:auto;font-size:9.5px;color:var(--text-3);font-weight:500}
   .tpl-sec-head{display:flex;align-items:center}
+
+  /* mdx 源码（调试用） */
+  .mdx-source{margin:0;padding:10px 12px;background:#f7f8f9;border:1px solid var(--border);
+    border-radius:6px;font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;
+    color:var(--text);white-space:pre-wrap;word-break:break-all;overflow:auto;max-height:420px}
+  .mdx{display:flex;flex-direction:column;gap:0}

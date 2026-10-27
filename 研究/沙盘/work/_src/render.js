@@ -62,264 +62,40 @@ function el(tag, props, ...children) {
    ══════════════════════════════════════════════════════════════ */
 
 /** 行动 → 渲染函数。别名（textarea / input / choose）也指向这里。 */
-const ACTION_RENDERERS = {
-  text: renderText,
-  markdown: renderMarkdownSection,
-  ask: renderAsk,
-  rank: renderRank,
-  derive: renderDerive
-};
 
-/** 别名表：旧模板还在用这些名字。 */
-const ACTION_ALIASES = { textarea: 'text', input: 'text', choose: 'ask' };
 
 /**
- * 渲染正文。
+ * 渲染正文 —— 走管道。
+ *
+ *   参数（json）
+ *      ↓  compileBody()      （compiler.js）
+ *   mdx 字符串
+ *      ↓  renderMdx()        （mdx-runtime.js）
+ *   界面
+ *
+ * 用户原话：
+ *
+ *   > 参数就是 .cs。然后渲染器给 mdx 就是 IL。
+ *   > 最后外部渲染器渲染 mdx，就是 .net。
  *
  * @param {object} task
  * @returns {HTMLElement|null}
  */
 function renderBody(task) {
-  const body = task.body;
-
-  /* 旧格式字符串：整段按 Markdown 显示，没有章节结构 */
-  if (typeof body === 'string') {
-    if (body.trim() === '') return null;
-    const d = el('div', {class:'prose'});
-    d.innerHTML = md(body);
-    return d;
-  }
-
-  if (body === null || typeof body !== 'object') return null;
-
-  /* 按模板章节的顺序渲染；模板里没有的键排在后面 */
-  const sections = sectionsOf(task.type);
-  const order = [];
-  for (const s of sections) {
-    if (body[s.id] !== undefined) order.push([s.id, body[s.id], s.label]);
-  }
-  for (const [key, value] of Object.entries(body)) {
-    if (!sections.some((s) => s.id === key)) order.push([key, value, key]);
-  }
-
-  const out = [];
-  for (const [key, raw, label] of order) {
-    const node = renderSection(key, raw, label);
-    if (node !== null) out.push(node);
-  }
-  return out.length === 0 ? null : el('div', null, out);
+  const mdx = compileBody(task);
+  if (mdx === '') return null;
+  return renderMdx(mdx);
 }
 
 /**
- * 渲染一章。
+ * 把一条事项的正文编成 mdx（调试用；页面上有个按钮可以看）。
  *
- * @param {string} key   章节 id
- * @param {object} raw   这一章的值
- * @param {string} fallbackLabel 模板里的标题（没有 label 时用）
- * @returns {HTMLElement|null}
+ * @param {object} task
+ * @returns {string}
  */
-function renderSection(key, raw, fallbackLabel) {
-  if (raw === null || typeof raw !== 'object') return null;
-
-  const given = String(raw.action || raw.type || '').trim();
-  if (given === '') return null;
-
-  /* 别名归一 */
-  const action = ACTION_ALIASES[given] || given;
-  const draw = ACTION_RENDERERS[action];
-
-  const title = String(raw.label || fallbackLabel || key);
-  const required = raw.required === true;
-
-  const sec = el('div', {class:'sec'});
-
-  /* 标题：markdown 不需要（它自己就是一段说明） */
-  if (action !== 'markdown' || title !== '') {
-    sec.appendChild(el('div', {class:'sec-title'}, title, required ? el('span', {class:'req'}, ' *') : null));
-  }
-
-  if (draw === undefined) {
-    /* 不认识这个行动：灰卡 + 原始 JSON。数据不丢，也不崩。 */
-    sec.appendChild(el('div', {class:'unknown'},
-      '未注册的交互类型「' + given + '」',
-      el('pre', null, JSON.stringify(raw, null, 2))));
-    return sec;
-  }
-
-  sec.appendChild(draw(raw, key));
-
-  /* description 画在控件下方 */
-  if (raw.description) {
-    sec.appendChild(el('div', {class:'sec-desc'}, String(raw.description)));
-  }
-  return sec;
+function bodyAsMdx(task) {
+  return compileBody(task);
 }
-
-/**
- * text —— 一段可输入的文本。
- *
- * row: 1 就是单行（原来的 input），否则多行。
- */
-function renderText(raw) {
-  const rows = Number(raw.row) > 0 ? Number(raw.row) : 3;
-  const value = String(raw.value || '');
-  const placeholder = String(raw.placeholder || '');
-
-  const box = el('div', {class:'inter'});
-  if (rows <= 1) {
-    box.appendChild(el('input', {
-      type: 'text', value, placeholder, class:'text-input',
-      onchange(e) { raw.value = e.target.value; }
-    }));
-  } else {
-    const ta = el('textarea', {
-      class:'text-input', rows: String(rows), placeholder,
-      onchange(e) { raw.value = e.target.value; }
-    });
-    ta.value = value;
-    box.appendChild(ta);
-  }
-  return box;
-}
-
-/**
- * markdown —— 只读富文本。
- *
- * 没有输入框，所以不用 placeholder。但如果给了 placeholder，当空状态提示。
- */
-function renderMarkdownSection(raw) {
-  const text = String(raw.value || '');
-  const d = el('div', {class:'prose'});
-  if (text.trim() === '') {
-    d.appendChild(el('span', {class:'muted'}, String(raw.placeholder || '（空）')));
-  } else {
-    d.innerHTML = md(text);
-  }
-  return d;
-}
-
-/**
- * ask —— 从几个选项里挑一个。
- *
- * options 是 [{title, placeholder}]：placeholder 当副标题。
- */
-function renderAsk(raw) {
-  const options = Array.isArray(raw.options) ? raw.options : [];
-  const picked = String(raw.picked || '');
-  const box = el('div', {class:'inter'});
-
-  if (raw.placeholder) {
-    box.appendChild(el('div', {class:'inter-cap'}, String(raw.placeholder)));
-  }
-
-  for (const opt of options) {
-    /* 兼容旧格式（纯字符串） */
-    const title = typeof opt === 'string' ? opt : String(opt.title || '');
-    const sub = typeof opt === 'string' ? '' : String(opt.placeholder || '');
-    const on = title === picked;
-
-    const btn = el('button', {
-      class: 'choice' + (on ? ' on' : ''), type: 'button',
-      onclick() {
-        raw.picked = on ? '' : title;
-        renderAll();
-      }
-    },
-      el('span', {class:'radio'}),
-      el('span', {class:'choice-body'},
-        el('span', {class:'choice-title'}, title),
-        sub === '' ? null : el('span', {class:'choice-sub'}, sub)));
-    box.appendChild(btn);
-  }
-
-  /* 「都不是，我自己写一句」 */
-  if (raw.allow_custom === true) {
-    const current = options.some((o) => (typeof o === 'string' ? o : o.title) === picked);
-    const input = el('input', {
-      type:'text', class:'text-input', placeholder:'都不是，我自己写一句',
-      onchange(e) { raw.picked = e.target.value; }
-    });
-    input.value = current ? '' : picked;
-    box.appendChild(input);
-  }
-
-  /* 「先不选，要更多信息」 */
-  if (raw.allow_defer === true && picked !== '') {
-    box.appendChild(el('button', {
-      class:'link-btn', type:'button',
-      onclick() { raw.picked = ''; renderAll(); }
-    }, '先不选，要更多信息'));
-  }
-
-  return box;
-}
-
-/**
- * rank —— 排先后顺序。
- */
-function renderRank(raw) {
-  const items = Array.isArray(raw.items) ? raw.items : [];
-  const box = el('div', {class:'inter'});
-
-  if (raw.placeholder) {
-    box.appendChild(el('div', {class:'inter-cap'}, String(raw.placeholder)));
-  }
-
-  items.forEach((item, index) => {
-    const title = typeof item === 'string' ? item : String(item.title || '');
-    const sub = typeof item === 'string' ? '' : String(item.placeholder || '');
-
-    const move = (delta) => {
-      const target = index + delta;
-      if (target < 0 || target >= items.length) return;
-      const [moved] = items.splice(index, 1);
-      items.splice(target, 0, moved);
-      renderAll();
-    };
-
-    box.appendChild(el('div', {class:'rank-row'},
-      el('span', {class:'no'}, String(index + 1)),
-      el('span', {class:'rank-body'},
-        el('span', {class:'rank-title'}, title),
-        sub === '' ? null : el('span', {class:'rank-sub'}, sub)),
-      el('span', {class:'rank-btns'},
-        el('button', {type:'button', disabled: index === 0,
-          onclick() { move(-1); }}, '↑'),
-        el('button', {type:'button', disabled: index === items.length - 1,
-          onclick() { move(1); }}, '↓'))));
-  });
-
-  return box;
-}
-
-/**
- * derive —— 从这一条派生子任务。
- */
-function renderDerive(raw) {
-  const templates = Array.isArray(raw.templates) ? raw.templates : [];
-  const mode = String(raw.mode || 'ask');
-  const modeLabel = mode === 'auto' ? '直接建' : mode === 'manual' ? '只能你建' : '问你';
-
-  const box = el('div', {class:'inter'});
-  if (raw.placeholder) {
-    box.appendChild(el('div', {class:'inter-cap'}, String(raw.placeholder)));
-  }
-
-  const row = el('div', {class:'derive-row'});
-  for (const code of templates) {
-    const tpl = (typeof TEMPLATES !== 'undefined' ? TEMPLATES : []).find((x) => x.code === code);
-    row.appendChild(el('button', {
-      class:'quick-task', type:'button',
-      onclick() { openCreator({ type: String(code) }); }
-    },
-      el('span', {class:'code'}, String(code)),
-      tpl ? tpl.name : '派生任务',
-      el('span', {class:'mode'}, modeLabel)));
-  }
-  box.appendChild(row);
-  return box;
-}
-
 
 function renderGroups() {
   const box = document.getElementById('groups');
@@ -573,11 +349,33 @@ function renderDetail() {
     box.appendChild(relBody);
   }
 
-  /* ── 正文（滚动区）── */
+  /* ── 正文（滚动区）──
+   *
+   * 用户原话：
+   *   > 参数就是 .cs。然后渲染器给 mdx 就是 IL。
+   *
+   * 所以这里加一个「看 mdx」开关 —— 直接看到这条事项被编译成什么，
+   * 不用开 devtools。 */
   const body = el('div', {class:'d-body'});
   body.appendChild(el('div', {class:'sec'},
-    el('div', {class:'sec-title'}, '正文'),
-    renderBody(t) || el('div', {class:'prose', style:{color:'var(--text-3)'}}, '（没有正文）')));
+    el('div', {class:'sec-title'},
+      '正文',
+      el('button', {
+        class:'link-btn', type:'button', style:{marginLeft:'auto'},
+        onclick() {
+          state.showMdx = !state.showMdx;
+          renderAll();
+        }
+      }, state.showMdx ? '看渲染' : '看 mdx')),
+    state.showMdx
+      ? (function () {
+          const mdx = bodyAsMdx(t);
+          const pre = el('pre', {class:'mdx-source'});
+          pre.textContent = mdx === '' ? '（空）' : mdx;
+          return pre;
+        })()
+      : (renderBody(t) || el('div', {class:'prose', style:{color:'var(--text-3)'}}, '（没有正文）'))));
+
   if (t.note) {
     body.appendChild(el('div', {class:'sec'},
       el('div', {class:'sec-title'}, '备注'),

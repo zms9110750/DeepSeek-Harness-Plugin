@@ -128,6 +128,7 @@ const state = {
   search: '',
   selected: '',
   menuOpen: false,
+  showMdx: false,
   relOpen: false
 };
 
