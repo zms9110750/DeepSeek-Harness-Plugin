@@ -811,6 +811,24 @@ window.__ModuleLoader__.load({
       whiteSpace: 'nowrap',
     };
 
+    /** 右上角那一排图标按钮（分支 / 归档 / 关闭）。26×26 是点击下限。 */
+    const iconButtonStyle = {
+      flex: 'none',
+      width: 26,
+      height: 26,
+      padding: 0,
+      display: 'grid',
+      placeItems: 'center',
+      font: 'inherit',
+      fontSize: 13,
+      lineHeight: 1,
+      color: 'var(--dsw-alias-label-secondary)',
+      background: 'transparent',
+      border: 0,
+      borderRadius: 5,
+      cursor: 'pointer',
+    };
+
     const kindChipStyle = clickableStyle({
       flex: 'none',
       padding: '0 6px',
@@ -1216,6 +1234,16 @@ window.__ModuleLoader__.load({
     function DetailPane(props) {
       const node = props.node;
       const state = statusA2A(node.status);
+      /*
+       * 状态操作收进二级菜单：点状态标签才展开。
+       *
+       * 用户原话：
+       *   > 状态操作按钮，把他们放进二级菜单。这是重要变更，不能误触。
+       *
+       * 挂在状态标签上而不是另放一个 ⋯ 图标：右上角已经有一排图标
+       * （分支/归档/关闭），再塞一个长得一样的，用户不知道那里能改状态。
+       */
+      const [menuOpen, setMenuOpen] = React.useState(false);
       /* 选项按钮：只有 `behavior: decide` 的模板才有。
        *
        * 用户原话：「用户决策，实际上跟 ask 一样。可以选择，
@@ -1381,37 +1409,32 @@ window.__ModuleLoader__.load({
             zIndex: 3,
           }),
         },
+        /*
+         * 头部三行：
+         *   ① 编号 / 类型 / 模板 + 右上角图标
+         *   ② 标题
+         *   ③ 状态标签（可点，二级菜单）+ 说明
+         *
+         * 三种信息压成一行会分不出主次（之前标题和编号只差 2px 字号）。
+         */
         h(
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: 8 } },
           h('span', { style: idChipStyle }, node.id),
           h('span', { style: kindChipStyle }, node.kind),
-          h(
-            'span',
-            { style: { fontSize: 11, color: statusTone(node.status) } },
-            '● ' + node.status + ' · ' + state.code + ' · ' + groupLabel(node.status),
-          ),
-          /* 目标：把**推导出来的样子**显示出来。
-           *
-           * 用户要求：「目标基于他的子任务决定状态」。
-           * 目标自己存的 `status` 只是"用户有没有采纳/放弃"，真正在推进到哪一步
-           * 要看下面那堆事。所以这里单独显示一个「推导：进行中」。
-           *
-           * 推导值不落盘（用户明确要求），由宿主 /tasks 的 `derived` 字段算好送过来。 */
-          node.kind === 'goal' && node.derived
+          node.typeCode
             ? h(
                 'span',
                 {
-                  title: '目标的状态由子事项推导，不能手动设。要推进它，去推进子事项。',
                   style: {
-                    fontSize: 11,
-                    padding: '1px 7px',
-                    borderRadius: 6,
-                    border: '1px dashed var(--dsw-alias-border-l1)',
+                    fontSize: 10,
+                    padding: '1px 6px',
+                    borderRadius: 3,
+                    border: '1px solid var(--dsw-alias-border-l1)',
                     color: 'var(--dsw-alias-label-secondary)',
                   },
                 },
-                '推导：' + node.derived,
+                node.typeCode,
               )
             : null,
           h('span', { style: { flex: 1 } }),
@@ -1419,15 +1442,12 @@ window.__ModuleLoader__.load({
             'button',
             {
               type: 'button',
+              title: props.canEdit === true ? '编辑' : '分支',
               onClick: props.onEdit,
-              style: Object.assign({}, buttonBase(false), { padding: '2px 12px', marginRight: 8 }),
+              style: iconButtonStyle,
             },
-            props.canEdit === true ? '编辑' : '分支',
+            '⑂',
           ),
-          /* 归档（DP-04）：连整棵子树一起归档。
-           *
-           * 用户原话：「归档直接对分组归档。归档以后界面不显示。
-           * 但索引还在。可以显示已归档。」 */
           h(
             'button',
             {
@@ -1436,81 +1456,162 @@ window.__ModuleLoader__.load({
               onClick: function () {
                 if (typeof props.onArchive === 'function') props.onArchive(node.archived !== true);
               },
-              style: Object.assign({}, buttonBase(false), { padding: '2px 12px', marginRight: 8 }),
+              style: iconButtonStyle,
             },
-            node.archived ? '取消归档' : '归档',
+            '▣',
           ),
-          h(
-            'button',
-            {
-              type: 'button',
-              onClick: props.onClose,
-              style: Object.assign({}, buttonBase(false), { padding: '2px 12px' }),
-            },
-            '关闭',
-          ),
+          h('button', { type: 'button', title: '关闭', onClick: props.onClose, style: iconButtonStyle }, '✕'),
         ),
         h(
           'div',
           { style: { fontSize: 17, fontWeight: 600, lineHeight: 1.35, color: 'var(--dsw-alias-label-primary)' } },
           node.title,
         ),
+        /*
+         * 状态标签 = 菜单入口。带 ▾、点开变实底边框。
+         * 菜单从标签**下方**展开（父级 position:relative），不盖住标签本身。
+         */
         h(
           'div',
-          {
-            style: {
-              fontSize: 12,
-              lineHeight: 1.6,
-              color: 'var(--dsw-alias-label-secondary)',
-              background: 'var(--dsw-alias-bg-layer-2)',
-              borderRadius: 8,
-              padding: '6px 10px',
-            },
-          },
+          { style: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } },
           h(
             'span',
-            { style: { color: statusTone(node.status), fontWeight: 600 } },
-            node.status + '（' + state.code + ' · ' + groupLabel(node.status) + '）',
-          ),
-          '　' + state.desc,
-        ),
-        actions.length > 0 || props.error
-          ? h(
-              'div',
-              { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 } },
-              actions.map(function (item) {
-                return h(
-                  'button',
+            { style: { position: 'relative', display: 'inline-flex' } },
+            h(
+              'button',
+              {
+                type: 'button',
+                'aria-expanded': menuOpen,
+                onClick: function () {
+                  setMenuOpen(!menuOpen);
+                },
+                style: {
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 9px',
+                  font: 'inherit',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: statusTone(node.status),
+                  background: menuOpen ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
+                  border: '1px solid ' + (menuOpen ? statusTone(node.status) : 'transparent'),
+                  borderRadius: 10,
+                  cursor: 'pointer',
+                },
+              },
+              h('span', { style: { fontSize: 8 } }, '●'),
+              node.status + ' · ' + groupLabel(node.status),
+              h('span', { style: { fontSize: 8, opacity: 0.7 } }, '▾'),
+            ),
+            menuOpen
+              ? h(
+                  'div',
                   {
-                    key: 'action-' + item.to,
-                    type: 'button',
-                    disabled: props.busy === true,
-                    onClick: function () {
-                      props.onState(item.to);
-                    },
-                    style: buttonBase(item.primary, props.busy),
-
+                    style: surfaceStyle({
+                      position: 'absolute',
+                      left: 0,
+                      top: 'calc(100% + 6px)',
+                      zIndex: 30,
+                      width: 232,
+                      padding: 5,
+                      border: '1px solid var(--dsw-alias-border-l1)',
+                      borderRadius: 8,
+                      background: 'var(--dsw-alias-bg-layer-1)',
+                      boxShadow: '0 4px 10px rgba(16,18,22,.08), 0 16px 40px rgba(16,18,22,.16)',
+                    }),
                   },
-                  item.label,
-                );
-              }),
-              props.error
-                ? h(
-                    'span',
+                  h(
+                    'div',
                     {
                       style: {
-                        fontSize: 11,
-                        color: 'var(--dsw-alias-state-error-primary)',
-                        maxWidth: 320,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: 'var(--dsw-alias-label-secondary)',
+                        letterSpacing: '.06em',
+                        padding: '6px 9px 4px',
                       },
                     },
-                    props.error,
-                  )
-                : null,
-            )
-          : null,
+                    '变更状态',
+                  ),
+                  actions.map(function (item) {
+                    const bad = item.to === '拒绝' || item.to === '取消';
+                    return h(
+                      'button',
+                      {
+                        key: 'menu-' + item.to,
+                        type: 'button',
+                        disabled: props.busy === true,
+                        onClick: function () {
+                          setMenuOpen(false);
+                          props.onState(item.to);
+                        },
+                        style: {
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          width: '100%',
+                          padding: '6px 9px',
+                          font: 'inherit',
+                          fontSize: 12.5,
+                          textAlign: 'left',
+                          color: bad ? 'var(--dsw-alias-state-error-primary)' : item.primary ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-label-primary)',
+                          fontWeight: item.primary ? 600 : 400,
+                          background: 'transparent',
+                          border: 0,
+                          borderRadius: 5,
+                          cursor: props.busy === true ? 'default' : 'pointer',
+                        },
+                      },
+                      h('span', { style: { flex: 'none', width: 14, textAlign: 'center', opacity: 0.7 } }, item.primary ? '▶' : bad ? '✕' : '·'),
+                      h('span', { style: { flex: 1 } }, item.label),
+                    );
+                  }),
+                  props.error
+                    ? h(
+                        'div',
+                        {
+                          style: {
+                            fontSize: 10.5,
+                            lineHeight: 1.5,
+                            color: 'var(--dsw-alias-state-error-primary)',
+                            padding: '6px 9px',
+                            borderTop: '1px solid var(--dsw-alias-border-l1)',
+                            marginTop: 4,
+                          },
+                        },
+                        props.error,
+                      )
+                    : null,
+                  h(
+                    'div',
+                    {
+                      style: {
+                        fontSize: 10.5,
+                        lineHeight: 1.5,
+                        color: 'var(--dsw-alias-label-secondary)',
+                        padding: '6px 9px',
+                        borderTop: '1px solid var(--dsw-alias-border-l1)',
+                        marginTop: 4,
+                      },
+                    },
+                    '状态变更会影响 AI 能否继续这张单，所以都收在这里。',
+                  ),
+                )
+              : null,
+          ),
+          node.kind === 'goal' && node.derived
+            ? h(
+                'span',
+                {
+                  title: '目标的状态由子事项推导，不能手动设。要推进它，去推进子事项。',
+                  style: { padding: '1px 7px', borderRadius: 6, border: '1px dashed var(--dsw-alias-border-l1)' },
+                },
+                '推导：' + node.derived,
+              )
+            : null,
+          state.desc ? h('span', { style: { opacity: 0.85 } }, state.desc) : null,
+        ),
         h(
           'div',
           { style: { display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12, lineHeight: '20px' } },
