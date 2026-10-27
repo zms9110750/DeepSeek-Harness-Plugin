@@ -630,6 +630,10 @@
 
   .d-meta-value.none{color:var(--text-3);font-style:italic}
 
+  /* 悬浮：和选中区分开 —— 悬浮是虚线框，选中是实心蓝框 */
+  .tree-node.hov{outline:1.5px dashed var(--brand);outline-offset:2px}
+  .tree-node.hov.on{outline:none}
+
 </style>
 </head>
 <body>
@@ -1382,6 +1386,36 @@ function buildTree(tasks) {
   };
 }
 
+/**
+ * 只重刷连线的透明度和线宽（hover 用），不重建 DOM。
+ *
+ * 重建整棵树的代价太大 —— 鼠标一进去就闪一下。
+ */
+function repaintEdges() {
+  const svg = document.querySelector('.tree-canvas svg');
+  if (svg === null) return;
+  const focusId = state.hoverId !== '' ? state.hoverId : state.selected;
+
+  /*
+   * 注意：没有 hover 也没有选中时，所有连线保持正常透明度（0.55）。
+   * 不能因为 focusId === '' 就把它们全压暗 —— 那样一进页面看起来
+   * 就像全被禁用了。
+   */
+  for (const path of svg.querySelectorAll('path[data-edge]')) {
+    const [src, dst] = path.getAttribute('data-edge').split('>');
+    const linked = focusId !== '' && (src === focusId || dst === focusId);
+    const dimmed = focusId !== '' && !linked;
+    path.setAttribute('opacity', dimmed ? '0.12' : (linked ? '1' : '0.55'));
+    path.setAttribute('stroke-width', linked ? '2.6' : (path.getAttribute('data-kind') === 'parent' ? '1.2' : '1.5'));
+  }
+
+  /* 节点的悬浮描边也跟着刷 */
+  for (const node of document.querySelectorAll('.tree-node')) {
+    const isHover = state.hoverId !== '' && node.textContent.startsWith(state.hoverId);
+    node.classList.toggle('hov', isHover);
+  }
+}
+
 function renderTree(box, tasks) {
   box.innerHTML = '';
   if (tasks.length === 0) {
@@ -1423,6 +1457,8 @@ function renderTree(box, tasks) {
   /* 同一对节点的多条边（父子 + 来源 + 派生）会画成完全重叠的曲线，
      看不出是几条。这里按同对出现的序号各自错开一点。 */
   const pairSeen = new Map();
+  /* 画连线。抽成函数是因为 hover 时要重画（只改透明度，不动 DOM 结构）。 */
+  function paintEdges() {
   for (const edge of tree.edges) {
     const pairKey = edge.src < edge.dst ? edge.src + '|' + edge.dst : edge.dst + '|' + edge.src;
     const index = pairSeen.get(pairKey) ?? 0;
@@ -1442,34 +1478,66 @@ function renderTree(box, tasks) {
       + ' C' + (x1 + dx) + ' ' + (y1 + bow) + ' ' + (x2 - dx) + ' ' + (y2 + bow) + ' ' + x2 + ' ' + y2);
     path.setAttribute('fill', 'none');
     /*
-     * 选中某条时，和它相连的箭头要突出显示。
+     * 和它相连的箭头要突出显示。
      *
      * 用户原话：
      *   > 点击卡片选中卡片的时候。这个卡片的关联箭头没有突出显示。
      *
-     * 所以：相连的加粗 + 不透明，不相连的压暗。
+     * 后又指出 mod 里是鼠标悬浮就亮：
+     *   > 他的鼠标悬浮显示箭头
+     *
+     * 所以两个都支持，**hover 优先**：
+     *   hover 有值   按 hover 的节点算
+     *   hover 没值   按选中那条算
+     *
+     * 这样「鼠标扫一圈看关系」和「点开某条看它连谁」两种用法都成立。
      */
-    const linked = state.selected !== '' && (edge.src === state.selected || edge.dst === state.selected);
-    const dimmed = state.selected !== '' && !linked;
+    const focusId = state.hoverId !== '' ? state.hoverId : state.selected;
+    const linked = focusId !== '' && (edge.src === focusId || edge.dst === focusId);
+    const dimmed = focusId !== '' && !linked;
 
     path.setAttribute('stroke', linkColor(edge.label || edge.kind));
-    path.setAttribute('opacity', dimmed ? '0.12' : (linked ? '1' : '0.55'));
+    path.setAttribute('opacity', dimmed ? '0.12' : (linked ? '1' : (focusId === '' ? '0.55' : '0.55')));
     path.setAttribute('stroke-width', linked ? '2.6' : (edge.kind === 'parent' ? '1.2' : '1.5'));
     {
       const spec = LINK_KINDS.find((x) => x.key === (edge.label || edge.kind));
       if (spec && spec.dashed) path.setAttribute('stroke-dasharray', '4 3');
     }
     path.setAttribute('marker-end', 'url(#tree-arrow)');
+    /* 存下 key，hover 时按它找回来改 */
+    path.setAttribute('data-edge', edge.src + '>' + edge.dst);
+    path.setAttribute('data-kind', edge.label || edge.kind);
     svg.appendChild(path);
   }
+  }
+  paintEdges();
   canvas.appendChild(svg);
 
   for (const placed of tree.nodes) {
     const t = placed.node;
     const color = KIND_COLOR[t.kind] || 'var(--text-3)';
     canvas.appendChild(el('div', {
-      class: 'tree-node' + (t.id === state.selected ? ' on' : ''),
+      class: 'tree-node' + (t.id === state.selected ? ' on' : '') + (t.id === state.hoverId ? ' hov' : ''),
       style: { left: (placed.x + 10) + 'px', top: (placed.y + 10) + 'px' },
+      /*
+       * 鼠标悬浮就显示这个节点的关系箭头。
+       *
+       * 用户原话：
+       *   > 他的鼠标悬浮显示箭头
+       *
+       * mod 里就是这么做的（onMouseEnter/onMouseLeave + hovered 状态）。
+       * 比「必须先点开」好 —— 扫一圈就能看关系。
+       *
+       * 只改 SVG 的透明度，不重绘整棵树（重绘会闪）。
+       */
+      onmouseenter() {
+        state.hoverId = t.id;
+        repaintEdges();
+      },
+      onmouseleave() {
+        state.hoverId = '';
+        repaintEdges();
+      },
       onclick() {
         state.selected = t.id;
         state.menuOpen = false;
@@ -1622,6 +1690,7 @@ const state = {
   selected: '',
   menuOpen: false,
   showMdx: false,
+  hoverId: '',
   relOpen: false
 };
 

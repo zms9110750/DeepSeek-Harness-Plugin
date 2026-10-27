@@ -416,3 +416,7 @@
   .d-meta-value{flex:1;min-width:0;color:var(--text-2);word-break:break-all}
 
   .d-meta-value.none{color:var(--text-3);font-style:italic}
+
+  /* 悬浮：和选中区分开 —— 悬浮是虚线框，选中是实心蓝框 */
+  .tree-node.hov{outline:1.5px dashed var(--brand);outline-offset:2px}
+  .tree-node.hov.on{outline:none}

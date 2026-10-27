@@ -129,6 +129,7 @@ const state = {
   selected: '',
   menuOpen: false,
   showMdx: false,
+  hoverId: '',
   relOpen: false
 };
 
