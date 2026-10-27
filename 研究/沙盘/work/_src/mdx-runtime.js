@@ -731,9 +731,19 @@ function renderAskComponent(props) {
     commit(props, multi ? { picked_multi: ['未选择'] } : { picked: '未选择' });
   });
 
-  if (multi && list.length > 0) {
-    card.appendChild(el('div', {class:'oc-foot'}, '已选 ' + list.length + ' 项'));
-  }
+  /*
+   * 不画「已选 N 项」。
+   *
+   * 用户原话：
+   *   > 选中了有"已选 1 项"，没选中没有。
+   *   > 这导致是否跳过的文档流高度不一样，会跳一下
+   *
+   * 那一行只在有选中时出现，卡片高度就变了 —— 下面所有内容
+   * 跟着挪，看起来像「跳一下」。
+   *
+   * 而且它也没必要：选了几项，选项行自己就是高亮的，一眼能看出来。
+   * 卡片的任何状态都不该改变它的高度。
+   */
   return card;
 }
 
