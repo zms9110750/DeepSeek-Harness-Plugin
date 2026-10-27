@@ -359,8 +359,44 @@ function repaintBody() {
   const holder = document.querySelector('.d-body');
   if (holder === null) { renderAll(); return; }
 
-  /* ① 记滚动 */
+  /*
+   * ① 记滚动 —— 用「锚点元素」而不是 scrollTop 数字。
+   *
+   * 用户原话：
+   *   > 第一次切换单选的时候，重新刷新。跳到了这个单选在详情页面顶的位置。
+   *
+   * 原因：重绘时用 scrollTop 还原，但内容高度变了（比如「未选择」那行
+   * 换成真实选项后高度不同），同一个数字指向的位置就变了。
+   *
+   * 改成记「视口顶端第一个章节的 id + 它相对视口的偏移」，
+   * 重绘后按这个把那一章放回原来的位置。
+   */
   const scroll = holder.scrollTop;
+
+  /*
+   * 找一个锚点：视口顶端往下第一个 .sec。
+   *
+   * 用 getBoundingClientRect 而不是 offsetTop —— 因为
+   * .d-body 里的元素 offsetParent 是外层 .detail，不是 .d-body，
+   * offsetTop 和 holder.scrollTop 不在一个坐标系里。
+   */
+  /*
+   * 记一串锚点。
+   *
+   * 只记一个不够 —— 如果那一个自身的渲染高度变了，补偿就错了。
+   * 所以把视口里看得见的章节全记下来（id + 相对偏移），
+   * 还原时从上往下找第一个还存在的，用偏���差补偿。
+   */
+  const holderRect = holder.getBoundingClientRect();
+  const anchors = [];
+  for (const sec of holder.querySelectorAll('.sec')) {
+    const rect = sec.getBoundingClientRect();
+    const top = rect.top - holderRect.top;
+    /* 只记和视口有交集的 */
+    if (top + rect.height > 0 && top < holderRect.height) {
+      anchors.push({ key: sec.getAttribute('data-sec') || '', top });
+    }
+  }
 
   /* ② 记焦点：哪个输入框、光标位置 */
   const active = document.activeElement;
@@ -377,12 +413,54 @@ function repaintBody() {
   holder.innerHTML = '';
   if (fresh !== null) holder.appendChild(fresh);
 
-  /* ④ 还原滚动。
-     必须等下一帧：刚插进去时内容还没布局，scrollHeight 是旧的，
-     直接 set 会被浏览器 clamp 到旧的高度。 */
-  requestAnimationFrame(function () {
+  /*
+   * ④ 还原滚动。
+   *
+   * 有锚点就按锚点还原（内容高度变了也不会跳），
+   * 没有锚点才退回 scrollTop 数字。
+   *
+   * 必须等下一帧：刚插进去时内容还没布局，scrollHeight 是旧的。
+   */
+  /*
+   * 用 rAF + setTimeout 双保险。
+   *
+   * requestAnimationFrame 在页面不可见（后台标签、无头模式、CDP 抓图时）
+   * 会被浏览器暂停 —— 只挂 rAF 的话，滚动还原根本不会执行。
+   * 所以再挂一个 setTimeout 兜底，两者谁先到用谁，只跑一次。
+   */
+  let restored = false;
+  const restore = function () {
+    if (restored) return;
+    restored = true;
+    /*
+     * 从上往下，找第一个「key 存在」的锚点，按它补偿。
+     *
+     * ## 公式为什么不能写成 `holder.scrollTop + delta`
+     *
+     * 因为上面刚做过 `holder.innerHTML = ''` —— 这一下会把
+     * scrollTop 重置成 0。所以这里的 holder.scrollTop 不是我记下的
+     * 那个值，直接拿它当基准会算错（第一次点单选时跳到顶部就是这么来的）。
+     *
+     * 正确做法：先把元素的**文档坐标**还原出来，再减去目标偏移。
+     *
+     *   E = (元素当前相对视口的 top) + (当前 scrollTop)      ← 文档坐标
+     *   scrollTop = E - 目标偏移
+     */
+    const cur = holder.scrollTop;
+    for (const anchor of anchors) {
+      if (anchor.key === '') continue;
+      const again = holder.querySelector('.sec[data-sec="' + anchor.key + '"]');
+      if (again === null) continue;
+      const nowTop = again.getBoundingClientRect().top - holder.getBoundingClientRect().top;
+      const want = (nowTop + cur) - anchor.top;
+      holder.scrollTop = want;
+      return;
+    }
     holder.scrollTop = scroll;
-  });
+  };
+  requestAnimationFrame(restore);
+  setTimeout(restore, 0);
+  setTimeout(restore, 32);
 
   /* ⑤ 还原焦点 */
   if (focusInfo !== null && focusInfo.index >= 0) {
@@ -443,7 +521,8 @@ function moveItem(props, index, delta) {
    ══════════════════════════════════════════════════════════════ */
 
 function sectionShell(props, body) {
-  const sec = el('div', {class:'sec'});
+  /* data-sec 是给 repaintBody 用的滚动锚点 */
+  const sec = el('div', {class:'sec', 'data-sec': props.__key || ''});
   const label = String(props.label || '');
   if (label !== '') {
     sec.appendChild(el('div', {class:'sec-title'},
@@ -487,8 +566,7 @@ function renderMarkdownComponent(props) {
   } else {
     d.innerHTML = md(text);
   }
-  const label = String(props.label || '');
-  if (label === '') return d;
+  /* 没 label 也包一层 —— 需要 data-sec 做滚动锚点 */
   return sectionShell(props, [d]);
 }
 
@@ -527,6 +605,8 @@ const UNSET_LABEL = '未选择';
  * @returns {HTMLElement}
  */
 function optionCard(props, list, skipActive, onSkip) {
+  /* 包一层 sectionShell。
+     不然这张卡在文档里没有 data-sec 锚点，重绘时滚动位置就补不回来。 */
   const card = el('div', {class:'oc'});
 
   const head = el('div', {class:'oc-head'});
@@ -548,7 +628,7 @@ function optionCard(props, list, skipActive, onSkip) {
 
   card.appendChild(head);
   card.appendChild(list);
-  return card;
+  return sectionShell(props, [card]);
 }
 
 /**
