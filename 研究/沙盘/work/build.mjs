@@ -264,7 +264,7 @@ ${STYLES}
 </head>
 <body>
 
-<a class="toplink" href="/">切换到收件箱 →</a>
+<a class="toplink" href="http://127.0.0.1:52311/">切换到收件箱 →</a>
 <h1>工作区 · AI 改版沙盘</h1>
 <p class="sub">
   <b>这一份是我改版用的，和你无关。</b>数据完全独立（<code>工作区.json</code>），
