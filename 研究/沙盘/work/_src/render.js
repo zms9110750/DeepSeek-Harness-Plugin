@@ -376,26 +376,12 @@ function renderDetail() {
         })()
       : (renderBody(t) || el('div', {class:'prose', style:{color:'var(--text-3)'}}, '（没有正文）'))));
 
-  if (t.note) {
+  /* 备注只在有内容时作为只读文字显示。
+     编辑用的是底部固定栏那个输入框，不在这里重复。 */
+  if (String(t.note || '').trim() !== '') {
     body.appendChild(el('div', {class:'sec'},
       el('div', {class:'sec-title'}, '备注'),
       el('div', {class:'prose', style:{color:'var(--text-2)'}}, t.note)));
-  }
-  /* 演示：一章 object 形态的交互 */
-  if (t.id === 'GU-01') {
-    body.appendChild(el('div', {class:'sec'},
-      el('div', {class:'sec-title'}, '交互演示', el('span', {class:'n'}, 'action 分发')),
-      el('div', {class:'inter'},
-        el('div', {class:'inter-cap'}, '需要你选', el('span', {class:'src'}, 'choice · 三个互斥方案')),
-        ...['先做分组，因为它是其它四项的容器','先做详情页，因为用户最常看','五个一起做，反正都不大']
-          .map((text) => el('button', {class:'choice', type:'button', onclick(){ this.classList.toggle('on'); }},
-            el('span', {class:'radio'}), el('span', null, text)))),
-      el('div', {class:'inter'},
-        el('div', {class:'inter-cap'}, '拆成子任务', el('span', {class:'src'}, 'derive · union 槽位')),
-        el('button', {class:'quick-task', type:'button'},
-          el('span', {class:'code'}, 'WR'), '派生调研任务'),
-        el('button', {class:'quick-task', type:'button'},
-          el('span', {class:'code'}, 'DP'), '派生设计任务'))));
   }
   box.appendChild(body);
 

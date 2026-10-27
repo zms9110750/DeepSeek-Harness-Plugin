@@ -237,3 +237,63 @@
   .choice .checkbox .tick{color:#fff;font-size:9px;line-height:1;font-weight:700}
   .choice.multi.on .choice-sub{color:var(--brand);opacity:.75}
   .multi-count{font-size:10.5px;color:var(--text-3);margin-top:5px}
+
+  /* ── 选项（ask 单选 / multi 多选共用外框）── */
+  .inter{border:1px solid var(--border);border-radius:8px;padding:10px 11px 11px;
+    margin-bottom:9px;background:#fcfcfd}
+  .inter-cap{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;font-size:11.5px;
+    font-weight:650;margin-bottom:8px;color:var(--text-2)}
+  .inter-cap .src{font-size:10px;font-weight:500;color:var(--text-3);padding:0 5px;
+    border-radius:3px;background:#eceef0}
+
+  .choice{display:flex;align-items:flex-start;gap:8px;width:100%;padding:8px 11px;
+    margin-bottom:6px;font:inherit;font-size:12.5px;text-align:left;color:var(--text);
+    background:#fff;border:1px solid var(--border-2);border-radius:7px;cursor:pointer;
+    transition:border-color .12s,background .12s}
+  .choice:last-child{margin-bottom:0}
+  .choice:hover{border-color:#b9bdc2;background:#fafbfc}
+  .choice.on{border-color:var(--brand);background:#f4f8fe;color:var(--brand);font-weight:600}
+
+  /* 单选：圆点 */
+  .choice .radio{flex:none;width:13px;height:13px;border-radius:50%;
+    border:1.5px solid var(--border-2);display:grid;place-items:center;margin-top:2px;
+    background:#fff;transition:border-color .12s}
+  .choice:hover .radio{border-color:#b9bdc2}
+  .choice.on .radio{border-color:var(--brand)}
+  .choice.on .radio::after{content:'';width:6px;height:6px;border-radius:50%;
+    background:var(--brand);display:block}
+
+  .choice-body{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+  .choice-title{font-size:12.5px;line-height:1.45}
+  .choice-sub{font-size:11px;color:var(--text-3);line-height:1.45;font-weight:400}
+  .choice.on .choice-sub{color:var(--brand);opacity:.75}
+
+  .link-btn{padding:4px 2px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;text-decoration:underline}
+  .link-btn:hover{color:var(--brand)}
+
+  .text-input{width:100%;box-sizing:border-box;padding:7px 10px;font:inherit;font-size:12.5px;
+    line-height:1.6;color:var(--text);background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;outline:none;resize:vertical}
+  .text-input:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(59,125,216,.1)}
+
+  .rank-row{display:flex;align-items:center;gap:8px;padding:6px 9px;margin-bottom:4px;
+    background:#fff;border:1px solid var(--border-2);border-radius:6px;font-size:12.5px}
+  .rank-row .no{flex:none;width:16px;color:var(--text-3);font-size:10px}
+  .rank-row .txt{flex:1}
+
+  .derive-row{display:flex;flex-wrap:wrap;gap:6px}
+  .quick-task{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;
+    font:inherit;font-size:12px;background:#fff;border:1px dashed var(--border-2);
+    border-radius:6px;cursor:pointer}
+  .quick-task:hover{border-style:solid;border-color:var(--brand);color:var(--brand)}
+  .quick-task .code{font-size:10px;font-weight:700;color:var(--text-3);padding:0 4px;
+    border-radius:3px;background:#f0f2f4}
+  .quick-task .mode{font-size:9.5px;color:var(--text-3);margin-left:4px}
+
+  .sec-desc{font-size:11px;color:var(--text-3);line-height:1.6;margin-top:5px}
+  .muted{color:var(--text-3);font-style:italic}
+  .req{color:var(--danger);font-weight:700}
+  .unknown{border:1px dashed var(--border-2);border-radius:6px;background:#f7f8f9;
+    padding:9px 11px;font-size:11.5px;color:var(--text-2)}
+  .unknown pre{margin:5px 0 0;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}

@@ -299,6 +299,46 @@ defineAction({
 });
 
 /*
+ * multi —— 从几个选项里挑**多个**。
+ *
+ * 和 ask 的区别：
+ *   ask    互斥，picked 是一个字符串
+ *   multi  集合，picked 是一个数组
+ *
+ * 视觉上也分开：单选画圆点，多选画方框 + ✓。
+ */
+defineAction({
+	name: 'multi',
+	summary: '从几个选项里挑多个',
+	render: 'Multi',
+	schema: {
+		required: ['options'],
+		properties: {
+			options: {
+				type: 'array',
+				minItems: 2,
+				items: {
+					type: 'object',
+					required: ['title'],
+					properties: {
+						title: { type: 'string', description: '选项的主标题' },
+						placeholder: { type: 'string', description: '选项下方的灰字（副标题）' },
+					},
+				},
+				description: '候选项，至少两个',
+			},
+			/* 注意：这里是数组，ask 那里是字符串 */
+			picked: {
+				type: 'array',
+				items: { type: 'string' },
+				description: '已选中的那些（按 title 匹配），可以是空数组',
+			},
+			allow_custom: { type: 'boolean', description: '允许「都不是，我自己写」' },
+		},
+	},
+});
+
+/*
  * rank —— 给一组东西排先后顺序。
  */
 defineAction({
