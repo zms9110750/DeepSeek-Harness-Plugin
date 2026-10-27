@@ -186,9 +186,9 @@ test('formatIssues 把错误打成一行', () => {
 
 test('actionCatalog 给出每个行动的字段清单，必填带星号', () => {
 	const text = actionCatalog();
-	assert.match(text, /^\s*textarea\(value\*, placeholder, rows\)$/mu);
-	assert.match(text, /^\s*choose\(options\*, picked, allow_custom, allow_defer\)$/mu);
-	assert.match(text, /^\s*derive\(templates\*, mode\)$/mu);
+	assert.match(text, /^\s*textarea\(value\*, placeholder, description, row\)$/mu);
+	assert.match(text, /^\s*choose\(options\*, picked, allow_custom, allow_defer, description, row\)$/mu);
+	assert.match(text, /^\s*derive\(templates\*, mode, description, row\)$/mu);
 });
 
 test('词表每条一个行动，数量对得上', () => {

@@ -82,6 +82,25 @@ export function defineAction(action) {
 		throw new TypeError(`defineAction(${name}): schema.properties 必须是对象`);
 	}
 	/*
+	 * 每个行动都自动带上两个公共字段：
+	 *
+	 *   description  模板给的那句说明。用户原话：
+	 *                > 行为的架构里面也一定要写能放说明的地方。因为基于行为进行渲染。
+	 *                > 所以这个模板怎么用的是肯定与参数无关了。那么参数给的选项
+	 *                > 就要有位置放没选择时怎么选的地方。
+	 *
+	 *   row          渲染参数（行高）。markdown 和 textarea 用得上。
+	 *
+	 * 统一注入而不是每个行动各写一遍：漏一个就会在文档里显得不一致，
+	 * 而它们对每个行动的含义本来就相同。
+	 */
+	if (!('description' in properties)) {
+		properties.description = { type: 'string', description: '这一章怎么用的说明（模板给的）' };
+	}
+	if (!('row' in properties)) {
+		properties.row = { type: 'integer', minimum: 1, maximum: 40, description: '渲染行高' };
+	}
+	/*
 	 * required 里写的字段必须真的在 properties 里。
 	 * 这个错很常见（改名后忘了同步），而且只在运行时校验才会暴露，
 	 * 所以在注册时就挡住。
@@ -193,7 +212,6 @@ defineAction({
 		properties: {
 			value: { type: 'string', description: '填进去的文字' },
 			placeholder: { type: 'string', description: '输入框的灰字提示' },
-			rows: { type: 'integer', minimum: 1, maximum: 20, description: '初始行数' },
 		},
 	},
 });

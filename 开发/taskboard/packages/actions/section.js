@@ -163,6 +163,21 @@ export function validateDocument(sections, payloads) {
  * @returns {string[]} 去重后的行动名；不合法时返回空数组
  */
 export function normalizeTypes(type) {
+	/*
+	 * 三种写法都要认：
+	 *
+	 *   type:                        ← v2：map，key 是行动名
+	 *     markdown: 说明
+	 *     ask: 说明
+	 *
+	 *   type: [textarea, derive]     ← v1 数组
+	 *   type: textarea               ← v1 单个
+	 *
+	 * 归一成行动名数组。说明不在这里处理 —— 那是渲染时的事。
+	 */
+	if (type !== null && typeof type === 'object' && !Array.isArray(type)) {
+		return Object.keys(type).filter((key) => typeof key === 'string' && key.trim() !== '');
+	}
 	if (typeof type === 'string') {
 		const single = type.trim();
 		return single === '' ? [] : [single];
