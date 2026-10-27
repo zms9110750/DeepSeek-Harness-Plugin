@@ -272,7 +272,7 @@ defineAction({
  *   > 尝试把单选和多选合并。
  *
  * 合并的理由：它们只有两点不同 —— 能选几个（`multi`）、
- * 选中的是值还是集合。其余（卡片头、选项、自定义、跳过）完全一样。
+ * 选中的是值还是集合。其余（卡片头、选项、自定义、未选择）完全一样。
  * 分成两个行动只会让模板作者多记一个名字。
  *
  * 所以：
@@ -291,18 +291,18 @@ defineAction({
  *
  * 不画圆点/方框 —— 选中就是整行加边框。
  *
- * ## 「跳过」始终有，而且默认就是它
+ * ## 「未选择」始终有，而且默认就是它
  *
  * 用户原话：
  *
  *   > 没看这个卡片应该是默认选择的。
  *   > 表示你查这个情况，而我实际上都没看这个卡片。
  *
- * 所以 picked 的初值是 `'跳过'`。用户动了才变。
+ * 所以 picked 的初值是 `'未选择'`。用户动了才变。
  *
  * 这和「看了但选不出」是两回事：
  *
- *   '跳过'    没看（默认）
+ *   '未选择'    没看（默认）
  *   ''        看了，但清空了选择
  *   '1'       选了第 1 项
  *   '其它'    自己填的
@@ -340,13 +340,13 @@ defineAction({
 
 			/*
 			 * 单选时是字符串，多选时是字符串数组。
-			 * 初值建议 '跳过'（没看）。
+			 * 初值建议 '未选择'（没看）。多选时用 ['未选择']。
 			 */
-			picked: { type: 'string', description: '单选：序号 / "跳过" / 自己填的文字' },
+			picked: { type: 'string', description: '单选：序号 / "未选择" / 自己填的文字' },
 			picked_multi: {
 				type: 'array',
 				items: { type: 'string' },
-				description: '多选时用这个：序号或自己填的文字组成的数组；空数组 = 跳过',
+				description: '多选时用这个：序号或自己填的文字组成的数组；空数组 = 未选择',
 			},
 
 			allow_custom: { type: 'boolean', description: '允许自己填（默认 true）' },
@@ -537,7 +537,7 @@ function walk(schema, value, path, issues) {
 
 		for (const [key, child] of Object.entries(properties)) {
 			const field = value[key];
-			if (field === undefined || field === null) continue; /* 可选字段没给就跳过 */
+			if (field === undefined || field === null) continue; /* 可选字段没给就未选择 */
 			walk(child, field, join(path, key), issues);
 		}
 

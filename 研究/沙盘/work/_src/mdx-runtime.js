@@ -492,6 +492,17 @@ function renderMarkdownComponent(props) {
   return sectionShell(props, [d]);
 }
 
+/**
+ * 「未选择」这个按钮的文字。
+ *
+ * 用户原话：
+ *   > 然后跳过，应该改名为"未选择"
+ *
+ * 它是「我没看这张卡片」，不是「都不要」——
+ * 所以不能叫跳过，那听起来像已经看过并跳过了。
+ */
+const UNSET_LABEL = '未选择';
+
 /* ══════════════════════════════════════════════════════════════
    选项卡 —— 照宿主那个 ask 的样式
 
@@ -529,7 +540,7 @@ function optionCard(props, list, skipActive, onSkip) {
     type: 'button',
     title: '我没看这张卡片',
     onclick: onSkip
-  }, '跳过'));
+  }, UNSET_LABEL));
   head.appendChild(top);
 
   if (props.question) head.appendChild(el('div', {class:'oc-title'}, String(props.question)));
@@ -668,7 +679,20 @@ function renderAskComponent(props) {
    *
    * 但**默认要给 '跳过'** —— 那是初值。用户一旦动了选项就离开跳过。
    */
-  const isSkip = !multi && single === '跳过';
+  /*
+   * 多选也要能「未选择」。
+   *
+   * 之前写成 `!multi && ...` —— 多选的跳过按钮永远点不亮，
+   * 因为 isSkip 恒为 false，点它只是清空数组，按钮没反应。
+   *
+   * 多选的两个独立状态：
+   *   pickedMulti 是空数组 + 其它选项都没选   不一定是未选择
+   *   点了「未选择」                          才是未选择
+   *
+   * 用 pickedMulti = ['未选择'] 这个哨兵值表示。
+   */
+  const UNSET = '未选择';
+  const isSkip = multi ? list.length === 1 && list[0] === UNSET : single === UNSET;
 
   /* 单选时：序号 / 自定义文字 */
   const pickedIndex = !multi && /^\d+$/u.test(single) ? Number(single) : -1;
@@ -699,13 +723,12 @@ function renderAskComponent(props) {
 
   const card = optionCard(props, listBox, isSkip, function () {
     if (isSkip) {
-      /* 再点一次取消跳过 */
-      if (multi) commit(props, { picked_multi: [] });
-      else commit(props, { picked: '' });
+      /* 再点一次取消「未选择」 */
+      commit(props, multi ? { picked_multi: [] } : { picked: '' });
       return;
     }
-    if (multi) commit(props, { picked_multi: [] });
-    else commit(props, { picked: '跳过' });
+    /* 选中「未选择」：多选要清掉其它选择 */
+    commit(props, multi ? { picked_multi: ['未选择'] } : { picked: '未选择' });
   });
 
   if (multi && list.length > 0) {

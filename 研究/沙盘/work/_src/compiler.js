@@ -135,11 +135,13 @@ function compileAsk(raw) {
 
   /* 单选支持 picked，多选支持 picked_multi；两个都给时按 multi 取 */
   /*
-   * 默认 '跳过'（没看这张卡片）。
+   * 默认 '未选择'（没看这张卡片）。
+   *
    * 用户原话：
-   *   > "跳过"，应该是默认选择，并且点击才激活。
+   *   > "未选择"，应该是默认选择，并且点击才激活。
+   *   > 然后未选择，应该改名为"未选择"
    */
-  const single = String(raw.picked === undefined || raw.picked === null ? '跳过' : raw.picked);
+  const single = String(raw.picked === undefined || raw.picked === null ? '未选择' : raw.picked);
   const list = Array.isArray(raw.picked_multi)
     ? raw.picked_multi.map(String)
     : (Array.isArray(raw.picked) ? raw.picked.map(String) : []);
