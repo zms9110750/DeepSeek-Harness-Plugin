@@ -51,6 +51,12 @@
   .search{font:inherit;font-size:12px;padding:5px 9px;border-radius:6px;border:1px solid var(--border-2);
     background:#fff;outline:none;width:150px;margin-left:auto}
 
+  /* 图例：解释连线颜色的，不是视图切换 */
+  .legend{display:inline-flex;align-items:center;gap:12px}
+  .legend[hidden]{display:none}
+  .lg{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-3)}
+  .lg svg{display:block}
+
   /* 视图切换 */
   .views{display:inline-flex;border:1px solid var(--border-2);border-radius:6px;overflow:hidden}
   .vw{font:inherit;font-size:11.5px;padding:4px 11px;border:0;background:#fff;
@@ -266,6 +272,12 @@
     <div class="panel-head">
       <span class="panel-title">任务</span>
       <span class="count" id="count">共 0 条</span>
+      <span class="legend" id="legend">
+        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
+          stroke="var(--border-2)" stroke-width="1.5"/></svg>父子</span>
+        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
+          stroke="var(--brand)" stroke-width="1.5" stroke-dasharray="4 3"/></svg>链接</span>
+      </span>
       <span class="grow"></span>
       <span class="views">
         <button class="vw on" type="button" data-view="tree">科技树</button>
@@ -1325,6 +1337,8 @@ function renderAll() {
   const isTree = state.view === 'tree';
   listBox.hidden = isTree;
   treeBox.hidden = !isTree;
+  const legend = document.getElementById('legend');
+  if (legend) legend.hidden = !isTree;
   if (isTree) {
     document.getElementById('count').textContent = '共 ' + visibleTasks().length + ' 条';
     renderTree(treeBox, visibleTasks());
