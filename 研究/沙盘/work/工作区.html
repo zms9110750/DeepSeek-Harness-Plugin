@@ -634,6 +634,84 @@
   .tree-node.hov{outline:1.5px dashed var(--brand);outline-offset:2px}
   .tree-node.hov.on{outline:none}
 
+  /* ══════════════════════════════════════════════════════════
+     模板选择器 —— 照 新建计划-原型.html
+
+     三列：领域 | 类别 | 模板
+       · 前两列是单选（圆点），不是复选框
+       · 第三列点一下只是「预览」，右侧显示说明
+       · 双击或点「采用」才确认
+     ══════════════════════════════════════════════════════════ */
+
+  .tpl-btn{display:flex;align-items:center;gap:8px;width:100%;
+    padding:8px 10px;font:inherit;font-size:12.5px;text-align:left;
+    background:#fff;border:1px solid var(--border-2);border-radius:6px;
+    cursor:pointer;color:var(--text)}
+  .tpl-btn .code{font-size:11px;font-weight:600;color:var(--brand);
+    background:#eef3fb;border-radius:4px;padding:1px 6px}
+  .tpl-btn .chev{margin-left:auto;color:var(--text-3);font-size:9px}
+
+  /*
+   * 弹层比字段更宽。
+   *
+   * 三列设计宽度 108 + 108 + 170 = 386px，加上内边距要 420 左右。
+   * 而左栏只有约 470px —— 刚好够但很挤，第三列的模板名会被挤成省略号。
+   *
+   * 所以给一个最小宽度，并允许向右伸出（right: auto）。
+   * 原型里弹层是跨到右栏那边的。
+   */
+  .tpl-pop{position:absolute;left:0;right:auto;min-width:430px;top:calc(100% + 6px);z-index:20;
+    border:1px solid var(--border-2);border-radius:8px;background:#fff;
+    box-shadow:0 4px 10px rgba(16,18,22,.08), 0 16px 40px rgba(16,18,22,.14);
+    overflow:hidden}
+  .tpl-pop[hidden]{display:none}
+  .field.tpl-field{position:relative}
+
+  .tpl-grid{display:grid;grid-template-columns:108px 108px minmax(170px,1fr);align-items:stretch}
+  .tpl-col{padding:6px 0 8px;max-height:236px;overflow:auto;border-right:1px solid var(--border)}
+  .tpl-col:nth-child(1),.tpl-col:nth-child(2){background:#fbfbfc}
+  .tpl-col:nth-child(3){border-right:0;background:#fff}
+  .tpl-col-head{font-size:10px;font-weight:700;color:var(--text-3);
+    letter-spacing:.06em;padding:3px 12px 6px}
+
+  .tpl-item{display:flex;align-items:center;gap:7px;width:100%;
+    padding:5px 10px 5px 12px;font:inherit;font-size:12px;
+    background:transparent;border:0;text-align:left;cursor:pointer;color:var(--text)}
+  .tpl-item:hover{background:#eef0f2}
+  .tpl-item .radio{flex:none;width:13px;height:13px;border-radius:50%;
+    border:1.5px solid var(--border-2);background:#fff;display:grid;place-items:center}
+  .tpl-item .radio::after{content:'';width:6px;height:6px;border-radius:50%;background:transparent}
+  .tpl-item.on .radio{border-color:var(--brand)}
+  .tpl-item.on .radio::after{background:var(--brand)}
+  .tpl-item.on{color:var(--brand);font-weight:600}
+  .tpl-item .k-letter{flex:none;width:11px;font-size:10px;font-weight:700;
+    color:var(--text-3);text-align:center}
+  .tpl-item.on .k-letter{color:var(--brand)}
+
+  /* 模板列：预览是浅蓝，采用才是实心 */
+  .tpl-item.preview{background:#eef3fb}
+  .tpl-item.preview .tpl-name{color:var(--brand);font-weight:600}
+  .tpl-item .tpl-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tpl-item .tpl-code{flex:none;font-size:10px;font-weight:700;color:var(--text-3);width:22px}
+
+  /* 「采用」按钮 —— 只在正在预览那一行出现 */
+  .tpl-item .adopt{flex:none;font-size:10px;padding:1px 6px;border-radius:3px;
+    background:#191b1f;color:#fff;border:0;cursor:pointer;opacity:0;transition:opacity .1s}
+  .tpl-item.preview .adopt{opacity:1}
+  .tpl-item .adopt:hover{background:#000}
+
+  .tpl-desc{padding:10px 13px;font-size:11.5px;line-height:1.6;color:var(--text-2);
+    border-top:1px solid var(--border);background:#fbfbfc;min-height:54px}
+  .tpl-desc .d-title{color:var(--text);font-weight:600;margin-bottom:3px}
+  .tpl-desc .d-secs{margin-top:4px;font-size:11px;color:var(--text-3)}
+
+  .tpl-preview{padding:7px 13px;font-size:10.5px;color:var(--text-3);
+    border-top:1px solid var(--border);background:#fff}
+  .tpl-preview b{color:var(--brand)}
+  .tpl-empty{padding:16px 12px;font-size:11.5px;color:var(--text-3);text-align:center}
+
+  .tpl-desc .d-hint{margin-top:5px;font-size:10.5px;color:var(--text-3)}
+
 </style>
 </head>
 <body>
@@ -3607,7 +3685,17 @@ const DOMAIN_ROWS = [
 ];
 
 /** 浮层里当前选中的三项。 */
-const picker = { domain: 'general', kind: 'goal', tpl: 'GU' };
+/*
+ * 第三个字段 preview 是「正在看但还没采用」的模板。
+ *
+ * 原型的设计：
+ *   > 第三列是模板列表（也是单选），但**点一下只是预览**，
+ *   > 要看右侧说明再决定，双击/回车才确认。
+ *
+ * 所以 tpl 是已采用的，preview 是鼠标下那个。
+ * 点一下就采用太容易误触 —— 尤其是列表里相邻模板名字很像。
+ */
+const picker = { domain: 'general', kind: 'goal', tpl: 'GU', preview: 'GU' };
 
 /** 一个带 label 的字段。 */
 function field(label, control, required) {
@@ -3701,23 +3789,66 @@ function openCreator(init) {
     col3.appendChild(el('button', {
       class:'tpl-item' + (picker.tpl === '' ? ' on' : ''),
       type:'button',
-      onclick() { picker.tpl = ''; closePop(); refreshSections(); }
+      onclick() { picker.tpl = ''; picker.preview = ''; refreshPop(); refreshTplBtn(); refreshSections(); }
     }, el('span', {class:'tpl-code'}, '—'), el('span', {class:'tpl-name'}, '空模板')));
 
     const list = TEMPLATES.filter((t) => t.kind === picker.kind
       && (t.domain === picker.domain || t.domain === 'general'));
+    /*
+     * 模板列：点一下 = 选定 + 换说明，**不收起弹层**。
+     *
+     * 原型原话：
+     *   > 模板列：点一下 = 选定 + 换说明。
+     *   > **不收起弹层** —— 用户还要接着比几个模板。
+     *   > 收起靠「点面板外面」。
+     *
+     * 所以这里没有「采用」按钮，也没有两阶段确认 —— 点即选定。
+     */
     for (const t of list) {
       col3.appendChild(el('button', {
         class:'tpl-item' + (picker.tpl === t.code ? ' on' : ''),
         type:'button', title: t.desc,
-        onclick() { picker.tpl = t.code; closePop(); refreshSections(); }
-      }, el('span', {class:'tpl-code'}, t.letter), el('span', {class:'tpl-name'}, t.name)));
+        onclick() {
+          picker.tpl = t.code;
+          picker.preview = t.code;
+          refreshPop();
+          refreshTplBtn();
+          refreshSections();
+        }
+      },
+        el('span', {class:'tpl-code'}, t.letter || '—'),
+        el('span', {class:'tpl-name'}, t.name)));
     }
 
     grid.appendChild(col1);
     grid.appendChild(col2);
     grid.appendChild(col3);
     tplPop.appendChild(grid);
+
+    /*
+     * 说明面板 —— 预览哪个就显示哪个的说明。
+     *
+     * 原型：
+     *   > 要看右侧说明再决定
+     *
+     * 所以选中之前得能读到它讲什么。空模板也有一条说明。
+     */
+    const shown = TEMPLATES.find((t) => t.code === picker.preview);
+    const desc = el('div', {class:'tpl-desc'});
+    if (shown) {
+      desc.appendChild(el('div', {class:'d-title'}, shown.name));
+      desc.appendChild(el('div', null, shown.desc || '（这个模板还没有说明）'));
+      if (Array.isArray(shown.sections) && shown.sections.length > 0) {
+        desc.appendChild(el('div', {class:'d-secs'},
+          '章节：' + shown.sections.map((x) => x.label).join(' · ')));
+      }
+      desc.appendChild(el('div', {class:'d-hint'}, '点模板看说明，点面板外面收起'));
+    } else {
+      desc.appendChild(el('div', {class:'d-title'}, '空模板'));
+      desc.appendChild(el('div', null, '只有正文，不加任何字段。想自己写结构时用它。'));
+      desc.appendChild(el('div', {class:'d-hint'}, '点模板看说明，点面板外面收起'));
+    }
+    tplPop.appendChild(desc);
 
     const kindLetter = (KIND_ROWS.find((k) => k.key === picker.kind) || {}).letter || 'X';
     const prefix = picker.tpl || kindLetter;
@@ -3728,12 +3859,34 @@ function openCreator(init) {
 
   };
 
-  tplBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
+  /*
+   * 模板按钮：开 / 关。
+   *
+   * 照原型用 pointerdown 而不是 click —— click 要等 mouseup，
+   * 用户点面板外面时弹层会多存在一瞬，看起来像「点不掉」。
+   *
+   * 必须 stopPropagation，否则会被下面那个全局 pointerdown
+   * 当成「点在外面」，一次点击开了又关。
+   */
+  tplBtn.addEventListener('pointerdown', (event) => {
+    event.stopPropagation();
+    event.preventDefault();
     tplPop.hidden = !tplPop.hidden;
     if (!tplPop.hidden) refreshPop();
   });
-  mask.addEventListener('click', () => { if (!tplPop.hidden) tplPop.hidden = true; });
+
+  /*
+   * 点面板外面 → 收起模板弹层。
+   *
+   * 挂在 document 上而不是 mask 上：弹层在 mask 里面，
+   * 点弹层的空白处也会触发 mask 的 click，导致「点说明也收起」。
+   * 用 document + 检查 target 才能分清里外。
+   */
+  document.addEventListener('pointerdown', (event) => {
+    if (tplPop.hidden) return;
+    if (tplPop.contains(event.target) || tplBtn.contains(event.target)) return;
+    tplPop.hidden = true;
+  });
 
   refreshTplBtn();
   left.appendChild(el('div', {class:'field', style:{position:'relative'}},

@@ -44,3 +44,5 @@ sandbox-write-probe.txt
 研究/沙盘/work/*.jsonl
 研究/沙盘/work/*.md
 !研究/沙盘/work/build.mjs
+
+研究/沙盘/**/_*.mjs

@@ -55,7 +55,17 @@ const DOMAIN_ROWS = [
 ];
 
 /** 浮层里当前选中的三项。 */
-const picker = { domain: 'general', kind: 'goal', tpl: 'GU' };
+/*
+ * 第三个字段 preview 是「正在看但还没采用」的模板。
+ *
+ * 原型的设计：
+ *   > 第三列是模板列表（也是单选），但**点一下只是预览**，
+ *   > 要看右侧说明再决定，双击/回车才确认。
+ *
+ * 所以 tpl 是已采用的，preview 是鼠标下那个。
+ * 点一下就采用太容易误触 —— 尤其是列表里相邻模板名字很像。
+ */
+const picker = { domain: 'general', kind: 'goal', tpl: 'GU', preview: 'GU' };
 
 /** 一个带 label 的字段。 */
 function field(label, control, required) {
@@ -149,23 +159,66 @@ function openCreator(init) {
     col3.appendChild(el('button', {
       class:'tpl-item' + (picker.tpl === '' ? ' on' : ''),
       type:'button',
-      onclick() { picker.tpl = ''; closePop(); refreshSections(); }
+      onclick() { picker.tpl = ''; picker.preview = ''; refreshPop(); refreshTplBtn(); refreshSections(); }
     }, el('span', {class:'tpl-code'}, '—'), el('span', {class:'tpl-name'}, '空模板')));
 
     const list = TEMPLATES.filter((t) => t.kind === picker.kind
       && (t.domain === picker.domain || t.domain === 'general'));
+    /*
+     * 模板列：点一下 = 选定 + 换说明，**不收起弹层**。
+     *
+     * 原型原话：
+     *   > 模板列：点一下 = 选定 + 换说明。
+     *   > **不收起弹层** —— 用户还要接着比几个模板。
+     *   > 收起靠「点面板外面」。
+     *
+     * 所以这里没有「采用」按钮，也没有两阶段确认 —— 点即选定。
+     */
     for (const t of list) {
       col3.appendChild(el('button', {
         class:'tpl-item' + (picker.tpl === t.code ? ' on' : ''),
         type:'button', title: t.desc,
-        onclick() { picker.tpl = t.code; closePop(); refreshSections(); }
-      }, el('span', {class:'tpl-code'}, t.letter), el('span', {class:'tpl-name'}, t.name)));
+        onclick() {
+          picker.tpl = t.code;
+          picker.preview = t.code;
+          refreshPop();
+          refreshTplBtn();
+          refreshSections();
+        }
+      },
+        el('span', {class:'tpl-code'}, t.letter || '—'),
+        el('span', {class:'tpl-name'}, t.name)));
     }
 
     grid.appendChild(col1);
     grid.appendChild(col2);
     grid.appendChild(col3);
     tplPop.appendChild(grid);
+
+    /*
+     * 说明面板 —— 预览哪个就显示哪个的说明。
+     *
+     * 原型：
+     *   > 要看右侧说明再决定
+     *
+     * 所以选中之前得能读到它讲什么。空模板也有一条说明。
+     */
+    const shown = TEMPLATES.find((t) => t.code === picker.preview);
+    const desc = el('div', {class:'tpl-desc'});
+    if (shown) {
+      desc.appendChild(el('div', {class:'d-title'}, shown.name));
+      desc.appendChild(el('div', null, shown.desc || '（这个模板还没有说明）'));
+      if (Array.isArray(shown.sections) && shown.sections.length > 0) {
+        desc.appendChild(el('div', {class:'d-secs'},
+          '章节：' + shown.sections.map((x) => x.label).join(' · ')));
+      }
+      desc.appendChild(el('div', {class:'d-hint'}, '点模板看说明，点面板外面收起'));
+    } else {
+      desc.appendChild(el('div', {class:'d-title'}, '空模板'));
+      desc.appendChild(el('div', null, '只有正文，不加任何字段。想自己写结构时用它。'));
+      desc.appendChild(el('div', {class:'d-hint'}, '点模板看说明，点面板外面收起'));
+    }
+    tplPop.appendChild(desc);
 
     const kindLetter = (KIND_ROWS.find((k) => k.key === picker.kind) || {}).letter || 'X';
     const prefix = picker.tpl || kindLetter;
@@ -176,12 +229,34 @@ function openCreator(init) {
 
   };
 
-  tplBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
+  /*
+   * 模板按钮：开 / 关。
+   *
+   * 照原型用 pointerdown 而不是 click —— click 要等 mouseup，
+   * 用户点面板外面时弹层会多存在一瞬，看起来像「点不掉」。
+   *
+   * 必须 stopPropagation，否则会被下面那个全局 pointerdown
+   * 当成「点在外面」，一次点击开了又关。
+   */
+  tplBtn.addEventListener('pointerdown', (event) => {
+    event.stopPropagation();
+    event.preventDefault();
     tplPop.hidden = !tplPop.hidden;
     if (!tplPop.hidden) refreshPop();
   });
-  mask.addEventListener('click', () => { if (!tplPop.hidden) tplPop.hidden = true; });
+
+  /*
+   * 点面板外面 → 收起模板弹层。
+   *
+   * 挂在 document 上而不是 mask 上：弹层在 mask 里面，
+   * 点弹层的空白处也会触发 mask 的 click，导致「点说明也收起」。
+   * 用 document + 检查 target 才能分清里外。
+   */
+  document.addEventListener('pointerdown', (event) => {
+    if (tplPop.hidden) return;
+    if (tplPop.contains(event.target) || tplBtn.contains(event.target)) return;
+    tplPop.hidden = true;
+  });
 
   refreshTplBtn();
   left.appendChild(el('div', {class:'field', style:{position:'relative'}},
