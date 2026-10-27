@@ -27,3 +27,10 @@ sandbox-write-probe.txt
 
 # 子 AI 拆包出来的第三方源码副本（可重新生成）
 .review-extract/
+
+# 沙盘的运行时数据（本地状态，不进仓库）
+研究/沙盘/*.json
+研究/沙盘/*.jsonl
+研究/沙盘/*.md
+!研究/沙盘/README.md
+研究/沙盘/*.log
