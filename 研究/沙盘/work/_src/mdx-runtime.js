@@ -79,11 +79,14 @@ function parseAttrs(source) {
     while (i < source.length && /\s/u.test(source[i])) i += 1;
 
     if (source[i] === '"' || source[i] === "'") {
-      /* 字符串字面量 */
+      /* 字符串字面量。
+         注意：**只认起始那个引号**，中途出现的 ' 和 ` 都是普通字符。
+         以前是遇到任何引号都当边界，导致 `console.log('x')` 被截断。 */
       const quote = source[i];
       i += 1;
       let text = '';
       while (i < source.length && source[i] !== quote) {
+        /* 同类引号才结束 —— 其它引号是内容 */
         if (source[i] === '\\') {
           /* 还原转义：\\n → 换行，\\t → tab，\\" → 引号 */
           const next = source[i + 1];
@@ -168,11 +171,45 @@ function evalLiteral(expr) {
  */
 function parseTags(source) {
   const out = [];
-  const re = /<([A-Z][A-Za-z0-9]*)((?:\s[^>]*?)?)\s*\/?>/gu;
-  let m;
-  while ((m = re.exec(source)) !== null) {
-    out.push({ name: m[1], attrs: parseAttrs(m[2] || '') });
+  const text = String(source);
+  let i = 0;
+
+  while (i < text.length) {
+    /* 找一个 < 后面紧跟大写字母的位置 */
+    if (text[i] !== '<' || !/[A-Z]/u.test(text[i + 1] || '')) { i += 1; continue; }
+
+    /* 标签名 */
+    const nameStart = i + 1;
+    let j = nameStart;
+    while (j < text.length && /[A-Za-z0-9]/u.test(text[j])) j += 1;
+    const name = text.slice(nameStart, j);
+
+    /* 扫属性，直到真正的 > */
+    const attrStart = j;
+    let depth = 0;
+    let quote = null;
+    let closed = -1;
+    for (; j < text.length; j += 1) {
+      const c = text[j];
+      if (quote !== null) {
+        if (c === '\\') { j += 1; continue; }
+        if (c === quote) quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'") { quote = c; continue; }
+      if (c === '{') { depth += 1; continue; }
+      if (c === '}') { depth -= 1; continue; }
+      /* 只有在 {} 外面、引号外面的 > 才是标签结束 */
+      if (c === '>' && depth === 0) { closed = j; break; }
+    }
+
+    if (closed < 0) break;
+
+    const attrText = text.slice(attrStart, closed).replace(/\/\s*$/u, '');
+    out.push({ name, attrs: parseAttrs(attrText) });
+    i = closed + 1;
   }
+
   return out;
 }
 
