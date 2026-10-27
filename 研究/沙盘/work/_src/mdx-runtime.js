@@ -230,9 +230,6 @@ const MDX_COMPONENTS = {
   Ask: function Ask(props) {
     return renderAskComponent(props);
   },
-  Multi: function Multi(props) {
-    return renderMultiComponent(props);
-  },
   Rank: function Rank(props) {
     return renderRankComponent(props);
   },
@@ -338,6 +335,26 @@ function commit(props, patch) {
  *   · 记下滚动位置，重绘后还原
  *   · 记下焦点在哪个输入框、光标在第几个字符，重绘后还原
  */
+/**
+ * 只存，不重绘。
+ *
+ * 用于「用户正在输入」这种场景 —— 重绘会打断打字。
+ *
+ * @param {object} props
+ * @param {object} patch
+ */
+function commitQuiet(props, patch) {
+  if (renderCtx.taskId === '') return;
+  const task = taskOf(renderCtx.taskId);
+  if (task === undefined) return;
+  const key = props.__key;
+  if (key === '' || typeof task.body !== 'object' || task.body === null) return;
+  const section = task.body[key];
+  if (section === undefined) return;
+  Object.assign(section, patch);
+  scheduleSave();
+}
+
 function repaintBody() {
   const holder = document.querySelector('.d-body');
   if (holder === null) { renderAll(); return; }
@@ -562,17 +579,52 @@ function skipRow(active, onClick) {
  * @param {boolean} active
  * @returns {HTMLElement}
  */
-function customRow(props, current, active) {
+function customRow(props, current, active, multi) {
   const input = el('input', {
     type: 'text',
     class: 'oc-input',
     placeholder: '自己填一个……',
     value: current,
-    onchange(e) { commit(props, { picked: e.target.value }); }
+    /*
+     * oninput 而不是 onchange：
+     *   onchange 要等失焦才触发，而失焦会重绘 —— 打字打到一半
+     *   如果点了别处，重绘时 value 还是旧值，刚打的字就吞了。
+     *
+     * 而且这里用 commitQuiet：只存不重绘。
+     * 输入框不用重画（用户正在里面打字），重画反而会打断。
+     */
+    oninput(e) {
+      commitQuiet(props, multi
+        ? { picked_multi: mergeCustom(props.pickedMulti, e.target.value) }
+        : { picked: e.target.value });
+      /* 打了字就把这行标成选中 */
+      const row = e.target.closest('.oc-row');
+      if (row !== null && e.target.value !== '') row.classList.add('on');
+    },
+    onblur(e) {
+      /* 失焦时把「跳过」和其它选项的选中态刷新一下 */
+      repaintBody();
+    }
   });
   return el('div', {class:'oc-row oc-custom' + (active ? ' on' : '')},
     el('span', {class:'oc-no'}, '✎'),
     input);
+}
+
+/**
+ * 多选时把自定义文字并进 picked 数组（保留序号项）。
+ *
+ * @param {unknown} picked
+ * @param {string} text
+ * @returns {string[]}
+ */
+function mergeCustom(picked, text) {
+  const list = Array.isArray(picked) ? picked.filter(function (x) {
+    return /^\d+$/u.test(String(x));
+  }) : [];
+  const trimmed = String(text || '').trim();
+  if (trimmed !== '') list.push(trimmed);
+  return list;
 }
 
 /**
@@ -581,67 +633,91 @@ function customRow(props, current, active) {
  * @param {object} props
  * @returns {HTMLElement}
  */
-function renderAskComponent(props) {
-  const options = Array.isArray(props.options) ? props.options : [];
-  const picked = String(props.picked || '');
-
-  /* picked 的三种形态：'' / '跳过' / 序号 / 自定义文字 */
-  const isSkip = picked === '跳过';
-  const pickedIndex = /^\d+$/u.test(picked) ? Number(picked) : -1;
-  const isCustom = picked !== '' && !isSkip && pickedIndex < 0;
-
-  const list = el('div', {class:'oc-list'});
-
-  options.forEach(function (opt, i) {
-    list.appendChild(optionRow(opt, i, pickedIndex === i + 1, function () {
-      commit(props, { picked: String(i + 1) });
-    }));
-  });
-
-  if (props.allowCustom !== false) {
-    list.appendChild(customRow(props, isCustom ? picked : '', isCustom));
-  }
-
-  list.appendChild(skipRow(isSkip, function () {
-    commit(props, { picked: isSkip ? '' : '跳过' });
-  }));
-
-  return optionCard(props, list);
-}
-
 /**
- * multi —— 多选。
+ * ask —— 单选或多选，同一个组件。
+ *
+ * ## 单选和多选怎么分
+ *
+ *   multi: true   picked 是数组（从 pickedMulti 来），点了加入/移出
+ *   multi: false  picked 是字符串，点了替换
+ *
+ * 其余完全一样：卡片头、选项、自定义行、跳过行。
+ *
+ * ## 默认是「跳过」
+ *
+ * 用户原话：
+ *   > 没看这个卡片应该是默认选择的。
+ *
+ * 所以没给 picked 时，按「跳过」渲染 —— 那一行是选中的。
  *
  * @param {object} props
  * @returns {HTMLElement}
  */
-function renderMultiComponent(props) {
+function renderAskComponent(props) {
   const options = Array.isArray(props.options) ? props.options : [];
-  const picked = Array.isArray(props.picked) ? props.picked.map(String) : [];
+  const multi = props.multi === true;
 
-  const list = el('div', {class:'oc-list'});
-  const customs = picked.filter(function (x) { return !/^\d+$/u.test(x) && x !== '跳过'; });
+  /* 单选：字符串；多选：数组 */
+  const single = String(props.picked === undefined || props.picked === null ? '' : props.picked);
+  const list = Array.isArray(props.pickedMulti) ? props.pickedMulti.map(String) : [];
+
+  /* 没动过 = 跳过。这是默认状态。 */
+  const untouched = multi ? list.length === 0 : single === '';
+  const isSkip = untouched || single === '跳过';
+
+  /* 单选时：序号 / 自定义文字 */
+  const pickedIndex = !multi && /^\d+$/u.test(single) ? Number(single) : -1;
+  const isCustom = !multi && !isSkip && pickedIndex < 0;
+
+  const listBox = el('div', {class:'oc-list'});
 
   options.forEach(function (opt, i) {
     const key = String(i + 1);
-    list.appendChild(optionRow(opt, i, picked.includes(key), function () {
-      toggleMulti(props, key);
+    const active = multi ? list.includes(key) : pickedIndex === i + 1;
+    listBox.appendChild(optionRow(opt, i, active, function () {
+      if (multi) toggleMultiPick(props, key);
+      else commit(props, { picked: key });
     }));
   });
 
+  /* 自定义行 */
+  const customText = multi
+    ? list.filter(function (x) { return !/^\d+$/u.test(x); }).join('、')
+    : (isCustom ? single : '');
+  const hasCustom = multi
+    ? list.some(function (x) { return !/^\d+$/u.test(x); })
+    : isCustom;
+
   if (props.allowCustom !== false) {
-    list.appendChild(customRow(props, customs.join('、'), customs.length > 0));
+    listBox.appendChild(customRow(props, customText, hasCustom, multi));
   }
 
-  list.appendChild(skipRow(picked.length === 0, function () {
-    commit(props, { picked: [] });
+  /* 跳过行 —— 始终有，而且默认就是它 */
+  listBox.appendChild(skipRow(isSkip, function () {
+    if (multi) commit(props, { picked_multi: [] });
+    else commit(props, { picked: '跳过' });
   }));
 
-  const card = optionCard(props, list);
-  if (picked.length > 0) {
-    card.appendChild(el('div', {class:'oc-foot'}, '已选 ' + picked.length + ' 项'));
+  const card = optionCard(props, listBox);
+
+  if (multi && list.length > 0) {
+    card.appendChild(el('div', {class:'oc-foot'}, '已选 ' + list.length + ' 项'));
   }
   return card;
+}
+
+/**
+ * 多选：加/删一项。
+ *
+ * @param {object} props
+ * @param {string} key
+ */
+function toggleMultiPick(props, key) {
+  const current = Array.isArray(props.pickedMulti) ? props.pickedMulti.map(String) : [];
+  const i = current.indexOf(key);
+  if (i >= 0) current.splice(i, 1);
+  else current.push(key);
+  commit(props, { picked_multi: current });
 }
 
 function renderRankComponent(props) {

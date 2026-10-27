@@ -263,40 +263,58 @@ defineAction({
 });
 
 /*
- * ask —— 让用户从几个选项里挑一个。
+ * ask —— 让用户从几个选项里挑，选一个或多个。
  *
- * ## 样式照宿主
+ * ## 单选和多选是同一个行为
  *
- * 用户截图指出的几点：
+ * 用户原话：
  *
- *   > 主标题，副标题，手动输入。
- *   > 他们没有选项点和选项框。选中了就是框框有焦点。
- *   > 自己填写的那个也是合法的选项框。
- *   > 同时，渲染器给的渲染应该始终包含一个"未选择"或"跳过"。
- *   > 表示你查这个情况，而我实际上都没看这个卡片。
+ *   > 尝试把单选和多选合并。
+ *
+ * 合并的理由：它们只有两点不同 —— 能选几个（`multi`）、
+ * 选中的是值还是集合。其余（卡片头、选项、自定义、跳过）完全一样。
+ * 分成两个行动只会让模板作者多记一个名字。
  *
  * 所以：
  *
- *   选项   不画圆点/方框。选中 = 整行加边框 + 变色。
- *   自定义 和选项长得一模一样（不是另起一个输入框）。
- *   跳过   **始终有**，不是可选开关。
+ *   multi: false / 不写   →  picked 是字符串
+ *   multi: true           →  picked 是字符串数组
  *
- * ## 为什么「跳过」必须始终有
+ * ## 卡片头两层
  *
- * 「没选」是一个真实且重要的状态 —— 它表示用户压根没看这张卡片，
- * 和「看了但选不出来」是两回事。
+ *   header     小字副标题
+ *   question   大字主标题
  *
- * 如果跳过是可选的，那「没选」和「没来得及选」就分不清了。
+ * ## 选项
+ *
+ *   { label, description, recommended }
+ *
+ * 不画圆点/方框 —— 选中就是整行加边框。
+ *
+ * ## 「跳过」始终有，而且默认就是它
+ *
+ * 用户原话：
+ *
+ *   > 没看这个卡片应该是默认选择的。
+ *   > 表示你查这个情况，而我实际上都没看这个卡片。
+ *
+ * 所以 picked 的初值是 `'跳过'`。用户动了才变。
+ *
+ * 这和「看了但选不出」是两回事：
+ *
+ *   '跳过'    没看（默认）
+ *   ''        看了，但清空了选择
+ *   '1'       选了第 1 项
+ *   '其它'    自己填的
  */
 defineAction({
 	name: 'ask',
-	summary: '从几个选项里挑一个',
+	summary: '从几个选项里挑一个或多个',
 	render: 'Ask',
 	schema: {
 		required: ['options'],
 		properties: {
-			/* 卡片自己的两行标题 —— 和宿主一样：小字副标题在上，大字主标题在下 */
-			header: { type: 'string', description: '卡片副标题（小字，在主标题上方）' },
+			header: { type: 'string', description: '卡片副标题（小字）' },
 			question: { type: 'string', description: '卡片主标题（大字）' },
 
 			options: {
@@ -307,59 +325,30 @@ defineAction({
 					required: ['label'],
 					properties: {
 						label: { type: 'string', description: '选项标题（粗体那行）' },
-						description: { type: 'string', description: '选项说明（标题后面的灰字）' },
+						description: { type: 'string', description: '选项说明（后面的灰字）' },
 						recommended: { type: 'boolean', description: '标一个「推荐」' },
 					},
 				},
 				description: '候选项，至少两个',
 			},
 
-			/* picked 有三种状态：
-			     ''         没选（= 跳过）
-			     数字字符串 选了第几个（从 1 开始，和界面上的编号一致）
-			     其它文字   自己填的 */
-			picked: { type: 'string', description: '已选的那一项：序号、"跳过"、或自己填的文字' },
+			/*
+			 * 单选/多选开关。不写 = 单选。
+			 * 这一个字段就把两个行动合并了。
+			 */
+			multi: { type: 'boolean', description: '允许多选（默认 false）' },
 
-			/* 允不允许自己填。默认允许 —— 宿主那个也是允许的。 */
-			allow_custom: { type: 'boolean', description: '允许自己填一个（默认 true）' },
-		},
-	},
-});
-
-/*
- * multi —— 从几个选项里挑**多个**。
- *
- * 和 ask 的区别只在 picked 是数组。样式和跳过规则完全照 ask。
- */
-defineAction({
-	name: 'multi',
-	summary: '从几个选项里挑多个',
-	render: 'Multi',
-	schema: {
-		required: ['options'],
-		properties: {
-			header: { type: 'string', description: '卡片副标题（小字）' },
-			question: { type: 'string', description: '卡片主标题（大字）' },
-			options: {
-				type: 'array',
-				minItems: 2,
-				items: {
-					type: 'object',
-					required: ['label'],
-					properties: {
-						label: { type: 'string', description: '选项标题' },
-						description: { type: 'string', description: '选项说明' },
-						recommended: { type: 'boolean', description: '标一个「推荐」' },
-					},
-				},
-				description: '候选项，至少两个',
-			},
-			/* 数组；空数组 = 跳过 */
-			picked: {
+			/*
+			 * 单选时是字符串，多选时是字符串数组。
+			 * 初值建议 '跳过'（没看）。
+			 */
+			picked: { type: 'string', description: '单选：序号 / "跳过" / 自己填的文字' },
+			picked_multi: {
 				type: 'array',
 				items: { type: 'string' },
-				description: '已选中的那些（序号或自己填的文字）',
+				description: '多选时用这个：序号或自己填的文字组成的数组；空数组 = 跳过',
 			},
+
 			allow_custom: { type: 'boolean', description: '允许自己填（默认 true）' },
 		},
 	},

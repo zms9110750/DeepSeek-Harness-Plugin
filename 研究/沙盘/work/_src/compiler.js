@@ -122,43 +122,30 @@ function normalizeOptions(options) {
 }
 
 /**
- * ask —— 从几个选项里挑一个。
+ * ask —— 单选或多选，同一个行为。
  *
- * options 每项 { label, description, recommended }。
- * picked 是序号字符串 / "跳过" / 自己填的文字。
+ * multi: true 时用 picked_multi（数组），否则用 picked（字符串）。
  *
  * @param {object} raw
  * @returns {string}
  */
 function compileAsk(raw) {
   const options = normalizeOptions(raw.options);
+  const multi = raw.multi === true;
+
+  /* 单选支持 picked，多选支持 picked_multi；两个都给时按 multi 取 */
+  const single = String(raw.picked === undefined || raw.picked === null ? '' : raw.picked);
+  const list = Array.isArray(raw.picked_multi)
+    ? raw.picked_multi.map(String)
+    : (Array.isArray(raw.picked) ? raw.picked.map(String) : []);
+
   return '<Ask'
     + attr('header', raw.header)
     + attr('question', raw.question)
     + attr('options', options)
-    + attr('picked', String(raw.picked || ''))
-    + attr('allowCustom', raw.allow_custom === false ? false : true)
-    + attr('placeholder', raw.placeholder)
-    + attr('label', raw.label)
-    + attr('description', raw.description)
-    + attr('required', raw.required === true ? true : undefined)
-    + ' />';
-}
-
-/**
- * multi —— 从几个选项里挑多个。
- *
- * @param {object} raw
- * @returns {string}
- */
-function compileMulti(raw) {
-  const options = normalizeOptions(raw.options);
-  const picked = Array.isArray(raw.picked) ? raw.picked.map(String) : [];
-  return '<Multi'
-    + attr('header', raw.header)
-    + attr('question', raw.question)
-    + attr('options', options)
-    + attr('picked', picked)
+    + attr('multi', multi ? true : undefined)
+    + attr('picked', multi ? undefined : single)
+    + attr('pickedMulti', multi ? list : undefined)
     + attr('allowCustom', raw.allow_custom === false ? false : true)
     + attr('placeholder', raw.placeholder)
     + attr('label', raw.label)
@@ -215,13 +202,12 @@ const ACTION_COMPILERS = {
   text: compileText,
   markdown: compileMarkdown,
   ask: compileAsk,
-  multi: compileMulti,
   rank: compileRank,
   derive: compileDerive
 };
 
 /** 别名：旧模板还在用这些名字。 */
-const COMPILER_ALIASES = { textarea: 'text', input: 'text', choose: 'ask' };
+const COMPILER_ALIASES = { textarea: 'text', input: 'text', choose: 'ask', multi: 'ask' };
 
 /**
  * 编译一章。
