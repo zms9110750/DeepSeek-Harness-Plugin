@@ -1706,7 +1706,10 @@ window.__ModuleLoader__.load({
                   color: 'var(--dsw-alias-label-secondary)',
                 },
               },
-              String(children.length + outLinks.length + inLinks.length + (node.parent ? 1 : 0)),
+              /* 计数只算展开面板里真有的：子任务 + 出边 + 入边。
+                 父任务不算 —— 它在同一行前面单独显示，面板里没有它。
+                 （+ (node.parent ? 1 : 0) 会让只有父节点的事项显示「关系 1」） */
+              String(children.length + outLinks.length + inLinks.length),
             ),
           ),
           node.parent

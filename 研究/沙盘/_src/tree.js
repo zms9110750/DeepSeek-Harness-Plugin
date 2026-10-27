@@ -173,6 +173,9 @@ function renderTree(box, tasks) {
       el('div', {class:'top'},
         el('span', {class:'tid', style:{color}}, t.id),
         el('span', {class:'tk', style:{color}}, KIND_LABEL[t.kind] || t.kind),
+        /* 领域：只写在类别后面。用户原话：
+           > 科技树模式下，目标的 label 后面还要放领域的 label。 */
+        el('span', {class:'tk', style:{color, opacity:'0.65'}}, DOMAIN_LABEL[domainOf(t)] || domainOf(t)),
         el('span', {style:{marginLeft:'auto', color:toneOf(t.status), fontSize:'8px'}}, '●')),
       el('div', {class:'tt'}, t.title)));
   }

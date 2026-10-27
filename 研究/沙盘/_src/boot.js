@@ -32,25 +32,6 @@ document.querySelectorAll('.vw').forEach((btn) => {
   });
 });
 
-/* ── 筛选 ── */
-document.querySelectorAll('.filters .chip').forEach((chip) => {
-  chip.addEventListener('click', () => {
-    document.querySelectorAll('.filters .chip').forEach((c) => c.classList.remove('on'));
-    chip.classList.add('on');
-    state.filter = chip.textContent.trim();
-    renderAll();
-  });
-});
-
-/* ── 搜索 ── */
-const searchBox = document.getElementById('search');
-if (searchBox) {
-  searchBox.addEventListener('input', (event) => {
-    state.search = event.target.value;
-    renderAll();
-  });
-}
-
 /* ── 底部自由文本 ── */
 const exportBtn = document.getElementById('exportBtn');
 if (exportBtn) exportBtn.addEventListener('click', () => { saveDraft(); });

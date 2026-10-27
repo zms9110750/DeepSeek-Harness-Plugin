@@ -35,3 +35,56 @@ function sectionsOf(type) {
     return { id: row[0], label: row[1], type: ['textarea'], required: false };
   });
 }
+
+const DOMAIN_LABEL = { code: '代码', writing: '写作', art: '绘画', general: '通用' };
+
+/**
+ * 一条事项的领域。
+ *
+ * 数据里没有单独的 domain 字段 —— 领域由模板决定。
+ * 模板归属哪个领域在 TEMPLATES 表里（modal.js），这里按 type 反查。
+ * 查不到就归「通用」。
+ *
+ * @param {object} task
+ * @returns {string}
+ */
+function domainOf(task) {
+  const found = (typeof TEMPLATES !== 'undefined' ? TEMPLATES : []).find((x) => x.code === task.type);
+  return found ? found.domain : 'general';
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   过滤菜单的三列定义
+
+   用户原话：
+     > 过滤栏，应该做二级菜单。点击展开以后才有过滤选项。
+     > 一级菜单是"状态"，"类别"，"领域"。
+     > 当二级点进去的时候，他还会从旁边展开三级菜单（占文档流）。
+     > 例如"搁置"->"需要信息，需要权限"。"完成"-》"成功"，"失败"，"取消"。
+     > 而类别，就是这个类别下面的模板。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 状态：组 → 具体状态。 */
+const STATUS_TREE = [
+  { key: '进行', children: ['提交', '处理中'] },
+  { key: '搁置', children: ['需要补充', '需要授权'] },
+  { key: '完成', children: ['完成', '失败', '取消'] },
+  { key: '草稿', children: ['未指定'] }
+];
+
+/** 类别。 */
+const KIND_TREE = [
+  { key: 'goal', label: '目标', children: [] },
+  { key: 'design', label: '设计', children: [] },
+  { key: 'record', label: '记录', children: [] },
+  { key: 'work', label: '工作', children: [] }
+];
+
+/** 领域 → 该领域下的模板。 */
+const DOMAIN_TREE = [
+  { key: 'code', label: '代码', children: [] },
+  { key: 'writing', label: '写作', children: [] },
+  { key: 'art', label: '绘画', children: [] },
+  { key: 'general', label: '通用', children: [] }
+];

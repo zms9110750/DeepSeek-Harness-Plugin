@@ -29,6 +29,7 @@ const MODAL = read('_src/modal.js');
 const BODY = read('_src/body.js');
 const RENDER = read('_src/render.js');
 const BOOT = read('_src/boot.js');
+const FILTERS = read('_src/filters.js');
 
 /**
  * 生成一份页面。
@@ -53,6 +54,7 @@ function page(o) {
 		BODY,
 		RENDER,
 		MODAL,
+		FILTERS,
 		BOOT
 	].join('\n\n');
 
@@ -300,14 +302,7 @@ ${o.lede}
 
     <div class="groups" id="groups"></div>
 
-    <div class="filters">
-      <button class="chip on" type="button">全部</button>
-      <button class="chip" type="button">进行</button>
-      <button class="chip" type="button">搁置</button>
-      <button class="chip" type="button">完成</button>
-      <button class="chip" type="button">草稿</button>
-      <input class="search" type="search" placeholder="搜编号或标题…" id="search">
-    </div>
+    <div class="filters" id="filters"></div>
 
     <div class="rows" id="rows" hidden></div>
     <div class="treeview" id="treeview"></div>

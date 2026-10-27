@@ -94,6 +94,13 @@ function el(tag, props, ...children) {
 const state = {
   view: 'tree',
   group: 'g-2',
+  /* 过滤：三个维度各自多选，维度之间是「与」 */
+  filterOpen: '',
+  filterSub: '',
+  filterStatus: [],
+  filterKinds: [],
+  filterDomains: [],
+  filterTypes: [],
   filter: '全部',
   search: '',
   selected: '',
@@ -129,12 +136,49 @@ function renderGroups() {
   box.appendChild(el('button', {class:'btn', type:'button', style:{fontSize:'11.5px',padding:'3px 9px'}}, '显示已归档'));
 }
 
+/**
+ * 按当前筛选条件过滤。
+ *
+ * 三个维度可以同时生效：
+ *   status  组 / 具体状态（「搁置」→ 需要补充 / 需要授权）
+ *   kinds   类别（目标 / 设计 / 记录 / 工作）
+ *   domains 领域（代码 / 写作 / 绘画 / 通用）
+ *
+ * 每个维度里选多个是「或」，不同维度之间是「与」。
+ *
+ * @returns {Array}
+ */
 function visibleTasks() {
   let list = DB.slice();
-  if (state.filter !== '全部') {
-    if (state.filter === '草稿') list = list.filter((t) => t.status === '未指定');
-    else list = list.filter((t) => groupOf(t.status) === state.filter);
+
+  /* 状态：选了组就按组，选了具体状态就按状态 */
+  if (state.filterStatus.length > 0) {
+    list = list.filter((t) => {
+      if (state.filterStatus.includes('草稿')) {
+        if (t.status === '未指定') return true;
+      }
+      const group = groupOf(t.status);
+      if (state.filterStatus.includes(group)) return true;
+      return state.filterStatus.includes(t.status);
+    });
   }
+
+  /* 类别 */
+  if (state.filterKinds.length > 0) {
+    list = list.filter((t) => state.filterKinds.includes(t.kind));
+  }
+
+  /* 领域 */
+  if (state.filterDomains.length > 0) {
+    list = list.filter((t) => state.filterDomains.includes(domainOf(t)));
+  }
+
+  /* 模板（从类别/领域的三级菜单里选的） */
+  if (state.filterTypes.length > 0) {
+    list = list.filter((t) => state.filterTypes.includes(t.type));
+  }
+
+  /* 搜索 */
   if (state.search.trim() !== '') {
     const q = state.search.trim().toLowerCase();
     list = list.filter((t) => (t.id + ' ' + t.title).toLowerCase().includes(q));
@@ -180,22 +224,36 @@ function renderDetail() {
   const color = KIND_COLOR[t.kind] || 'var(--text-3)';
 
   /* ── 头部 ── */
+  /* 头部：编号在左、标题占右边整块。
+     GU-02   用户任务：剩下没做完的 5 条
+     目标 通用                      ← 编号下面半行放两个标签
+     右下角三个图标
+
+     用户原话：
+       > 让标题大一点。GU-02 小一点。让 GU-02 在标题的左边，他们在一行。
+       > 然后 GU-02 只有半行高度，他的下面半行放「目标」「通用」这两个 label。
+       > 沙盘详情页的 label 写错了。「GU-02」的右边是「目标」。
+       > 再右边应该是「领域」。而他是「GU」。冗余信息。 */
   const head = el('div', {class:'d-head'},
-    el('div', {class:'d-top'},
-      el('span', {class:'id', style:{color}}, t.id),
-      el('span', {class:'kind', style:{color, background:'rgba(0,0,0,.05)'}}, KIND_LABEL[t.kind] || t.kind),
-      el('span', {class:'tpl'}, t.type),
-      el('span', {class:'grow', style:{flex:'1'}}),
-      el('button', {class:'icon-btn', type:'button', title:'编辑标题与正文',
-        onclick(){ openEditor(t); }}, '✎'),
-      el('button', {class:'icon-btn', type:'button', title:'删除（连子事项）',
-        onclick(){
-          if (confirm('删除 ' + t.id + ' 和它下面所有子事项？')) deleteTask(t.id);
-        }}, '🗑'),
-      el('button', {class:'icon-btn', type:'button', title:'关闭',
-        onclick(){ state.selected = ''; renderAll(); }}, '✕')
-    ),
-    el('h3', null, t.title)
+    el('div', {class:'d-head-grid'},
+      /* 左列：编号 + 两个标签（编号只占半行高） */
+      el('div', {class:'d-head-left'},
+        el('span', {class:'id', style:{color}}, t.id),
+        el('div', {class:'d-head-tags'},
+          el('span', {class:'kind', style:{color, background:'rgba(0,0,0,.05)'}}, KIND_LABEL[t.kind] || t.kind),
+          el('span', {class:'domain'}, DOMAIN_LABEL[domainOf(t)] || domainOf(t)))),
+      /* 右列：标题 + 图标 */
+      el('div', {class:'d-head-right'},
+        el('div', {class:'d-head-title'}, t.title),
+        el('div', {class:'d-head-icons'},
+          el('button', {class:'icon-btn', type:'button', title:'编辑标题与正文',
+            onclick(){ openEditor(t); }}, '✎'),
+          el('button', {class:'icon-btn', type:'button', title:'删除（连子事项）',
+            onclick(){
+              if (confirm('删除 ' + t.id + ' 和它下面所有子事项？')) deleteTask(t.id);
+            }}, '🗑'),
+          el('button', {class:'icon-btn', type:'button', title:'关闭',
+            onclick(){ state.selected = ''; renderAll(); }}, '✕'))))
   );
 
   /* 状态标签 + 二级菜单 */
@@ -244,7 +302,10 @@ function renderDetail() {
   const children = DB.filter((x) => x.parent === t.id).map((x) => x.id);
   const outLinks = [];
   const inLinks = DB.filter((x) => x.links && x.links.includes(t.id)).map((x) => x.id);
-  const relCount = children.length + outLinks.length + inLinks.length + (t.parent ? 1 : 0);
+  /* 计数只算展开面板里真有的：子任务 + 出边 + 入边。
+     父任务不算 —— 它在上面单独一格，面板里没有它。
+     （之前 + (t.parent ? 1 : 0) 导致 WI-03 只有父节点却显示「关系 1」） */
+  const relCount = children.length + outLinks.length + inLinks.length;
 
   const parentRow = el('div', {class:'parent-row'},
     el('button', {
@@ -362,6 +423,7 @@ const DRAFT_KEY = 'taskboard-draft';
 
 /* 按视图分发：科技树 or 列表。 */
 function renderAll() {
+  renderFilters();
   renderGroups();
   const listBox = document.getElementById('rows');
   const treeBox = document.getElementById('treeview');
