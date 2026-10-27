@@ -187,26 +187,84 @@ function openCreator(init) {
     oninput(e) { draft.parent = e.target.value; }
   })));
 
-  left.appendChild(field('子工作空间', el('input', {
-    type:'text', placeholder:'绝对路径（空 = 会话目录）',
-    oninput(e) { draft.workspace = e.target.value; }
-  })));
+  /* ── 两个可激活的选项卡 ──────────────────────────────────
+   *
+   * 用户原话：
+   *   > 只有标题，模板，父任务是在外面的。关系，和更多，是收纳的。
+   *
+   * 所以首屏只有三件事。这两个都可以不激活 —— 都不点的时候，
+   * 对话框就是「标题 / 模板 / 父任务 / 正文」，最干净。
+   * 点已激活的那个可以取消；点另一个则切换过去（互斥）。
+   */
+  const tabRel = el('button', {class:'tab', type:'button', 'aria-pressed':'false'},
+    '关系 ', el('span', {class:'cnt', id:'relCount'}, '0'));
+  const tabAdv = el('button', {class:'tab', type:'button', 'aria-pressed':'false'}, '高级设置');
+  const tabs = el('div', {class:'tabs'}, tabRel, tabAdv);
 
-  left.appendChild(field('额外工作区', el('input', {
-    type:'text', placeholder:'逗号分隔的绝对路径（可空）',
-    oninput(e) { draft.workspaces = e.target.value; }
-  })));
+  /* 关系面板 */
+  const relList = el('div', {class:'rel-list'});
+  const panelRel = el('div', {class:'tab-panel', hidden:true},
+    relList,
+    el('button', {class:'btn', type:'button', style:{padding:'5px 11px'},
+      onclick() { addRelRow(); }}, '＋ 添加关联'),
+    el('div', {class:'hint'}, '箭头从先决指向依赖方。「依赖」= 它不做完，这件事不能开始'));
 
-  left.appendChild(field('权限', el('select', {onchange(e) { draft.permission = e.target.value; }},
-    el('option', {value:''}, '（不指定，按会话档位）'),
-    el('option', {value:'仅可查看'}, '仅可查看'),
-    el('option', {value:'工作区内修改'}, '工作区内修改'),
-    el('option', {value:'完全权限'}, '完全权限'),
-    el('option', {value:'工具全关'}, '工具全关'))));
+  /** 加一行关联。 */
+  function addRelRow() {
+    const row = el('div', {class:'rel-row'},
+      el('select', {class:'select rel-kind'},
+        el('option', null, '依赖'), el('option', null, '相关'),
+        el('option', null, '约束'), el('option', null, '参考')),
+      el('input', {class:'input rel-target', placeholder:'事项编号或标题，如 GU-01'}),
+      el('span', {class:'rel-dir'}, '← 它先于这件事'),
+      el('button', {class:'rel-del', type:'button', title:'删除',
+        onclick() { row.remove(); syncRelCount(); }}, '✕'));
+    relList.appendChild(row);
+    syncRelCount();
+  }
+  function syncRelCount() {
+    const n = relList.querySelectorAll('.rel-row').length;
+    const box = tabs.querySelector('#relCount');
+    if (box) box.textContent = String(n);
+  }
 
-  left.appendChild(field('关联', el('div', null,
-    el('div', {class:'hint', style:{marginBottom:'5px'}}, '箭头从先决指向依赖方'),
-    el('button', {class:'btn', type:'button', style:{padding:'4px 11px'}}, '＋ 添加关联'))));
+  /* 高级设置面板 */
+  const panelAdv = el('div', {class:'tab-panel', hidden:true},
+    field('子工作空间', el('input', {type:'text', placeholder:'空 = 会话目录',
+      oninput(e) { draft.workspace = e.target.value; }})),
+    field('额外可读目录', el('input', {type:'text', placeholder:'逗号分隔的绝对路径，可空',
+      oninput(e) { draft.workspaces = e.target.value; }})),
+    field('权限', el('select', {onchange(e) { draft.permission = e.target.value; }},
+      el('option', {value:''}, '（不指定，按会话档位）'),
+      el('option', {value:'仅可查看'}, '仅可查看'),
+      el('option', {value:'工作区内修改'}, '工作区内修改'),
+      el('option', {value:'完全权限'}, '完全权限'),
+      el('option', {value:'工具全关'}, '工具全关'))));
+
+  /** 同步两个面板的显示。 */
+  function syncTabs() {
+    panelRel.hidden = tabRel.getAttribute('aria-pressed') !== 'true';
+    panelAdv.hidden = tabAdv.getAttribute('aria-pressed') !== 'true';
+  }
+
+  /** 点选项卡：已激活则取消，未激活则激活并取消另一个。 */
+  function press(tab, other) {
+    const on = tab.getAttribute('aria-pressed') === 'true';
+    if (on) {
+      tab.setAttribute('aria-pressed', 'false');
+    } else {
+      tab.setAttribute('aria-pressed', 'true');
+      other.setAttribute('aria-pressed', 'false');
+    }
+    syncTabs();
+  }
+
+  tabRel.addEventListener('click', () => press(tabRel, tabAdv));
+  tabAdv.addEventListener('click', () => press(tabAdv, tabRel));
+
+  left.appendChild(tabs);
+  left.appendChild(panelRel);
+  left.appendChild(panelAdv);
 
   right.appendChild(el('div', {class:'lbl'}, '正文'));
   right.appendChild(el('textarea', {
