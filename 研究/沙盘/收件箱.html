@@ -21,10 +21,9 @@
     padding:5px 11px;border:1px solid var(--brand);border-radius:6px}
   .toplink:hover{background:rgba(59,125,216,.07)}
 
-  .layout{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:18px;align-items:start}
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:18px;align-items:start}
   @media(max-width:1180px){.layout{grid-template-columns:1fr}}
 
-  /* ── 面板 ── */
   .panel{background:var(--card);border:1px solid var(--border);border-radius:10px;
     box-shadow:0 1px 3px rgba(16,18,22,.06),0 8px 24px rgba(16,18,22,.05);overflow:hidden}
   .panel-head{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border)}
@@ -36,14 +35,12 @@
   .btn:hover{border-color:#b9bdc2}
   .btn.primary{background:var(--black);border-color:var(--black);color:#fff;font-weight:550}
 
-  /* 分组条 */
   .groups{display:flex;align-items:center;gap:6px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;background:#fcfcfd}
   .group{font:inherit;font-size:12px;padding:4px 11px;border-radius:14px;border:1px solid var(--border-2);
     background:#fff;color:var(--text-2);cursor:pointer}
   .group.on{background:var(--black);border-color:var(--black);color:#fff;font-weight:600}
   .group .n{opacity:.65;font-size:11px;margin-left:3px}
 
-  /* 筛选条 */
   .filters{display:flex;align-items:center;gap:6px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
   .chip{font:inherit;font-size:11.5px;padding:3px 10px;border-radius:12px;border:1px solid var(--border-2);
     background:#fff;color:var(--text-2);cursor:pointer}
@@ -51,37 +48,6 @@
   .search{font:inherit;font-size:12px;padding:5px 9px;border-radius:6px;border:1px solid var(--border-2);
     background:#fff;outline:none;width:150px;margin-left:auto}
 
-  /* 图例：解释连线颜色的，不是视图切换 */
-  .legend{display:inline-flex;align-items:center;gap:12px}
-  .legend[hidden]{display:none}
-  .lg{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-3)}
-  .lg svg{display:block}
-
-  /* 视图切换 */
-  .views{display:inline-flex;border:1px solid var(--border-2);border-radius:6px;overflow:hidden}
-  .vw{font:inherit;font-size:11.5px;padding:4px 11px;border:0;background:#fff;
-    color:var(--text-2);cursor:pointer}
-  .vw + .vw{border-left:1px solid var(--border-2)}
-  .vw.on{background:var(--black);color:#fff;font-weight:600}
-
-  /* 科技树 / 链接图 */
-  .treeview{height:520px;overflow:auto;padding:12px 14px;position:relative}
-  .treeview[hidden]{display:none}
-  .tree-canvas{position:relative;margin:0 auto;min-width:100%}
-  .tree-node{position:absolute;box-sizing:border-box;width:150px;height:50px;
-    padding:6px 8px;display:flex;flex-direction:column;gap:2px;
-    background:#fff;border:2px solid var(--border-2);border-radius:9px;
-    cursor:pointer;transition:border-color .12s,box-shadow .12s}
-  .tree-node:hover{border-color:var(--brand);box-shadow:0 2px 8px rgba(59,125,216,.18)}
-  .tree-node.on{border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}
-  .tree-node .top{display:flex;align-items:center;gap:5px}
-  .tree-node .tid{font-size:10.5px;font-weight:700}
-  .tree-node .tk{font-size:9px;padding:0 4px;border-radius:2px;background:rgba(0,0,0,.05)}
-  .tree-node .tt{font-size:11px;font-weight:600;color:var(--text);
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .tree-empty{display:grid;place-items:center;height:100%;color:var(--text-3);font-size:12px}
-
-  /* 列表 */
   .rows{max-height:520px;overflow:auto}
   .row{display:grid;grid-template-columns:auto auto 1fr auto;align-items:center;gap:9px;
     padding:9px 14px;border-bottom:1px solid #f0f1f2;cursor:pointer;text-align:left;
@@ -93,7 +59,6 @@
   .row .title{color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .row .dot{font-size:8px;flex:none}
 
-  /* ── 详情 ── */
   .detail{background:var(--card);border:1px solid var(--border);border-radius:10px;
     box-shadow:0 1px 3px rgba(16,18,22,.06),0 8px 24px rgba(16,18,22,.05);
     display:flex;flex-direction:column;max-height:calc(100vh - 120px);position:sticky;top:16px}
@@ -107,10 +72,8 @@
   .icon-btn:hover{background:#f2f4f6}
   .d-head h3{margin:0 0 7px;font-size:16px;font-weight:650;line-height:1.35}
   .d-meta{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--text-2);flex-wrap:wrap}
-
   .status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:10px;
     font:inherit;font-size:11px;font-weight:600;border:1px solid transparent;background:transparent;cursor:pointer}
-  .status-pill:hover{border-color:currentColor}
   .status-menu{position:absolute;left:15px;top:calc(100% + 6px);z-index:30;width:236px;padding:5px;
     background:#fff;border:1px solid var(--border-2);border-radius:8px;
     box-shadow:0 4px 10px rgba(16,18,22,.08),0 16px 40px rgba(16,18,22,.16)}
@@ -122,11 +85,9 @@
   .menu-item .ic{flex:none;width:14px;text-align:center;opacity:.7}
   .menu-item.primary{color:var(--brand);font-weight:600}
   .menu-item.bad{color:var(--danger)}
-  .menu-sep{height:1px;background:var(--border);margin:5px 4px}
   .menu-note{font-size:10.5px;color:var(--text-3);padding:6px 9px;line-height:1.5;
     border-top:1px solid var(--border);margin-top:4px}
 
-  /* 父任务栏 */
   .parent-row{display:flex;align-items:center;gap:8px;padding:8px 15px;
     border-bottom:1px solid var(--border);flex:none;background:#fcfcfd}
   .rel-toggle{display:inline-flex;align-items:center;gap:5px;flex:none;padding:4px 9px;font:inherit;
@@ -146,7 +107,6 @@
     border-radius:6px;color:var(--text);cursor:pointer;margin-left:auto}
   .derive-btn:hover{border-color:var(--black);background:#f7f8f9}
 
-  /* 关系网 */
   .rel-body{padding:0 15px 10px;border-bottom:1px solid var(--border);background:#fbfbfc;flex:none}
   .rel-body[hidden]{display:none}
   .rel-headrow{display:grid;grid-template-columns:repeat(3,1fr);margin-top:10px;
@@ -169,7 +129,6 @@
     color:var(--brand);cursor:pointer;white-space:nowrap}
   .rel-item:hover{border-color:var(--brand)}
 
-  /* 正文区 */
   .d-body{overflow:auto;padding:4px 15px 14px;flex:1;min-height:0}
   .sec{border-top:1px solid var(--border);padding:11px 0 2px}
   .sec:first-child{border-top:0}
@@ -177,7 +136,7 @@
     color:var(--text-3);letter-spacing:.04em;margin-bottom:8px}
   .sec-title .n{font-size:10px;font-weight:700;padding:0 5px;border-radius:8px;
     background:#eceef0;color:var(--text-2);line-height:15px}
-  .prose{font-size:12.5px;line-height:1.7;white-space:pre-wrap}
+  .prose{font-size:12.5px;line-height:1.7;word-break:break-word}
   .prose code{font:11.5px ui-monospace,Menlo,Consolas,monospace;background:#f2f4f6;padding:1px 4px;border-radius:3px}
   .prose p{margin:0 0 8px}
   .prose h3{margin:12px 0 6px;font-size:14px;font-weight:650}
@@ -189,8 +148,17 @@
     background:#f7f8f9;color:var(--text-2);font-size:12px}
   .prose hr{margin:10px 0;border:0;border-top:1px solid var(--border)}
   .prose strong{font-weight:650}
+  .prose table{border-collapse:collapse;margin:0 0 9px;font-size:12px;width:100%}
+  .prose th,.prose td{border:1px solid var(--border);padding:4px 8px;text-align:left;vertical-align:top}
+  .prose th{background:#f2f4f6;font-weight:650;white-space:nowrap}
+  .prose td code{font-size:11px}
+  .prose pre.code{margin:0 0 9px;padding:9px 11px;background:#f7f8f9;border:1px solid var(--border);
+    border-radius:6px;overflow:auto;font-size:11.5px;line-height:1.55}
+  .prose pre.code code{background:transparent;padding:0;font-family:ui-monospace,Menlo,Consolas,monospace;
+    color:var(--text);white-space:pre}
+  .prose pre.code code[data-lang]::before{content:attr(data-lang);display:block;font-size:10px;
+    color:var(--text-3);margin-bottom:4px;font-family:inherit}
 
-  /* 交互控件 */
   .inter{border:1px solid var(--border);border-radius:8px;padding:10px 11px 11px;margin-bottom:9px;background:#fcfcfd}
   .inter-cap{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;font-size:11.5px;
     font-weight:650;margin-bottom:8px}
@@ -219,23 +187,20 @@
     padding:9px 11px;font-size:11.5px;color:var(--text-2)}
   .unknown pre{margin:5px 0 0;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
 
-  /* 固定底部 */
   .d-foot{padding:10px 15px 12px;border-top:1px solid var(--border);flex:none;background:#fcfcfd}
   .ta{width:100%;min-height:48px;resize:vertical;padding:8px 10px;font:12.5px/1.55 inherit;
     font-family:inherit;border:1px solid var(--border-2);border-radius:6px;outline:none;background:#fff}
 
-  /* ── 计划输入区 ── */
   .writer{background:var(--card);border:1px solid var(--border);border-radius:10px;
     box-shadow:0 1px 3px rgba(16,18,22,.06);padding:14px 16px;margin-top:18px}
   .writer h2{margin:0 0 6px;font-size:14px;font-weight:650}
   .writer p{margin:0 0 10px;font-size:12px;color:var(--text-2)}
   .writer p code{font:11px ui-monospace,Menlo,Consolas,monospace;background:#eceef0;padding:1px 5px;border-radius:3px}
-  .writer textarea{width:100%;min-height:220px;padding:11px 12px;font:12.5px/1.7 ui-monospace,Menlo,Consolas,monospace;
+  .writer textarea{width:100%;min-height:200px;padding:11px 12px;font:12.5px/1.7 ui-monospace,Menlo,Consolas,monospace;
     border:1px solid var(--border-2);border-radius:7px;outline:none;resize:vertical;background:#fcfcfd}
   .writer-row{display:flex;align-items:center;gap:9px;margin-top:9px;font-size:11.5px;color:var(--text-3)}
   .saved{color:var(--work);font-weight:600}
 
-  /* ── 编辑 / 新建浮层 ── */
   .mask{position:fixed;inset:0;z-index:100;background:rgba(20,22,26,.32);
     display:grid;place-items:center;padding:24px}
   .modal{background:#fff;border-radius:10px;box-shadow:0 24px 60px rgba(16,18,22,.28);
@@ -243,14 +208,90 @@
   .modal-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border)}
   .modal-head b{font-size:14px;font-weight:650}
   .modal-body{padding:14px 16px;overflow:auto;display:grid;gap:11px}
-  .fld{display:grid;gap:4px}
-  .fld label{font-size:11.5px;font-weight:600;color:var(--text-2)}
-  .fld input,.fld select,.fld textarea{font:inherit;font-size:12.5px;padding:7px 10px;
-    border:1px solid var(--border-2);border-radius:6px;outline:none;background:#fff;width:100%}
-  .fld textarea{min-height:180px;font-family:ui-monospace,Menlo,Consolas,monospace;line-height:1.6;resize:vertical}
   .modal-foot{display:flex;align-items:center;gap:9px;padding:11px 16px;border-top:1px solid var(--border);background:#fcfcfd}
-  .modal-foot .grow{flex:1}
   .hint{font-size:10.5px;color:var(--text-3)}
+
+
+  /* ── 视图切换 ── */
+  .views{display:inline-flex;border:1px solid var(--border-2);border-radius:6px;overflow:hidden}
+  .vw{font:inherit;font-size:11.5px;padding:4px 11px;border:0;background:#fff;
+    color:var(--text-2);cursor:pointer}
+  .vw + .vw{border-left:1px solid var(--border-2)}
+  .vw.on{background:var(--black);color:#fff;font-weight:600}
+
+  /* ── 图例：解释连线颜色，不是视图切换 ── */
+  .legend{display:inline-flex;align-items:center;gap:12px}
+  .legend[hidden]{display:none}
+  .lg{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-3)}
+  .lg svg{display:block}
+
+  /* ── 科技树 ── */
+  .treeview{height:520px;overflow:auto;padding:12px 14px;position:relative}
+  .treeview[hidden]{display:none}
+  .tree-canvas{position:relative;margin:0 auto;min-width:100%}
+  .tree-node{position:absolute;box-sizing:border-box;width:150px;height:50px;
+    padding:6px 8px;display:flex;flex-direction:column;gap:2px;
+    background:#fff;border:2px solid var(--border-2);border-radius:9px;
+    cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .tree-node:hover{border-color:var(--brand);box-shadow:0 2px 8px rgba(59,125,216,.18)}
+  .tree-node.on{border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}
+  .tree-node .top{display:flex;align-items:center;gap:5px}
+  .tree-node .tid{font-size:10.5px;font-weight:700}
+  .tree-node .tk{font-size:9px;padding:0 4px;border-radius:2px;background:rgba(0,0,0,.05)}
+  .tree-node .tt{font-size:11px;font-weight:600;color:var(--text);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tree-empty{display:grid;place-items:center;height:100%;color:var(--text-3);font-size:12px}
+
+  /* ── 新建/编辑浮层（照原型「建议版」）── */
+  .field{display:grid;gap:4px}
+  .lbl{font-size:11px;font-weight:600;color:var(--text-2);display:flex;align-items:center;gap:3px}
+  .req{color:var(--danger);font-weight:700}
+  .modal-body.two-col{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+  .modal-body.two-col > div{min-width:0}
+  .modal-body input[type="text"],.modal-body select,.modal-body textarea{
+    font:inherit;font-size:12.5px;padding:7px 10px;border:1px solid var(--border-2);
+    border-radius:6px;outline:none;background:#fff;width:100%;box-sizing:border-box}
+  .modal-body input[type="text"]:focus,.modal-body select:focus,.modal-body textarea:focus{
+    border-color:var(--brand);box-shadow:0 0 0 2px rgba(59,125,216,.1)}
+  .modal-body textarea{font-family:ui-monospace,Menlo,Consolas,monospace;line-height:1.6;resize:vertical}
+
+  /* 模板选择按钮 */
+  .tpl-btn{display:flex;align-items:center;gap:7px;width:100%;padding:7px 10px;
+    font:inherit;font-size:12.5px;background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;cursor:pointer;text-align:left}
+  .tpl-btn:hover{border-color:#b9bdc2}
+  .tpl-btn .code{font-size:10.5px;font-weight:700;padding:1px 5px;border-radius:3px;
+    background:#eceef0;color:var(--text-2)}
+  .tpl-btn .chev{margin-left:auto;font-size:9px;color:var(--text-3)}
+
+  /* 弹出的三列面板 */
+  .tpl-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:40;
+    background:#fff;border:1px solid var(--border-2);border-radius:8px;
+    box-shadow:0 4px 10px rgba(16,18,22,.08),0 16px 40px rgba(16,18,22,.16);
+    width:520px;max-width:calc(100vw - 80px);max-height:60vh;overflow:auto}
+  .tpl-pop[hidden]{display:none}
+  .tpl-grid{display:grid;grid-template-columns:1fr 1fr 1.35fr;max-height:300px;overflow:auto}
+  .tpl-col{border-right:1px solid var(--border);padding:5px 4px 6px}
+  .tpl-col:last-child{border-right:0}
+  .tpl-col-head{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.06em;
+    padding:5px 8px 4px}
+  .tpl-item{display:flex;align-items:center;gap:6px;width:100%;padding:5px 8px;
+    font:inherit;font-size:12px;text-align:left;background:transparent;border:0;
+    border-radius:5px;cursor:pointer;color:var(--text)}
+  .tpl-item:hover{background:#f2f4f6}
+  .tpl-item.on{background:#eef3fb;color:var(--brand);font-weight:600}
+  .tpl-item .radio{flex:none;width:11px;height:11px;border-radius:50%;
+    border:1.5px solid var(--border-2)}
+  .tpl-item.on .radio{border-color:var(--brand);background:var(--brand);
+    box-shadow:inset 0 0 0 2px #fff}
+  .tpl-item .k-letter,.tpl-item .tpl-code{flex:none;font-size:10px;font-weight:700;
+    color:var(--text-3);width:12px;text-align:center}
+  .tpl-item.on .k-letter,.tpl-item.on .tpl-code{color:var(--brand)}
+  .tpl-item .tpl-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tpl-preview{border-top:1px solid var(--border);padding:7px 10px;font-size:11px;
+    color:var(--text-3)}
+  .tpl-preview b{color:var(--text);font-weight:700}
+
 </style>
 </head>
 <body>
@@ -258,16 +299,12 @@
 <a class="toplink" href="/work">切换到工作区 →</a>
 <h1>收件箱 · 给 AI 派活</h1>
 <p class="sub">
-  <b>这一份是你写给我看的。</b>改动会落盘到
-  <code>研究/沙盘/收件箱.json</code> 和 <code>收件箱-草稿.md</code>，我直接读文件就能拿到 ——
-  不用复制粘贴，也不用在对话里复述。
-  数据格式你随便改，我不会因为它崩掉（读不出来我就问你）。
+  <b>这一份是你写给我看的。</b>改动会落盘到 <code>研究/沙盘/收件箱.json</code>，
+  我直接读文件就能拿到 —— 不用复制粘贴，也不用在对话里复述。
   <br><span id="syncState" style="color:var(--work)">正在连接…</span>
 </p>
 
 <div class="layout">
-
-  <!-- ══════ 列表 ══════ -->
   <div class="panel">
     <div class="panel-head">
       <span class="panel-title">任务</span>
@@ -298,22 +335,17 @@
       <input class="search" type="search" placeholder="搜编号或标题…" id="search">
     </div>
 
-    <div class="rows" id="rows"></div>
-    <div class="treeview" id="treeview" hidden></div>
+    <div class="rows" id="rows" hidden></div>
+    <div class="treeview" id="treeview"></div>
   </div>
 
-  <!-- ══════ 详情 ══════ -->
   <div class="detail" id="detail"></div>
 </div>
 
-<!-- ══════ 计划输入区 ══════ -->
 <div class="writer">
   <h2>要补的话（自由文本）</h2>
-  <p>
-    列表里写不下的东西写这儿 —— 比如「这个版式我不满意，改成……」、「先别管某某功能」。
-    存成 <code>收件箱-草稿.md</code>，我读得到。
-  </p>
-  <textarea id="draft" placeholder="例如：&#10;- 详情页要改成右分栏&#10;- 状态模型换成四类别&#10;- 抽屉位置再往左 4px"></textarea>
+  <p>列表里写不下的东西写这儿 —— 存成 <code>收件箱-草稿.md</code>，我读得到。</p>
+  <textarea id="draft"></textarea>
   <div class="writer-row">
     <button class="btn primary" type="button" id="exportBtn">立即保存</button>
     <button class="btn" type="button" id="clearBtn">清空</button>
@@ -323,9 +355,7 @@
 </div>
 
 <script>
-/* ══════════════════════════════════════════════════════════════
-   写死的数据 —— 9 条真实样本
-   ══════════════════════════════════════════════════════════════ */
+/* 内置样本（首次打开或服务没起时用）。 */
 const TASKS = [
   {
     id:'GU-01', title:'用户任务：剩下没做完的 5 条', type:'GU', kind:'goal', status:'提交',
@@ -384,27 +414,25 @@ const TASKS = [
 ];
 
 /* ══════════════════════════════════════════════════════════════
-   收件箱的 store —— 用户写，落盘给 AI 读
+   数据层 —— 走服务端 API，落盘到文件
 
-   ## 和另一个页面的区别
+   ## 为什么不用 localStorage
 
-   这一份是「用户 → AI」的通道。用户在这里派活，写的内容**必须落盘**，
-   否则 AI 读不到。所以走服务端 API 写文件，不用 localStorage。
+   收件箱是「用户写，AI 读」的通道。localStorage 只活在浏览器里，
+   AI 读不到；下载文件又要用户多点几次。
 
-   另一份（工作区）完全独立：那是 AI 改版的地方，数据格式随时会变，
-   两边不共用一份数据。用户原话：
+   所以起一个极小的本机服务（server.mjs），页面直接 POST，服务端写文件。
 
-     > 这两个是隔离的。他们不共用数据。因为连数据格式都要在后者里面
-     > 进行决定。会有破坏性更新，等会可能读不出来。
+   ## 两个页面两份数据
 
-   ## 两种东西分开存
+     收件箱 → /api/inbox → 收件箱.json
+     工作区 → /api/work  → 工作区.json
 
-     items   待办条目（列表里那些卡片）       → 收件箱.json
-     draft   自由文本（底部的计划区）         → 收件箱-草稿.md
-
-   为什么分开：条目是结构化的（id/标题/状态），自由文本是给 AI 读的散文。
-   混在一起反而两边都不好用。
+   完全隔离：工作区那边格式随时会变，不能牵连收件箱。
    ══════════════════════════════════════════════════════════════ */
+
+/** 服务端路径前缀，由 build 脚本按页面替换。 */
+const API = '/api/inbox';
 
 let DB = [];
 let saveTimer = null;
@@ -413,7 +441,7 @@ let dirty = false;
 /** 从服务端读。 */
 async function loadFromServer() {
   try {
-    const response = await fetch('/api/inbox');
+    const response = await fetch(API);
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const payload = await response.json();
     DB = Array.isArray(payload.items) ? payload.items : [];
@@ -440,7 +468,7 @@ async function flushSave() {
   if (!dirty) return;
   dirty = false;
   try {
-    const response = await fetch('/api/inbox', {
+    const response = await fetch(API, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ items: DB })
@@ -459,18 +487,24 @@ function setSyncState(text, isError) {
   box.style.color = isError ? 'var(--danger)' : 'var(--work)';
 }
 
-/* ── 条目编辑 ── */
+/* ── 编号规则（和宿主一致）──
+   有模板 → 用模板编号（GU / WI / DP…）
+   空模板 → 用类别字母（G / D / R / W） */
+const KIND_PREFIX = { goal: 'G', design: 'D', record: 'R', work: 'W' };
 
-function nextId(type) {
-  const prefix = (type || 'XX').toUpperCase().slice(0, 2);
+function nextId(type, kind) {
+  const t = String(type || '').toUpperCase();
+  const prefix = t !== '' ? t : (KIND_PREFIX[kind] || 'X');
   const pattern = new RegExp('^' + prefix + '-(\\d+)$');
   let max = 0;
-  for (const t of DB) {
-    const m = pattern.exec(t.id);
+  for (const item of DB) {
+    const m = pattern.exec(item.id);
     if (m !== null) max = Math.max(max, Number(m[1]));
   }
   return prefix + '-' + String(max + 1).padStart(2, '0');
 }
+
+/* ── 条目编辑 ── */
 
 function patchTask(id, patch) {
   const i = DB.findIndex((t) => t.id === id);
@@ -481,18 +515,22 @@ function patchTask(id, patch) {
 }
 
 function createTask(init) {
-  const type = init.type || 'GU';
+  const type = init.type || '';
+  const kind = init.kind || 'goal';
   const task = {
-    id: nextId(type),
+    id: nextId(type, kind),
     title: init.title || '未命名',
     type,
-    kind: init.kind || 'goal',
+    kind,
     status: '未指定',
     parent: init.parent || '',
     links: '',
     tags: [],
     body: init.body || '',
-    note: ''
+    note: '',
+    workspace: init.workspace || '',
+    workspaces: init.workspaces || '',
+    permission: init.permission || ''
   };
   DB.push(task);
   scheduleSave();
@@ -523,89 +561,166 @@ function resetDB() {
   renderAll();
 }
 
+/* ── 底部自由文本 ── */
+
+let draftTimer = null;
+
+async function loadDraft() {
+  const ta = document.getElementById('draft');
+  if (!ta) return;
+  try {
+    const response = await fetch(API + '/draft');
+    if (response.ok) {
+      const payload = await response.json();
+      ta.value = payload.text || '';
+    }
+  } catch (failure) {
+    /* 服务没起就留空 */
+  }
+  updateHint();
+  ta.addEventListener('input', () => {
+    updateHint();
+    if (draftTimer !== null) clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveDraft, 700);
+  });
+}
+
+async function saveDraft() {
+  draftTimer = null;
+  const ta = document.getElementById('draft');
+  if (!ta) return;
+  try {
+    await fetch(API + '/draft', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: ta.value })
+    });
+    updateHint();
+  } catch (failure) {
+    /* 静默失败：底部提示已经够多了 */
+  }
+}
+
+function updateHint() {
+  const ta = document.getElementById('draft');
+  const box = document.getElementById('saveHint');
+  if (!ta || !box) return;
+  box.textContent = ta.value.trim() === ''
+    ? '空'
+    : (ta.value.length + ' 字 · ' + new Date().toLocaleTimeString('zh-CN'));
+  box.className = ta.value.trim() === '' ? '' : 'saved';
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   模板章节表 —— 只为了显示章节标题和顺序
+
+   正文存成 { want: {...}, done: {...} }，键是 id。
+   但界面上要显示「要什么」「什么算做到了」—— 那是模板里 type 的说明
+   或者章节的 label。沙盘不需要完整模板，能对上标题就行。
+   ══════════════════════════════════════════════════════════════ */
+const SECTION_LABELS = {
+  GU: [['want','要什么'],['done','什么算做到了'],['bounds','边界'],['split','怎么拆'],['other','其他']],
+  GA: [['want','要什么'],['done','什么算做到了'],['risk','风险'],['split','怎么拆'],['other','其他']],
+  GO: [['symptom','现象'],['measure','怎么衡量'],['enough','什么算够'],['split','怎么拆'],['other','其他']],
+  GV: [['want','要什么'],['done','什么算做到了'],['bounds','边界'],['split','怎么拆'],['other','其他']],
+  DP: [['problem','问题'],['plan','方案'],['cost','代价'],['alternative','别的选择'],['risk','风险'],['other','其他']],
+  DB: [['pain','痛点'],['scenario','场景'],['fitness','合不合适'],['precedent','先例'],['other','其他']],
+  DC: [['question','要定什么'],['options','选项'],['unknown','我还不知道什么'],['recommend','我的建议'],['other','其他']],
+  DI: [['goal','目标'],['contract','接口'],['errors','错误'],['breaking','破坏性'],['other','其他']],
+  DQ: [['ask','问什么'],['why','为什么要问'],['guess','我的猜测'],['other','其他']],
+  DT: [['setup','前置'],['persp','视角'],['style','风格'],['check','检查点'],['cost','代价'],['other','其他']],
+  RR: [['conclusion','结论'],['evidence','依据'],['limits','局限'],['deliver','交付'],['other','其他']],
+  RB: [['where','卡在哪'],['why','为什么'],['next','下一步'],['bypass','绕过'],['reason','原因'],['deliver','交付'],['other','其他']],
+  RD: [['what','是什么'],['repro','复现'],['expect','预期'],['actual','实际'],['scope','范围'],['accept','验收'],['deliver','交付'],['other','其他']],
+  RF: [['outcome','结果'],['root','根因'],['lesson','教训'],['apply','怎么用'],['deliver','交付'],['other','其他']],
+  WI: [['goal','目标'],['change','改什么'],['verify','怎么验'],['magic','魔法数字'],['other','其他']],
+  WF: [['repro','复现'],['expect','预期'],['root','根因'],['fix','修法'],['regression','回归'],['other','其他']],
+  WR: [['target','调研什么'],['how','怎么查'],['conclusion','结论'],['evidence','依据'],['other','其他']],
+  WX: [['reader','读者'],['path','读法'],['must','必须有'],['skip','可以跳过'],['verify','校验'],['deliver','交付'],['other','其他']],
+  WD: [['target','目标'],['approach','手法'],['scene','场景'],['leave','留白'],['verify','怎么验'],['other','其他']],
+  WC: [['setup','前置'],['order','顺序'],['check','检查点'],['leave','留白'],['other','其他']]
+};
+
+/** 取某模板的章节表；没有就返回空（渲染时回退成键名）。 */
+function sectionsOf(type) {
+  const rows = SECTION_LABELS[String(type || '').toUpperCase()] || [];
+  return rows.map(function (row) {
+    return { id: row[0], label: row[1], type: ['textarea'], required: false };
+  });
+}
+
+
+
 /* ══════════════════════════════════════════════════════════════
    科技树 —— 把事项铺成分层有向图
 
-   ## 为什么不用 dagre
+   真实插件用 dagre（Sugiyama）。这里写简化版：按依赖深度分列，
+   层内按父节点行号排序。10~30 个节点看不出差别。
 
-   真实插件用 dagre（Sugiyama：分层 → 交叉最小化 → 紧凑排列）。
-   但这两份 HTML 要能独立打开，不引外部依赖。所以写一个简化版：
-
-     ① 按依赖深度分层（列）
-     ② 每层内按父节点聚拢，减少交叉
-     ③ 行高均匀排开
-
-   代价是没有 dagre 那么紧凑，但 10~30 个节点看不出差别。
-
-   ## 边的方向
-
-   一律归一成「先决 → 依赖方」：
-
-     父 → 子
-     依赖（我依赖它）  →  它 → 我
-     派生（我派生它）  →  我 → 它
-     来源（我来自它）  →  它 → 我
-     其余            →  它 → 我
-
-   并按无向对去重 —— 同一段关系常常两边各写一次。
+   边的方向一律归一成「先决 → 依赖方」：
+     父 → 子 / 依赖:它 → 我 / 派生:我 → 它 / 来源:它 → 我
    ══════════════════════════════════════════════════════════════ */
 const TREE_NODE_W = 150;
 const TREE_NODE_H = 50;
 const TREE_GAP_X = 62;
 const TREE_GAP_Y = 16;
 
-/**
- * 算分层布局。
- *
- * @param {Array} tasks
- * @returns {{nodes: Array, edges: Array, width: number, height: number}}
- */
+/** 解析 links 字符串：`依赖:WI-01, 派生:DP-02` */
+function parseLinks(raw) {
+  const text = String(raw || '').trim();
+  if (text === '') return [];
+  const out = [];
+  for (const part of text.split(',')) {
+    const piece = part.trim();
+    if (piece === '') continue;
+    const cut = piece.indexOf(':');
+    if (cut < 0) out.push({ label: '相关', to: piece });
+    else out.push({ label: piece.slice(0, cut).trim() || '相关', to: piece.slice(cut + 1).trim() });
+  }
+  return out.filter((link) => link.to !== '');
+}
+
 function buildTree(tasks) {
   const byId = {};
   for (const t of tasks) byId[t.id] = t;
 
-  /* ── ① 收集边（归一方向 + 去重）── */
   const edges = [];
   const seen = new Set();
-  const addEdge = (src, dst, kind, label) => {
-    if (src === dst) return;
-    if (!byId[src] || !byId[dst]) return;
+  const addEdge = (src, dst, kind) => {
+    if (src === dst || !byId[src] || !byId[dst]) return;
     const key = src < dst ? src + '\u0000' + dst : dst + '\u0000' + src;
     if (seen.has(key)) return;
     seen.add(key);
-    edges.push({ src, dst, kind, label });
+    edges.push({ src, dst, kind });
   };
 
   for (const t of tasks) {
-    if (t.parent) addEdge(t.parent, t.id, 'parent', '');
+    if (t.parent) addEdge(t.parent, t.id, 'parent');
     for (const link of parseLinks(t.links)) {
-      if (link.label === '派生') addEdge(t.id, link.to, 'link', link.label);
-      else addEdge(link.to, t.id, 'link', link.label);
+      if (link.label === '派生') addEdge(t.id, link.to, 'link');
+      else addEdge(link.to, t.id, 'link');
     }
   }
 
-  /* ── ② 分层：最长路径深度（无环假设，环就退化成同层）── */
+  /* 分层：最长路径深度，最多 N 轮（防环） */
   const depth = {};
   for (const t of tasks) depth[t.id] = 0;
-
-  /* 迭代松弛，最多 N 轮（防环死循环） */
   for (let round = 0; round < tasks.length; round++) {
     let changed = false;
-    for (const e of edges) {
-      const want = depth[e.src] + 1;
-      if (depth[e.dst] < want) { depth[e.dst] = want; changed = true; }
+    for (const edge of edges) {
+      const want = depth[edge.src] + 1;
+      if (depth[edge.dst] < want) { depth[edge.dst] = want; changed = true; }
     }
     if (!changed) break;
   }
 
-  /* ── ③ 按层分组；层内按父节点的 y 排序，减少交叉 ── */
   const layers = [];
   for (const t of tasks) {
     const d = depth[t.id];
     if (!layers[d]) layers[d] = [];
     layers[d].push(t);
   }
-  /* 去掉空层（可能有跳号） */
   const live = layers.filter((l) => Array.isArray(l) && l.length > 0);
 
   const placed = {};
@@ -613,7 +728,6 @@ function buildTree(tasks) {
   let maxRows = 0;
 
   live.forEach((layer, col) => {
-    /* 层内排序键：父节点的行号（没有父就用 id 兜底） */
     layer.sort((a, b) => {
       const pa = a.parent && placed[a.parent] ? placed[a.parent].row : 999;
       const pb = b.parent && placed[b.parent] ? placed[b.parent].row : 999;
@@ -631,44 +745,13 @@ function buildTree(tasks) {
 
   return {
     nodes,
-    edges: edges.filter((e) => placed[e.src] && placed[e.dst]),
+    edges: edges.filter((edge) => placed[edge.src] && placed[edge.dst]),
     placed,
     width: live.length === 0 ? 0 : live.length * (TREE_NODE_W + TREE_GAP_X) - TREE_GAP_X,
     height: maxRows === 0 ? 0 : maxRows * (TREE_NODE_H + TREE_GAP_Y) - TREE_GAP_Y
   };
 }
 
-/**
- * 解析 links 字符串成 [{label, to}]。
- *
- * 格式：`依赖:WI-01, 派生:DP-02`（逗号分隔，冒号分标签和目标）
- *
- * @param {string} raw
- * @returns {Array<{label: string, to: string}>}
- */
-function parseLinks(raw) {
-  const text = String(raw || '').trim();
-  if (text === '') return [];
-  const out = [];
-  for (const part of text.split(',')) {
-    const piece = part.trim();
-    if (piece === '') continue;
-    const cut = piece.indexOf(':');
-    if (cut < 0) {
-      out.push({ label: '相关', to: piece });
-    } else {
-      out.push({ label: piece.slice(0, cut).trim() || '相关', to: piece.slice(cut + 1).trim() });
-    }
-  }
-  return out.filter((link) => link.to !== '');
-}
-
-/**
- * 渲染科技树。
- *
- * @param {HTMLElement} box
- * @param {Array} tasks
- */
 function renderTree(box, tasks) {
   box.innerHTML = '';
   if (tasks.length === 0) {
@@ -682,7 +765,6 @@ function renderTree(box, tasks) {
     height: (tree.height + 20) + 'px'
   }});
 
-  /* ── 连线（SVG）── */
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('width', String(tree.width + 20));
@@ -692,7 +774,6 @@ function renderTree(box, tasks) {
   svg.style.top = '0';
   svg.style.pointerEvents = 'none';
 
-  /* 箭头标记 */
   const defs = document.createElementNS(ns, 'defs');
   const marker = document.createElementNS(ns, 'marker');
   marker.setAttribute('id', 'tree-arrow');
@@ -729,7 +810,6 @@ function renderTree(box, tasks) {
   }
   canvas.appendChild(svg);
 
-  /* ── 节点 ── */
   for (const placed of tree.nodes) {
     const t = placed.node;
     const color = KIND_COLOR[t.kind] || 'var(--text-3)';
@@ -750,9 +830,35 @@ function renderTree(box, tasks) {
       el('div', {class:'tt'}, t.title)));
   }
 
-  /* 画布比容器窄时居中；宽了就让它从左边开始，靠滚动看右边 */
   box.appendChild(canvas);
 }
+
+
+const STATUS_GROUP = {
+  '未指定':[], '提交':['进行'], '处理中':['进行'],
+  '需要补充':['进行','搁置'], '需要授权':['进行','搁置'],
+  '完成':['完成'], '失败':['完成'], '取消':['完成'], '拒绝':['完成']
+};
+const groupOf = (s) => (STATUS_GROUP[s] || [])[0] || '草稿';
+const toneOf = (s) => {
+  const g = groupOf(s);
+  return g === '完成' ? 'var(--work)' : g === '搁置' ? 'var(--warn)' : g === '进行' ? 'var(--brand)' : 'var(--text-3)';
+};
+const KIND_COLOR = { goal:'var(--goal)', design:'var(--brand)', record:'var(--record)', work:'var(--work)' };
+const KIND_LABEL = { goal:'目标', design:'设计', record:'记录', work:'工作' };
+
+/* 状态转移表（和宿主 transitionBlocker 口径一致） */
+const TRANSITIONS = {
+  '未指定':[{to:'提交',label:'采纳',primary:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '提交':[{to:'处理中',label:'领取',primary:true},{to:'完成',label:'直接完成'},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '处理中':[{to:'完成',label:'完成',primary:true},{to:'失败',label:'失败',bad:true},{to:'取消',label:'取消',bad:true},{to:'需要补充',label:'搁置 · 需要补充'},{to:'需要授权',label:'搁置 · 需要授权'}],
+  '需要补充':[{to:'处理中',label:'继续',primary:true},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '需要授权':[{to:'处理中',label:'继续',primary:true},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '完成':[{to:'提交',label:'重开',primary:true}],
+  '失败':[{to:'提交',label:'重开',primary:true}],
+  '取消':[{to:'提交',label:'重开',primary:true}],
+  '拒绝':[{to:'提交',label:'重开',primary:true}]
+};
 
 /* ══════════════════════════════════════════════════════════════
    正文渲染 —— 按 action 分发（演示渲染器机制）
@@ -788,6 +894,8 @@ function md(source) {
   flushList();
   return out.join('');
 }
+
+
 
 function renderBody(task) {
   const body = task.body;
@@ -887,7 +995,7 @@ const state = {
   group: 'g-2',
   filter: '全部',
   search: '',
-  selected: TASKS[0].id,
+  selected: '',
   menuOpen: false,
   relOpen: false,
   /* 本地改的状态（不写盘，只是让界面能点） */
@@ -1147,191 +1255,13 @@ function deriveGoalStatus(t) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   底部自由文本 —— 落盘成 .md
+   计划区
    ══════════════════════════════════════════════════════════════ */
-let draftTimer = null;
+const DRAFT_KEY = 'taskboard-draft';
 
-async function loadDraft() {
-  const ta = document.getElementById('draft');
-  try {
-    const response = await fetch('/api/inbox/draft');
-    if (response.ok) {
-      const payload = await response.json();
-      ta.value = payload.text || '';
-    }
-  } catch (failure) {
-    /* 服务没起就留空 */
-  }
-  updateHint();
-  ta.addEventListener('input', () => {
-    updateHint();
-    if (draftTimer !== null) clearTimeout(draftTimer);
-    draftTimer = setTimeout(saveDraft, 700);
-  });
-}
-
-async function saveDraft() {
-  draftTimer = null;
-  const ta = document.getElementById('draft');
-  try {
-    await fetch('/api/inbox/draft', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: ta.value })
-    });
-    updateHint();
-  } catch (failure) {
-    /* 静默失败：底部提示已经够多了 */
-  }
-}
-
-function updateHint() {
-  const ta = document.getElementById('draft');
-  const box = document.getElementById('saveHint');
-  box.textContent = ta.value.trim() === '' ? '空' : (ta.value.length + ' 字 · ' + new Date().toLocaleTimeString('zh-CN'));
-  box.className = ta.value.trim() === '' ? '' : 'saved';
-}
-
-document.getElementById('exportBtn').addEventListener('click', () => { saveDraft(); });
-document.getElementById('clearBtn').addEventListener('click', () => {
-  if (!confirm('清空自由文本？')) return;
-  document.getElementById('draft').value = '';
-  saveDraft();
-  updateHint();
-});
-
-/* ══════════════════════════════════════════════════════════════
-   启动
-   ══════════════════════════════════════════════════════════════ */
-document.getElementById('newBtn').addEventListener('click', () => openCreator({}));
-document.getElementById('resetBtn').addEventListener('click', () => {
-  if (confirm('重置成最初的 9 条样本？当前改动会丢。')) resetDB();
-});
-
-/* 视图切换：科技树 / 列表 */
-document.querySelectorAll('.vw').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.vw').forEach((b) => b.classList.remove('on'));
-    btn.classList.add('on');
-    state.view = btn.dataset.view;
-    renderAll();
-  });
-});
-
-document.getElementById('search').addEventListener('input', (e) => {
-  state.search = e.target.value;
-  renderRows();
-});
-document.querySelectorAll('.filters .chip').forEach((chip) => {
-  chip.addEventListener('click', () => {
-    document.querySelectorAll('.filters .chip').forEach((c) => c.classList.remove('on'));
-    chip.classList.add('on');
-    state.filter = chip.textContent.trim();
-    renderRows();
-  });
-});
-
-
-/* ══════════════════════════════════════════════════════════════
-   编辑 / 新建浮层
-   ══════════════════════════════════════════════════════════════ */
-function modal(title, fields, onSave, saveLabel) {
-  closeModal();
-  const mask = el('div', {class:'mask'});
-  const body = el('div', {class:'modal-body'});
-  const inputs = {};
-  for (const f of fields) {
-    const wrap = el('div', {class:'fld'}, el('label', null, f.label));
-    let input;
-    if (f.type === 'textarea') {
-      input = el('textarea', {placeholder: f.placeholder || ''});
-      input.value = f.value || '';
-    } else if (f.type === 'select') {
-      input = el('select');
-      for (const opt of f.options) {
-        const o = el('option', {value: opt.value}, opt.label);
-        if (opt.value === f.value) o.selected = true;
-        input.appendChild(o);
-      }
-    } else {
-      input = el('input', {type:'text', placeholder: f.placeholder || ''});
-      input.value = f.value || '';
-    }
-    inputs[f.key] = input;
-    wrap.appendChild(input);
-    if (f.hint) wrap.appendChild(el('div', {class:'hint'}, f.hint));
-    body.appendChild(wrap);
-  }
-  const okBtn = el('button', {class:'btn primary', type:'button', onclick(){
-    const values = {};
-    for (const [k, node] of Object.entries(inputs)) values[k] = node.value;
-    onSave(values);
-    closeModal();
-  }}, saveLabel || '保存');
-
-  const box = el('div', {class:'modal'},
-    el('div', {class:'modal-head'}, el('b', null, title),
-      el('span', {class:'grow'}), el('button', {class:'icon-btn', type:'button', onclick: closeModal}, '✕')),
-    body,
-    el('div', {class:'modal-foot'},
-      el('span', {class:'hint'}, '改动会立刻存到 localStorage'),
-      el('span', {class:'grow'}),
-      el('button', {class:'btn', type:'button', onclick: closeModal}, '取消'),
-      okBtn));
-  mask.appendChild(box);
-  mask.addEventListener('click', (e) => { if (e.target === mask) closeModal(); });
-  document.body.appendChild(mask);
-  document.addEventListener('keydown', escClose);
-}
-function escClose(e) { if (e.key === 'Escape') closeModal(); }
-function closeModal() {
-  const old = document.querySelector('.mask');
-  if (old) old.remove();
-  document.removeEventListener('keydown', escClose);
-}
-
-function openEditor(t) {
-  modal('编辑 ' + t.id, [
-    { key:'title', label:'标题', value:t.title },
-    { key:'status', label:'状态', type:'select', value:t.status,
-      options:['未指定','提交','处理中','需要补充','需要授权','完成','失败','取消','拒绝'].map((s) => ({value:s,label:s})) },
-    { key:'kind', label:'类别', type:'select', value:t.kind,
-      options:[{value:'goal',label:'目标'},{value:'design',label:'设计'},{value:'record',label:'记录'},{value:'work',label:'工作'}] },
-    { key:'type', label:'模板', value:t.type, hint:'改模板只影响显示的前缀，不改正文结构' },
-    { key:'body', label:'正文', type:'textarea', value: typeof t.body === 'string' ? t.body : JSON.stringify(t.body, null, 2),
-      hint:'对象形态的正文就按 JSON 编辑' }
-  ], (v) => {
-    let body = v.body;
-    /* 看起来像 JSON 就尝试解析成对象 */
-    const trimmed = String(v.body || '').trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try { body = JSON.parse(trimmed); } catch (e) { /* 解析不了就当字符串 */ }
-    }
-    patchTask(t.id, { title:v.title, status:v.status, kind:v.kind, type:v.type, body });
-  });
-}
-
-function openCreator(init) {
-  modal('新建事项', [
-    { key:'title', label:'标题', placeholder:'一句话' },
-    { key:'type', label:'模板', value: init.type || 'GU', hint:'编号 = 模板前缀 + 该前缀下一个流水号' },
-    { key:'kind', label:'类别', type:'select', value: init.kind || 'goal',
-      options:[{value:'goal',label:'目标'},{value:'design',label:'设计'},{value:'record',label:'记录'},{value:'work',label:'工作'}] },
-    { key:'parent', label:'父任务', value: init.parent || '', hint:'从「派生子任务」进来时会自动填好' },
-    { key:'body', label:'正文', type:'textarea', placeholder:'Markdown，或 JSON（对象形态）' }
-  ], (v) => {
-    let body = v.body;
-    const trimmed = String(v.body || '').trim();
-    if (trimmed.startsWith('{')) {
-      try { body = JSON.parse(trimmed); } catch (e) {}
-    }
-    createTask({ title:v.title, type:v.type, kind:v.kind, parent:v.parent, body });
-  }, '创建');
-}
-
+/* 按视图分发：科技树 or 列表。 */
 function renderAll() {
   renderGroups();
-  // 按视图分发：科技树 or 列表
   const listBox = document.getElementById('rows');
   const treeBox = document.getElementById('treeview');
   const isTree = state.view === 'tree';
@@ -1348,47 +1278,404 @@ function renderAll() {
   renderDetail();
 }
 
+
+function escClose(e) { if (e.key === 'Escape') closeModal(); }
+function closeModal() {
+  const old = document.querySelector('.mask');
+  if (old) old.remove();
+  document.removeEventListener('keydown', escClose);
+}
+
+
 /* ══════════════════════════════════════════════════════════════
-   状态模型
+   新建 / 编辑浮层 —— 照「新建计划-原型.html」的建议版
+
+     左栏：标题 * / 模板（弹出三列）/ 父任务 / 子工作空间 / 额外工作区 / 权限 / 关联
+     右栏：正文
+     底部：取消 | 提交（都在右下 —— 原型批评了「提交在左下」）
+
+   模板选择器点开是三列：领域 / 类别 / 模板。
+   编号 = 类别字母 + 模板字母；空模板只有类别字母（G-01）。
    ══════════════════════════════════════════════════════════════ */
-const STATUS_GROUP = {
-  '未指定':[], '提交':['进行'], '处理中':['进行'],
-  '需要补充':['进行','搁置'], '需要授权':['进行','搁置'],
-  '完成':['完成'], '失败':['完成'], '取消':['完成'], '拒绝':['完成']
-};
-const groupOf = (s) => (STATUS_GROUP[s] || [])[0] || '草稿';
-const toneOf = (s) => {
-  const g = groupOf(s);
-  return g === '完成' ? 'var(--work)' : g === '搁置' ? 'var(--warn)' : g === '进行' ? 'var(--brand)' : 'var(--text-3)';
-};
-const KIND_COLOR = { goal:'var(--goal)', design:'var(--brand)', record:'var(--record)', work:'var(--work)' };
-const KIND_LABEL = { goal:'目标', design:'设计', record:'记录', work:'工作' };
 
-/* 状态转移表（和宿主 transitionBlocker 口径一致） */
-const TRANSITIONS = {
-  '未指定':[{to:'提交',label:'采纳',primary:true},{to:'拒绝',label:'拒绝',bad:true}],
-  '提交':[{to:'处理中',label:'领取',primary:true},{to:'完成',label:'直接完成'},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
-  '处理中':[{to:'完成',label:'完成',primary:true},{to:'失败',label:'失败',bad:true},{to:'取消',label:'取消',bad:true},{to:'需要补充',label:'搁置 · 需要补充'},{to:'需要授权',label:'搁置 · 需要授权'}],
-  '需要补充':[{to:'处理中',label:'继续',primary:true},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
-  '需要授权':[{to:'处理中',label:'继续',primary:true},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
-  '完成':[{to:'提交',label:'重开',primary:true}],
-  '失败':[{to:'提交',label:'重开',primary:true}],
-  '取消':[{to:'提交',label:'重开',primary:true}],
-  '拒绝':[{to:'提交',label:'重开',primary:true}]
-};
+const TEMPLATES = [
+  { code:'GU', letter:'U', kind:'goal',   name:'用户任务',   domain:'general', desc:'用户甩过来的一堆要求或问题；AI 拆成下面的事项去做。' },
+  { code:'GO', letter:'O', kind:'goal',   name:'目标·优化',  domain:'general', desc:'觉得哪里不好但说不出怎么改；先立目标，再拆。' },
+  { code:'GA', letter:'A', kind:'goal',   name:'目标·澄清',  domain:'general', desc:'用户说得含糊，先把要什么问清。' },
+  { code:'GV', letter:'V', kind:'goal',   name:'目标·验证',  domain:'general', desc:'为了验证一个假设而立的临时目标。' },
+  { code:'DP', letter:'P', kind:'design', name:'方案',       domain:'general', desc:'给一个问题的可选解法，含代价与风险。' },
+  { code:'DB', letter:'B', kind:'design', name:'选型',       domain:'code',    desc:'几个方案里挑一个，说清为什么。' },
+  { code:'DC', letter:'C', kind:'design', name:'决策',       domain:'general', desc:'要用户拍板的事，列选项给他选。' },
+  { code:'DI', letter:'I', kind:'design', name:'接口设计',   domain:'code',    desc:'定下对外形状：函数签名、协议、数据结构。' },
+  { code:'DQ', letter:'Q', kind:'design', name:'提问',       domain:'general', desc:'一句话问用户；得到答复就完成。' },
+  { code:'DT', letter:'T', kind:'design', name:'探索',       domain:'art',     desc:'不知道该往哪个方向走，先铺几种可能。' },
+  { code:'RR', letter:'R', kind:'record', name:'汇报',       domain:'general', desc:'把一段工作或调查的结果写下来。' },
+  { code:'RB', letter:'B', kind:'record', name:'阻碍',       domain:'general', desc:'卡住了，写清卡在哪、为什么、怎么绕。' },
+  { code:'RD', letter:'D', kind:'record', name:'缺陷',       domain:'code',    desc:'东西坏了：复现、预期、实际。' },
+  { code:'RF', letter:'F', kind:'record', name:'复盘',       domain:'general', desc:'事情做完或失败之后，回看为什么。' },
+  { code:'WI', letter:'I', kind:'work',   name:'实现',       domain:'code',    desc:'动手改东西：改什么、怎么验。' },
+  { code:'WF', letter:'F', kind:'work',   name:'修复',       domain:'code',    desc:'专门修一个 bug：复现、根因、修法、回归。' },
+  { code:'WR', letter:'R', kind:'work',   name:'调研',       domain:'general', desc:'去查清一件事：结论、依据、局限。' },
+  { code:'WX', letter:'X', kind:'work',   name:'文档',       domain:'writing', desc:'写给人看的东西：读者是谁、怎么读。' },
+  { code:'WD', letter:'D', kind:'work',   name:'绘画',       domain:'art',     desc:'画一张图：目标、手法、场景。' },
+  { code:'WC', letter:'C', kind:'work',   name:'写作',       domain:'writing', desc:'写一段文字：前置、顺序、检查点。' }
+];
+
+const KIND_ROWS = [
+  { key:'goal',   letter:'G', label:'目标' },
+  { key:'design', letter:'D', label:'设计' },
+  { key:'record', letter:'R', label:'记录' },
+  { key:'work',   letter:'W', label:'工作' }
+];
+
+const DOMAIN_ROWS = [
+  { key:'code',    label:'代码' },
+  { key:'writing', label:'写作' },
+  { key:'art',     label:'绘画' },
+  { key:'general', label:'通用' }
+];
+
+/** 浮层里当前选中的三项。 */
+const picker = { domain: 'general', kind: 'goal', tpl: 'GU' };
+
+/** 一个带 label 的字段。 */
+function field(label, control, required) {
+  return el('div', {class:'field'},
+    el('label', {class:'lbl'}, label, required ? el('span', {class:'req'}, ' *') : null),
+    control);
+}
+
+/** 打开新建浮层。 */
+function openCreator(init) {
+  closeModal();
+  const draft = {
+    title: '',
+    parent: (init && init.parent) || '',
+    workspace: '',
+    workspaces: '',
+    permission: '',
+    body: ''
+  };
+  picker.domain = 'general';
+  picker.kind = 'goal';
+  picker.tpl = init && init.type ? init.type : 'GU';
+  const initial = TEMPLATES.find((t) => t.code === picker.tpl);
+  if (initial) { picker.kind = initial.kind; picker.domain = initial.domain; }
+
+  const mask = el('div', {class:'mask'});
+  const box = el('div', {class:'modal', style:{width:'min(880px,100%)'}});
+
+  box.appendChild(el('div', {class:'modal-head'},
+    el('b', null, '新建事项'),
+    el('span', {style:{flex:'1'}}),
+    el('button', {class:'icon-btn', type:'button', onclick: closeModal}, '✕')));
+
+  const bodyBox = el('div', {class:'modal-body two-col'});
+  const left = el('div', {style:{display:'grid', gap:'11px', alignContent:'start'}});
+  const right = el('div', {style:{display:'grid', gap:'8px', alignContent:'start'}});
+
+  /* 标题 */
+  left.appendChild(field('标题', el('input', {
+    type:'text', placeholder:'例如：修好任务板分组为空时的提示',
+    oninput(e) { draft.title = e.target.value; }
+  }), true));
+
+  /* 模板选择器 */
+  const tplBtn = el('button', {class:'tpl-btn', type:'button', id:'tplBtn'});
+  const tplPop = el('div', {class:'tpl-pop', id:'tplPop', hidden:true});
+
+  const refreshTplBtn = () => {
+    const t = TEMPLATES.find((x) => x.code === picker.tpl);
+    tplBtn.innerHTML = '';
+    tplBtn.appendChild(el('span', {class:'code'}, t ? t.code : '—'));
+    tplBtn.appendChild(el('span', null, t ? t.name : '空模板'));
+    tplBtn.appendChild(el('span', {class:'chev'}, '▾'));
+  };
+
+  const closePop = () => { tplPop.hidden = true; refreshTplBtn(); };
+
+  const refreshPop = () => {
+    tplPop.innerHTML = '';
+    const grid = el('div', {class:'tpl-grid'});
+
+    const col1 = el('div', {class:'tpl-col'}, el('div', {class:'tpl-col-head'}, '领域'));
+    for (const d of DOMAIN_ROWS) {
+      col1.appendChild(el('button', {
+        class:'tpl-item' + (picker.domain === d.key ? ' on' : ''),
+        type:'button',
+        onclick() { picker.domain = d.key; refreshPop(); }
+      }, el('span', {class:'radio'}), d.label));
+    }
+
+    const col2 = el('div', {class:'tpl-col'}, el('div', {class:'tpl-col-head'}, '类别'));
+    for (const k of KIND_ROWS) {
+      col2.appendChild(el('button', {
+        class:'tpl-item' + (picker.kind === k.key ? ' on' : ''),
+        type:'button',
+        onclick() {
+          picker.kind = k.key;
+          const cur = TEMPLATES.find((x) => x.code === picker.tpl);
+          if (cur && cur.kind !== k.key) picker.tpl = '';
+          refreshPop();
+          refreshTplBtn();
+        }
+      }, el('span', {class:'radio'}),
+         el('span', {class:'k-letter'}, k.letter), k.label));
+    }
+
+    const col3 = el('div', {class:'tpl-col'}, el('div', {class:'tpl-col-head'}, '模板'));
+    col3.appendChild(el('button', {
+      class:'tpl-item' + (picker.tpl === '' ? ' on' : ''),
+      type:'button',
+      onclick() { picker.tpl = ''; closePop(); }
+    }, el('span', {class:'tpl-code'}, '—'), el('span', {class:'tpl-name'}, '空模板')));
+
+    const list = TEMPLATES.filter((t) => t.kind === picker.kind
+      && (t.domain === picker.domain || t.domain === 'general'));
+    for (const t of list) {
+      col3.appendChild(el('button', {
+        class:'tpl-item' + (picker.tpl === t.code ? ' on' : ''),
+        type:'button', title: t.desc,
+        onclick() { picker.tpl = t.code; closePop(); }
+      }, el('span', {class:'tpl-code'}, t.letter), el('span', {class:'tpl-name'}, t.name)));
+    }
+
+    grid.appendChild(col1);
+    grid.appendChild(col2);
+    grid.appendChild(col3);
+    tplPop.appendChild(grid);
+
+    const kindLetter = (KIND_ROWS.find((k) => k.key === picker.kind) || {}).letter || 'X';
+    const prefix = picker.tpl || kindLetter;
+    tplPop.appendChild(el('div', {class:'tpl-preview'},
+      '编号前缀 ', el('b', null, prefix),
+      '　最终编号形如 ', el('b', null, prefix + '-01')));
+  };
+
+  tplBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    tplPop.hidden = !tplPop.hidden;
+    if (!tplPop.hidden) refreshPop();
+  });
+  mask.addEventListener('click', () => { if (!tplPop.hidden) tplPop.hidden = true; });
+
+  refreshTplBtn();
+  left.appendChild(el('div', {class:'field', style:{position:'relative'}},
+    el('label', {class:'lbl'}, '模板'), tplBtn, tplPop));
+
+  left.appendChild(field('父任务', el('input', {
+    type:'text', placeholder:'（无，顶层）', value: draft.parent,
+    oninput(e) { draft.parent = e.target.value; }
+  })));
+
+  left.appendChild(field('子工作空间', el('input', {
+    type:'text', placeholder:'绝对路径（空 = 会话目录）',
+    oninput(e) { draft.workspace = e.target.value; }
+  })));
+
+  left.appendChild(field('额外工作区', el('input', {
+    type:'text', placeholder:'逗号分隔的绝对路径（可空）',
+    oninput(e) { draft.workspaces = e.target.value; }
+  })));
+
+  left.appendChild(field('权限', el('select', {onchange(e) { draft.permission = e.target.value; }},
+    el('option', {value:''}, '（不指定，按会话档位）'),
+    el('option', {value:'仅可查看'}, '仅可查看'),
+    el('option', {value:'工作区内修改'}, '工作区内修改'),
+    el('option', {value:'完全权限'}, '完全权限'),
+    el('option', {value:'工具全关'}, '工具全关'))));
+
+  left.appendChild(field('关联', el('div', null,
+    el('div', {class:'hint', style:{marginBottom:'5px'}}, '箭头从先决指向依赖方'),
+    el('button', {class:'btn', type:'button', style:{padding:'4px 11px'}}, '＋ 添加关联'))));
+
+  right.appendChild(el('div', {class:'lbl'}, '正文'));
+  right.appendChild(el('textarea', {
+    class:'ta', style:{minHeight:'330px', height:'330px'},
+    placeholder:'Markdown，或 JSON（对象形态）',
+    oninput(e) { draft.body = e.target.value; }
+  }));
+  right.appendChild(el('div', {class:'hint'},
+    '对象形态示例：{"want":{"type":"textarea","value":"…"}}'));
+
+  bodyBox.appendChild(left);
+  bodyBox.appendChild(right);
+  box.appendChild(bodyBox);
+
+  box.appendChild(el('div', {class:'modal-foot'},
+    el('span', {style:{flex:'1'}}),
+    el('button', {class:'btn', type:'button', onclick: closeModal}, '取消'),
+    el('button', {class:'btn primary', type:'button', onclick() {
+      if (String(draft.title).trim() === '') { alert('标题必填'); return; }
+      let body = draft.body;
+      const trimmed = String(body || '').trim();
+      if (trimmed.startsWith('{')) { try { body = JSON.parse(trimmed); } catch (e) {} }
+      createTask({
+        title: draft.title,
+        type: picker.tpl,
+        kind: picker.kind,
+        parent: draft.parent,
+        body,
+        workspace: draft.workspace,
+        workspaces: draft.workspaces,
+        permission: draft.permission
+      });
+      closeModal();
+    }}, '提交')));
+
+  mask.appendChild(box);
+  document.body.appendChild(mask);
+  document.addEventListener('keydown', escClose);
+  setTimeout(() => {
+    const input = box.querySelector('input[type="text"]');
+    if (input) input.focus();
+  }, 30);
+}
+
+/** 编辑浮层：只改标题、状态、类别、正文。 */
+function openEditor(t) {
+  closeModal();
+  const draft = {
+    title: t.title,
+    status: t.status,
+    kind: t.kind,
+    body: typeof t.body === 'string' ? t.body : JSON.stringify(t.body, null, 2)
+  };
+
+  const mask = el('div', {class:'mask'});
+  const box = el('div', {class:'modal', style:{width:'min(840px,100%)'}});
+  box.appendChild(el('div', {class:'modal-head'},
+    el('b', null, '编辑 ' + t.id),
+    el('span', {style:{flex:'1'}}),
+    el('button', {class:'icon-btn', type:'button', onclick: closeModal}, '✕')));
+
+  const bodyBox = el('div', {class:'modal-body two-col'});
+  const left = el('div', {style:{display:'grid', gap:'11px', alignContent:'start'}});
+  const right = el('div', {style:{display:'grid', gap:'8px', alignContent:'start'}});
+
+  left.appendChild(field('标题', el('input', {
+    type:'text', value: draft.title,
+    oninput(e) { draft.title = e.target.value; }
+  }), true));
+
+  left.appendChild(field('状态', el('select', {onchange(e) { draft.status = e.target.value; }},
+    ...['未指定','提交','处理中','需要补充','需要授权','完成','失败','取消','拒绝']
+      .map((s) => el('option', {value:s, selected: s === draft.status ? true : null}, s)))));
+
+  left.appendChild(field('类别', el('select', {onchange(e) { draft.kind = e.target.value; }},
+    ...KIND_ROWS.map((k) => el('option', {value:k.key, selected: k.key === draft.kind ? true : null}, k.label)))));
+
+  left.appendChild(el('div', {class:'hint'}, '改类别不会改已有编号'));
+
+  right.appendChild(el('div', {class:'lbl'}, '正文'));
+  right.appendChild(el('textarea', {
+    class:'ta', style:{minHeight:'340px', height:'340px'}, value: draft.body,
+    oninput(e) { draft.body = e.target.value; }
+  }));
+
+  bodyBox.appendChild(left);
+  bodyBox.appendChild(right);
+  box.appendChild(bodyBox);
+
+  box.appendChild(el('div', {class:'modal-foot'},
+    el('span', {style:{flex:'1'}}),
+    el('button', {class:'btn', type:'button', onclick: closeModal}, '取消'),
+    el('button', {class:'btn primary', type:'button', onclick() {
+      let body = draft.body;
+      const trimmed = String(body || '').trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try { body = JSON.parse(trimmed); } catch (e) {}
+      }
+      patchTask(t.id, { title: draft.title, status: draft.status, kind: draft.kind, body });
+      closeModal();
+    }}, '保存')));
+
+  mask.appendChild(box);
+  document.body.appendChild(mask);
+  document.addEventListener('keydown', escClose);
+}
 
 
-/* 启动：先向服务端要数据，拿到再渲染 */
+/* ══════════════════════════════════════════════════════════════
+   启动与事件绑定
+
+   ## 为什么单独一段
+
+   基线里是同步启动（`renderAll(); loadDraft();`），因为数据在 localStorage，
+   当场就有。现在数据要**先从服务端取**，所以启动变成异步：
+
+     连服务 → 拿到数据 → 选中第一项 → 渲染 → 读草稿
+
+   如果中途服务没起，loadFromServer 会退回内置样本并提示「本地模式」。
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 顶部按钮 ── */
+const newBtn = document.getElementById('newBtn');
+if (newBtn) newBtn.addEventListener('click', () => openCreator({}));
+
+const resetBtn = document.getElementById('resetBtn');
+if (resetBtn) {
+  resetBtn.addEventListener('click', () => {
+    if (confirm('重置成最初的样本？当前改动会丢。')) resetDB();
+  });
+}
+
+/* ── 视图切换：科技树 / 列表 ── */
+document.querySelectorAll('.vw').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.vw').forEach((b) => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.view = btn.dataset.view;
+    renderAll();
+  });
+});
+
+/* ── 筛选 ── */
+document.querySelectorAll('.filters .chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.filters .chip').forEach((c) => c.classList.remove('on'));
+    chip.classList.add('on');
+    state.filter = chip.textContent.trim();
+    renderAll();
+  });
+});
+
+/* ── 搜索 ── */
+const searchBox = document.getElementById('search');
+if (searchBox) {
+  searchBox.addEventListener('input', (event) => {
+    state.search = event.target.value;
+    renderAll();
+  });
+}
+
+/* ── 底部自由文本 ── */
+const exportBtn = document.getElementById('exportBtn');
+if (exportBtn) exportBtn.addEventListener('click', () => { saveDraft(); });
+
+const clearBtn = document.getElementById('clearBtn');
+if (clearBtn) {
+  clearBtn.addEventListener('click', () => {
+    if (!confirm('清空这段自由文本？')) return;
+    const ta = document.getElementById('draft');
+    if (ta) ta.value = '';
+    saveDraft();
+    updateHint();
+  });
+}
+
+/* ── 启动 ── */
 (async function boot() {
   setSyncState('正在连接…', false);
   const ok = await loadFromServer();
   if (ok) setSyncState('已连上服务 · ' + DB.length + ' 条', false);
-  if (!DB.some(function (t) { return t.id === state.selected; })) {
+  if (!DB.some((t) => t.id === state.selected)) {
     state.selected = DB[0] ? DB[0].id : '';
   }
   renderAll();
   await loadDraft();
 })();
+
 </script>
 </body>
 </html>
