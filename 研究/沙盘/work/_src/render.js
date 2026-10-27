@@ -84,7 +84,31 @@ function el(tag, props, ...children) {
 function renderBody(task) {
   const mdx = compileBody(task);
   if (mdx === '') return null;
-  return renderMdx(mdx);
+  return renderMdx(mdx, { taskId: task.id, keys: sectionKeys(task) });
+}
+
+/**
+ * 按 compileBody 的顺序列出章节 id。
+ *
+ * 因为 renderMdx 是按标签顺序走的，得让两边顺序对上，
+ * 否则改值会改错章。
+ *
+ * @param {object} task
+ * @returns {string[]}
+ */
+function sectionKeys(task) {
+  const body = task.body;
+  if (body === null || typeof body !== 'object') return [];
+
+  const sections = sectionsOf(task.type);
+  const keys = [];
+  for (const s of sections) {
+    if (body[s.id] !== undefined) keys.push(s.id);
+  }
+  for (const key of Object.keys(body)) {
+    if (!sections.some((s) => s.id === key)) keys.push(key);
+  }
+  return keys;
 }
 
 /**

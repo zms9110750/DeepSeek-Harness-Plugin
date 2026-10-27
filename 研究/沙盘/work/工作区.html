@@ -2111,22 +2111,119 @@ const MDX_COMPONENTS = {
  * @param {string} mdx
  * @returns {HTMLElement|null}
  */
-function renderMdx(mdx) {
+/**
+ * 当前正在渲染的那条事项 + 它每章的 action。
+ *
+ * 为什么要这个：组件只拿到 props（值），不知道自己在哪。
+ * 但改值要写回 —— 得知道「哪条事项的哪一章」。
+ *
+ * 用模块级变量而不是往下传，是因为组件表是按名字查的，
+ * 签名统一是 (props) => HTMLElement，塞不进额外参数。
+ */
+let renderCtx = { taskId: '', keys: [], index: 0 };
+
+/**
+ * 渲染一段 mdx 成 DOM。
+ *
+ * @param {string} mdx
+ * @param {{taskId?: string, keys?: string[]}} [ctx]
+ * @returns {HTMLElement|null}
+ */
+function renderMdx(mdx, ctx) {
   const tags = parseTags(mdx);
   if (tags.length === 0) return null;
+
+  renderCtx = {
+    taskId: (ctx && ctx.taskId) || '',
+    keys: (ctx && ctx.keys) || [],
+    index: 0
+  };
 
   const box = el('div', {class:'mdx'});
   for (const tag of tags) {
     const Component = MDX_COMPONENTS[tag.name];
+    const key = renderCtx.keys[renderCtx.index] || '';
+    renderCtx.index += 1;
+
     if (Component === undefined) {
       /* 未注册 = 程序集里没有这个类型。运行时才发现，画灰卡。 */
       box.appendChild(renderUnknownComponent({ name: tag.name, value: tag.attrs }));
       continue;
     }
-    const node = Component(tag.attrs);
+    const node = Component({ ...tag.attrs, __key: key });
     if (node !== null) box.appendChild(node);
   }
   return box;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   写回
+
+   行为在这里 —— mdx 里只写 <Ask options={...} picked="A" />，
+   点了怎么变、改哪条数据，都是渲染器给的。
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * 改一章的值。支持部分字段更新。
+ *
+ * @param {object} props    组件 props（带 __key）
+ * @param {object} patch    要改的字段
+ */
+function commit(props, patch) {
+  if (renderCtx.taskId === '') return;
+  const task = taskOf(renderCtx.taskId);
+  if (task === undefined) return;
+
+  const key = props.__key;
+  if (key === '' || typeof task.body !== 'object' || task.body === null) return;
+
+  const section = task.body[key];
+  if (section === undefined) return;
+
+  Object.assign(section, patch);
+  scheduleSave();
+  renderAll();
+}
+
+/**
+ * 单选：选中/取消。
+ *
+ * @param {object} props
+ * @param {string} title
+ */
+function toggleAsk(props, title) {
+  const current = String(props.picked || '');
+  commit(props, { picked: current === title ? '' : title });
+}
+
+/**
+ * 多选：加/删一项。
+ *
+ * @param {object} props
+ * @param {string} title
+ */
+function toggleMulti(props, title) {
+  const current = Array.isArray(props.picked) ? props.picked.slice() : [];
+  const i = current.indexOf(title);
+  if (i >= 0) current.splice(i, 1);
+  else current.push(title);
+  commit(props, { picked: current });
+}
+
+/**
+ * 排序：上移/下移一项。
+ *
+ * @param {object} props
+ * @param {number} index
+ * @param {number} delta
+ */
+function moveItem(props, index, delta) {
+  const items = Array.isArray(props.items) ? props.items.slice() : [];
+  const target = index + delta;
+  if (target < 0 || target >= items.length) return;
+  const [moved] = items.splice(index, 1);
+  items.splice(target, 0, moved);
+  commit(props, { items });
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -2160,10 +2257,12 @@ function renderTextComponent(props) {
   const box = el('div', {class:'inter'});
   if (row <= 1) {
     box.appendChild(el('input', {
-      type:'text', value, placeholder, class:'text-input'
+      type:'text', value, placeholder, class:'text-input',
+      onchange(e) { commit(props, { value: e.target.value }); }
     }));
   } else {
-    const ta = el('textarea', {class:'text-input', rows:String(row), placeholder});
+    const ta = el('textarea', {class:'text-input', rows:String(row), placeholder,
+      onchange(e) { commit(props, { value: e.target.value }); }});
     ta.value = value;
     box.appendChild(ta);
   }
@@ -2197,7 +2296,9 @@ function renderAskComponent(props) {
     const sub = typeof opt === 'string' ? '' : String(opt.placeholder || '');
     const on = title === picked;
     box.appendChild(el('button', {
-      class:'choice' + (on ? ' on' : ''), type:'button'
+      class:'choice' + (on ? ' on' : ''), type:'button',
+      /* 行为在这里 —— mdx 里写不出来，是渲染器给的 */
+      onclick() { toggleAsk(props, title); }
     },
       el('span', {class:'radio'}),
       el('span', {class:'choice-body'},
@@ -2208,11 +2309,15 @@ function renderAskComponent(props) {
   if (props.allowCustom === true) {
     box.appendChild(el('input', {
       type:'text', class:'text-input', placeholder:'都不是，我自己写一句',
-      value: picked
+      value: picked,
+      onchange(e) { commit(props, { picked: e.target.value }); }
     }));
   }
   if (props.allowDefer === true && picked !== '') {
-    box.appendChild(el('button', {class:'link-btn', type:'button'}, '先不选，要更多信息'));
+    box.appendChild(el('button', {
+      class:'link-btn', type:'button',
+      onclick() { commit(props, { picked: '' }); }
+    }, '先不选，要更多信息'));
   }
 
   return sectionShell(props, [box]);
@@ -2239,7 +2344,8 @@ function renderMultiComponent(props) {
     const on = picked.includes(title);
 
     box.appendChild(el('button', {
-      class:'choice multi' + (on ? ' on' : ''), type:'button'
+      class:'choice multi' + (on ? ' on' : ''), type:'button',
+      onclick() { toggleMulti(props, title); }
     },
       el('span', {class:'checkbox'}, on ? el('span', {class:'tick'}, '✓') : null),
       el('span', {class:'choice-body'},
@@ -2271,8 +2377,10 @@ function renderRankComponent(props) {
         el('span', {class:'rank-title'}, title),
         sub === '' ? null : el('span', {class:'rank-sub'}, sub)),
       el('span', {class:'rank-btns'},
-        el('button', {type:'button'}, '↑'),
-        el('button', {type:'button'}, '↓'))));
+        el('button', {type:'button', disabled: index === 0,
+          onclick() { moveItem(props, index, -1); }}, '↑'),
+        el('button', {type:'button', disabled: index === items.length - 1,
+          onclick() { moveItem(props, index, 1); }}, '↓'))));
   });
 
   return sectionShell(props, [box]);
@@ -2293,7 +2401,8 @@ function renderDeriveComponent(props) {
     const tpl = (typeof TEMPLATES !== 'undefined' ? TEMPLATES : []).find(function (x) {
       return x.code === code;
     });
-    row.appendChild(el('button', {class:'quick-task', type:'button'},
+    row.appendChild(el('button', {class:'quick-task', type:'button',
+      onclick() { openCreator({ type: String(code) }); }},
       el('span', {class:'code'}, String(code)),
       tpl ? tpl.name : '派生任务',
       el('span', {class:'mode'}, modeLabel)));
@@ -2398,7 +2507,31 @@ function el(tag, props, ...children) {
 function renderBody(task) {
   const mdx = compileBody(task);
   if (mdx === '') return null;
-  return renderMdx(mdx);
+  return renderMdx(mdx, { taskId: task.id, keys: sectionKeys(task) });
+}
+
+/**
+ * 按 compileBody 的顺序列出章节 id。
+ *
+ * 因为 renderMdx 是按标签顺序走的，得让两边顺序对上，
+ * 否则改值会改错章。
+ *
+ * @param {object} task
+ * @returns {string[]}
+ */
+function sectionKeys(task) {
+  const body = task.body;
+  if (body === null || typeof body !== 'object') return [];
+
+  const sections = sectionsOf(task.type);
+  const keys = [];
+  for (const s of sections) {
+    if (body[s.id] !== undefined) keys.push(s.id);
+  }
+  for (const key of Object.keys(body)) {
+    if (!sections.some((s) => s.id === key)) keys.push(key);
+  }
+  return keys;
 }
 
 /**
