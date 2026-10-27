@@ -1405,8 +1405,8 @@ function repaintEdges() {
     const [src, dst] = path.getAttribute('data-edge').split('>');
     const linked = focusId !== '' && (src === focusId || dst === focusId);
     const dimmed = focusId !== '' && !linked;
-    path.setAttribute('opacity', dimmed ? '0.12' : (linked ? '1' : '0.55'));
-    path.setAttribute('stroke-width', linked ? '2.6' : (path.getAttribute('data-kind') === 'parent' ? '1.2' : '1.5'));
+    path.setAttribute('opacity', focusId === '' ? '0.5' : (linked ? '1' : '0.14'));
+    path.setAttribute('stroke-width', linked ? '2' : '1.2');
   }
 
   /* 节点的悬浮描边也跟着刷 */
@@ -1470,12 +1470,20 @@ function renderTree(box, tasks) {
     const y1 = from.y + TREE_NODE_H / 2;
     const x2 = to.x - 6;
     const y2 = to.y + TREE_NODE_H / 2;
-    const dx = Math.max(24, Math.abs(x2 - x1) / 2);
-    /* 第 0 条走中间，第 1 条往上弯、第 2 条往下弯 */
-    const bow = index === 0 ? 0 : (index % 2 === 1 ? -1 : 1) * (18 + Math.floor(index / 2) * 12);
+    /*
+     * 曲率照 mod：dx = max(28, |x2 - x1| / 2)，控制点都在水平线上（不上下弯）。
+     *
+     * mod 的曲线是：
+     *   M x1 y1  C (x1+dx) y1  (x2-dx) y2  x2 y2
+     *
+     * 沙盘原来额外加了 bow（多条边错开弯曲），但这会让同一对节点间的
+     * 多条线看起来像不同种类的关系。mod 不做这个。
+     */
+    const dx = Math.max(28, Math.abs(x2 - x1) / 2);
     const path = document.createElementNS(ns, 'path');
+    /* 照 mod：控制点都在水平线上，不上下弯 */
     path.setAttribute('d', 'M' + x1 + ' ' + y1
-      + ' C' + (x1 + dx) + ' ' + (y1 + bow) + ' ' + (x2 - dx) + ' ' + (y2 + bow) + ' ' + x2 + ' ' + y2);
+      + ' C' + (x1 + dx) + ' ' + y1 + ' ' + (x2 - dx) + ' ' + y2 + ' ' + x2 + ' ' + y2);
     path.setAttribute('fill', 'none');
     /*
      * 和它相连的箭头要突出显示。
@@ -1497,8 +1505,18 @@ function renderTree(box, tasks) {
     const dimmed = focusId !== '' && !linked;
 
     path.setAttribute('stroke', linkColor(edge.label || edge.kind));
-    path.setAttribute('opacity', dimmed ? '0.12' : (linked ? '1' : (focusId === '' ? '0.55' : '0.55')));
-    path.setAttribute('stroke-width', linked ? '2.6' : (edge.kind === 'parent' ? '1.2' : '1.5'));
+    /*
+     * 数值照 mod（composer-drawer/client.src.js 的 TechTree）：
+     *
+     *   strokeWidth: active ? 2 : 1.2
+     *   opacity: hovered === '' ? 0.5 : active ? 1 : 0.14
+     *
+     * 之前沙盘用的是 2.6 / 1.5 / 0.55 / 0.12 —— 比 mod 重一点。
+     * 用户原话：
+     *   > 包括他那个线的粗细，箭头大小
+     */
+    path.setAttribute('opacity', focusId === '' ? '0.5' : (linked ? '1' : '0.14'));
+    path.setAttribute('stroke-width', linked ? '2' : '1.2');
     {
       const spec = LINK_KINDS.find((x) => x.key === (edge.label || edge.kind));
       if (spec && spec.dashed) path.setAttribute('stroke-dasharray', '4 3');
