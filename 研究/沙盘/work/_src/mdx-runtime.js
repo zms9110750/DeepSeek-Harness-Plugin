@@ -515,15 +515,27 @@ function renderMarkdownComponent(props) {
  * @param {HTMLElement} list 选项列表
  * @returns {HTMLElement}
  */
-function optionCard(props, list) {
+function optionCard(props, list, skipActive, onSkip) {
   const card = el('div', {class:'oc'});
 
   const head = el('div', {class:'oc-head'});
-  if (props.header) head.appendChild(el('div', {class:'oc-sub'}, String(props.header)));
+
+  /* 上面一行：灰色小字（header）+ 右边的「跳过」 */
+  const top = el('div', {class:'oc-top'});
+  if (props.header) top.appendChild(el('span', {class:'oc-sub'}, String(props.header)));
+  top.appendChild(el('span', {class:'oc-spacer'}));
+  top.appendChild(el('button', {
+    class: 'oc-skipbtn' + (skipActive ? ' on' : ''),
+    type: 'button',
+    title: '我没看这张卡片',
+    onclick: onSkip
+  }, '跳过'));
+  head.appendChild(top);
+
   if (props.question) head.appendChild(el('div', {class:'oc-title'}, String(props.question)));
   else if (props.placeholder) head.appendChild(el('div', {class:'oc-title'}, String(props.placeholder)));
-  if (head.childElementCount > 0) card.appendChild(head);
 
+  card.appendChild(head);
   card.appendChild(list);
   return card;
 }
@@ -550,26 +562,6 @@ function optionRow(opt, index, active, onClick) {
   );
 }
 
-/**
- * 「跳过」那行。
- *
- * 用户原话：
- *   > 渲染器给的渲染应该始终包含一个"未选择"或"跳过"。
- *   > 表示你查这个情况，而我实际上都没看这个卡片。
- *
- * @param {boolean} active
- * @param {Function} onClick
- * @returns {HTMLElement}
- */
-function skipRow(active, onClick) {
-  return el('button', {
-    class: 'oc-row oc-skip' + (active ? ' on' : ''),
-    type: 'button',
-    onclick: onClick
-  },
-    el('span', {class:'oc-no'}, '·'),
-    el('span', {class:'oc-label'}, '跳过（我没看这张卡片）'));
-}
 
 /**
  * 自己填的那一行。和普通选项长得一样，只是里面是输入框。
@@ -661,9 +653,22 @@ function renderAskComponent(props) {
   const single = String(props.picked === undefined || props.picked === null ? '' : props.picked);
   const list = Array.isArray(props.pickedMulti) ? props.pickedMulti.map(String) : [];
 
-  /* 没动过 = 跳过。这是默认状态。 */
-  const untouched = multi ? list.length === 0 : single === '';
-  const isSkip = untouched || single === '跳过';
+  /*
+   * 「跳过」的定义收窄了。
+   *
+   * 用户原话（GU-06 第 3 条）：
+   *   > "跳过"，应该是默认选择，并且点击才激活。
+   *   > 没选择不自动等于没看见。
+   *   > 因为多选有可能是看见了并且一个都不选。
+   *
+   * 所以「没选」不再等于「没看」：
+   *
+   *   picked === '跳过'      明确点了跳过
+   *   其它（含空）           没跳过
+   *
+   * 但**默认要给 '跳过'** —— 那是初值。用户一旦动了选项就离开跳过。
+   */
+  const isSkip = !multi && single === '跳过';
 
   /* 单选时：序号 / 自定义文字 */
   const pickedIndex = !multi && /^\d+$/u.test(single) ? Number(single) : -1;
@@ -692,13 +697,16 @@ function renderAskComponent(props) {
     listBox.appendChild(customRow(props, customText, hasCustom, multi));
   }
 
-  /* 跳过行 —— 始终有，而且默认就是它 */
-  listBox.appendChild(skipRow(isSkip, function () {
+  const card = optionCard(props, listBox, isSkip, function () {
+    if (isSkip) {
+      /* 再点一次取消跳过 */
+      if (multi) commit(props, { picked_multi: [] });
+      else commit(props, { picked: '' });
+      return;
+    }
     if (multi) commit(props, { picked_multi: [] });
     else commit(props, { picked: '跳过' });
-  }));
-
-  const card = optionCard(props, listBox);
+  });
 
   if (multi && list.length > 0) {
     card.appendChild(el('div', {class:'oc-foot'}, '已选 ' + list.length + ' 项'));

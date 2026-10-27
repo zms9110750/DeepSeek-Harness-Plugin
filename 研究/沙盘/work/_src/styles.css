@@ -342,3 +342,77 @@
   .oc-skip.on .oc-label{font-weight:600}
 
   .oc-foot{margin-top:8px;font-size:10.5px;color:var(--text-3)}
+
+  /* ══════════════════════════════════════════════════════════
+     过滤栏 —— 横向展开
+
+     收起  >状态<
+     展开  >状态|进行|搁置|完成<
+     二级  >状态|进行|搁置-需要信息/需要授权|完成<
+     ══════════════════════════════════════════════════════════ */
+  .filters{padding:9px 14px;border-bottom:1px solid var(--border)}
+  .fb{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+  .fb-group{display:inline-flex;align-items:stretch;border:1px solid var(--border-2);
+    border-radius:7px;overflow:hidden;background:#fff}
+  .fb-group.open{border-color:var(--brand)}
+  .fb-group.has{border-color:var(--brand);background:#f4f8fe}
+
+  .fb-name{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;font:inherit;
+    font-size:11.5px;color:var(--text-2);background:transparent;border:0;cursor:pointer;
+    white-space:nowrap}
+  .fb-name:hover{background:#f2f4f6}
+  .fb-group.open .fb-name{color:var(--brand);font-weight:600;background:#eef3fb}
+  .fb-chev{font-size:8px;opacity:.7}
+
+  /* 展开后每一项一格，中间用竖线隔开 */
+  .fb-item{display:inline-flex;align-items:center;border-left:1px solid var(--border);
+    font-size:11.5px;white-space:nowrap}
+  .fb-item-name{padding:4px 10px;color:var(--text-2);cursor:pointer;display:inline-block}
+  .fb-item-name:hover{background:#f2f4f6;color:var(--text)}
+  .fb-item.on > .fb-item-name{color:var(--brand);font-weight:600;background:#eef3fb}
+
+  /* 子项：也是横向小格 */
+  .fb-sub{padding:4px 8px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;border-left:1px solid var(--border);cursor:pointer;
+    white-space:nowrap}
+  .fb-sub:hover{background:#f2f4f6;color:var(--text)}
+  .fb-sub.on{color:var(--brand);font-weight:600;background:#eef3fb}
+
+  .fb-clear{padding:4px 8px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;text-decoration:underline}
+  .fb-clear:hover{color:var(--danger)}
+
+  /* 卡片头：灰色小字 + 右边的「跳过」 */
+  .oc-top{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .oc-sub{font-size:11px;color:var(--text-3)}
+  .oc-spacer{flex:1}
+  .oc-skipbtn{padding:2px 9px;font:inherit;font-size:10.5px;color:var(--text-3);
+    background:#fff;border:1px solid var(--border-2);border-radius:12px;cursor:pointer;
+    white-space:nowrap}
+  .oc-skipbtn:hover{border-color:#b9bdc2;color:var(--text)}
+  .oc-skipbtn.on{background:#eef3fb;border-color:var(--brand);color:var(--brand);font-weight:600}
+
+  /* 采纳后图标变灰 */
+  .icon-btn.off{opacity:.3;cursor:not-allowed}
+  .icon-btn.off:hover{background:transparent}
+
+  /* 元的推导态菜单 */
+  .goal-menu{width:290px}
+  .goal-row{display:flex;align-items:flex-start;gap:7px;padding:6px 9px;border-radius:5px;
+    font-size:12px;color:var(--text-2);line-height:1.5}
+  .goal-row.on{background:#eef3fb;color:var(--brand);font-weight:600}
+  .goal-mark{flex:none;font-size:8px;margin-top:5px}
+  .goal-body{display:flex;flex-direction:column;gap:1px;min-width:0}
+  .goal-name{font-size:12px}
+  .goal-why{font-size:10.5px;color:var(--text-3);font-weight:400}
+  .goal-row.on .goal-why{color:var(--brand);opacity:.75}
+
+  /* 元数据表 */
+  .d-meta-block{padding:8px 15px 10px;border-bottom:1px solid var(--border);
+    display:flex;flex-direction:column;gap:3px;flex:none}
+  .d-meta-row{display:flex;gap:8px;font-size:11.5px;line-height:1.6}
+  .d-meta-name{flex:none;width:64px;color:var(--text-3)}
+  .d-meta-value{flex:1;min-width:0;color:var(--text-2);word-break:break-all}
+
+  .d-meta-value.none{color:var(--text-3);font-style:italic}

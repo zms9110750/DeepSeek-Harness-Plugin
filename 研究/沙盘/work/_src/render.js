@@ -240,6 +240,14 @@ function renderDetail() {
        > 然后 GU-02 只有半行高度，他的下面半行放「目标」「通用」这两个 label。
        > 沙盘详情页的 label 写错了。「GU-02」的右边是「目标」。
        > 再右边应该是「领域」。而他是「GU」。冗余信息。 */
+  /*
+   * 采纳之后 = 锁定。
+   *
+   * 草稿（未指定）和重开后的「提交」都能改；
+   * 一旦用户采纳（提交之后的任何状态），声明就冻结了。
+   */
+  const locked = t.status !== '未指定';
+
   const head = el('div', {class:'d-head'},
     el('div', {class:'d-head-grid'},
       /* 左列：编号 + 两个标签（编号只占半行高） */
@@ -252,12 +260,30 @@ function renderDetail() {
       el('div', {class:'d-head-right'},
         el('div', {class:'d-head-title'}, t.title),
         el('div', {class:'d-head-icons'},
-          el('button', {class:'icon-btn', type:'button', title:'编辑标题与正文',
-            onclick(){ openEditor(t); }}, '✎'),
-          el('button', {class:'icon-btn', type:'button', title:'删除（连子事项）',
+          /*
+           * 采纳之后不准编辑、不准删除。
+           *
+           * 用户原话（GU-06 第 5 条）：
+           *   > 采纳以后不准编辑。不准删除。
+           *
+           * 这和「采纳后声明冻结」是同一条规则 —— 采纳意味着这份声明
+           * 被用户认可了，此后只能填值，不能改结构。
+           */
+          el('button', {
+            class:'icon-btn' + (locked ? ' off' : ''), type:'button',
+            title: locked ? '已采纳，不能编辑（要改先重开）' : '编辑标题与正文',
+            disabled: locked,
+            onclick(){ if (!locked) openEditor(t); }
+          }, '✎'),
+          el('button', {
+            class:'icon-btn' + (locked ? ' off' : ''), type:'button',
+            title: locked ? '已采纳，不能删除（要删先重开）' : '删除（连子事项）',
+            disabled: locked,
             onclick(){
+              if (locked) return;
               if (confirm('删除 ' + t.id + ' 和它下面所有子事项？')) deleteTask(t.id);
-            }}, '🗑'),
+            }
+          }, '🗑'),
           el('button', {class:'icon-btn', type:'button', title:'关闭',
             onclick(){ state.selected = ''; renderAll(); }}, '✕'))))
   );
@@ -282,25 +308,54 @@ function renderDetail() {
 
   /* 菜单 */
   if (state.menuOpen) {
-    const menu = el('div', {class:'status-menu'},
-      el('div', {class:'menu-cap'}, '变更状态'));
-    const actions = t.kind === 'goal' && t.status !== '未指定'
-      ? [{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'放弃目标',bad:true}]
-      : (TRANSITIONS[t.status] || []);
-    for (const a of actions) {
-      menu.appendChild(el('button', {
-        class:'menu-item' + (a.primary ? ' primary' : '') + (a.bad ? ' bad' : ''),
-        type:'button',
-        onclick(){
-          patchTask(t.id, { status: a.to });
-          state.menuOpen = false;
-          renderAll();
-        }
-      }, el('span', {class:'ic'}, a.primary ? '▶' : a.bad ? '✕' : '·'), a.label));
+    /*
+     * 目标的状态不能改，菜单改成「说明」。
+     *
+     * 用户原话（GU-06 第 6 条）：
+     *   > "目标"的状态不能更改。点开以后的菜单应该是描述这个的状态只读，
+     *   > 和状态判别依据（当前激活中的那个状态要高亮选中）
+     *
+     * 所以目标点开看到的是：
+     *   · 每个可能的状态 + 它的判别依据
+     *   · 当前处于哪个 —— 高亮
+     *   · 没有任何可点的按钮
+     */
+    if (t.kind === 'goal') {
+      const menu = el('div', {class:'status-menu goal-menu'},
+        el('div', {class:'menu-cap'}, '目标的推导状态（不是手动设的）'));
+
+      const derived = deriveGoalStatus(t);
+      for (const row of GOAL_STATES) {
+        const on = row.key === derived;
+        menu.appendChild(el('div', {class:'goal-row' + (on ? ' on' : '')},
+          el('span', {class:'goal-mark'}, on ? '●' : '○'),
+          el('span', {class:'goal-body'},
+            el('span', {class:'goal-name'}, row.key),
+            el('span', {class:'goal-why'}, row.why))));
+      }
+
+      menu.appendChild(el('div', {class:'menu-note'},
+        '目标的状态由子事项推导。要推进它，去推进子事项 —— 这里不给按钮。'));
+      head.appendChild(menu);
+    } else {
+      const menu = el('div', {class:'status-menu'},
+        el('div', {class:'menu-cap'}, '变更状态'));
+      const actions = TRANSITIONS[t.status] || [];
+      for (const a of actions) {
+        menu.appendChild(el('button', {
+          class:'menu-item' + (a.primary ? ' primary' : '') + (a.bad ? ' bad' : ''),
+          type:'button',
+          onclick(){
+            patchTask(t.id, { status: a.to });
+            state.menuOpen = false;
+            renderAll();
+          }
+        }, el('span', {class:'ic'}, a.primary ? '▶' : a.bad ? '✕' : '·'), a.label));
+      }
+      menu.appendChild(el('div', {class:'menu-note'},
+        '状态变更会影响 AI 能否继续这张单，所以都收在这里。'));
+      head.appendChild(menu);
     }
-    menu.appendChild(el('div', {class:'menu-note'},
-      '状态变更会影响 AI 能否继续这张单，所以都收在这里。'));
-    head.appendChild(menu);
   }
   box.appendChild(head);
 
@@ -373,6 +428,42 @@ function renderDetail() {
     box.appendChild(relBody);
   }
 
+  /*
+   * ── 元数据 ──
+   *
+   * 用户原话（GU-06 第 4 条）：
+   *   > 子工作空间，临时工作目录，权限。这几个元数据还没显示。
+   *
+   * 放成一张小表，两列：名字 / 值。没设的显示「（未指定）」。
+   */
+  const str = function (v) { return v === undefined || v === null ? '' : String(v); };
+  const metaRows = [
+    ['子工作区', str(t.workspace)],
+    ['临时工作区', str(t.tmpWorkspace)],
+    ['额外可读', str(t.workspaces)],
+    ['权限', str(t.permission)],
+    ['再收窄', str(t.deny)],
+    ['标记', Array.isArray(t.tags) && t.tags.length > 0 ? t.tags.join('、') : '']
+  ];
+  /*
+   * 用户原话（GU-06 第 4 条）：
+   *   > 子工作空间，临时工作目录，权限。这几个元数据还没显示。
+   *
+   * 注意是「没显示」——不是「没有」。所以没设也要画出来，
+   * 值写「（未指定）」。全藏起来的话，用户根本不知道有这几个字段。
+   */
+
+  let metaBox = null;
+  if (metaRows.length > 0) {
+    metaBox = el('div', {class:'d-meta-block'});
+    for (const [name, value] of metaRows) {
+      metaBox.appendChild(el('div', {class:'d-meta-row'},
+        el('span', {class:'d-meta-name'}, name),
+        el('span', {class:'d-meta-value' + (String(value).trim() === '' ? ' none' : '')},
+          String(value).trim() === '' ? '（未指定）' : String(value))));
+    }
+  }
+
   /* ── 正文（滚动区）──
    *
    * 用户原话：
@@ -381,6 +472,7 @@ function renderDetail() {
    * 所以这里加一个「看 mdx」开关 —— 直接看到这条事项被编译成什么，
    * 不用开 devtools。 */
   const body = el('div', {class:'d-body'});
+  if (metaBox !== null) body.appendChild(metaBox);
   body.appendChild(el('div', {class:'sec'},
     el('div', {class:'sec-title'},
       '正文',
@@ -418,6 +510,20 @@ function renderDetail() {
       onchange(e){ patchTask(t.id, { note: e.target.value }); }
     })));
 }
+
+/**
+ * 目标的四种推导态 + 判别依据。
+ *
+ * 用户原话：
+ *   > 点开以后的菜单应该是描述这个的状态只读，和状态判别依据
+ *   > （当前激活中的那个状态要高亮选中）
+ */
+const GOAL_STATES = [
+  { key: '未开始', why: '还没有子事项，或者子事项全是草稿' },
+  { key: '进行中', why: '有子事项在「进行」组（提交 / 处理中）' },
+  { key: '停滞', why: '没有进行中的，但有子事项卡在等待（需要补充 / 需要授权）' },
+  { key: '收尾', why: '所有子事项都在「完成」组' }
+];
 
 function deriveGoalStatus(t) {
   const kids = DB.filter((x) => x.parent === t.id);

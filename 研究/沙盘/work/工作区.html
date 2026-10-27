@@ -556,6 +556,80 @@
 
   .oc-foot{margin-top:8px;font-size:10.5px;color:var(--text-3)}
 
+  /* ══════════════════════════════════════════════════════════
+     过滤栏 —— 横向展开
+
+     收起  >状态<
+     展开  >状态|进行|搁置|完成<
+     二级  >状态|进行|搁置-需要信息/需要授权|完成<
+     ══════════════════════════════════════════════════════════ */
+  .filters{padding:9px 14px;border-bottom:1px solid var(--border)}
+  .fb{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+  .fb-group{display:inline-flex;align-items:stretch;border:1px solid var(--border-2);
+    border-radius:7px;overflow:hidden;background:#fff}
+  .fb-group.open{border-color:var(--brand)}
+  .fb-group.has{border-color:var(--brand);background:#f4f8fe}
+
+  .fb-name{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;font:inherit;
+    font-size:11.5px;color:var(--text-2);background:transparent;border:0;cursor:pointer;
+    white-space:nowrap}
+  .fb-name:hover{background:#f2f4f6}
+  .fb-group.open .fb-name{color:var(--brand);font-weight:600;background:#eef3fb}
+  .fb-chev{font-size:8px;opacity:.7}
+
+  /* 展开后每一项一格，中间用竖线隔开 */
+  .fb-item{display:inline-flex;align-items:center;border-left:1px solid var(--border);
+    font-size:11.5px;white-space:nowrap}
+  .fb-item-name{padding:4px 10px;color:var(--text-2);cursor:pointer;display:inline-block}
+  .fb-item-name:hover{background:#f2f4f6;color:var(--text)}
+  .fb-item.on > .fb-item-name{color:var(--brand);font-weight:600;background:#eef3fb}
+
+  /* 子项：也是横向小格 */
+  .fb-sub{padding:4px 8px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;border-left:1px solid var(--border);cursor:pointer;
+    white-space:nowrap}
+  .fb-sub:hover{background:#f2f4f6;color:var(--text)}
+  .fb-sub.on{color:var(--brand);font-weight:600;background:#eef3fb}
+
+  .fb-clear{padding:4px 8px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;text-decoration:underline}
+  .fb-clear:hover{color:var(--danger)}
+
+  /* 卡片头：灰色小字 + 右边的「跳过」 */
+  .oc-top{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .oc-sub{font-size:11px;color:var(--text-3)}
+  .oc-spacer{flex:1}
+  .oc-skipbtn{padding:2px 9px;font:inherit;font-size:10.5px;color:var(--text-3);
+    background:#fff;border:1px solid var(--border-2);border-radius:12px;cursor:pointer;
+    white-space:nowrap}
+  .oc-skipbtn:hover{border-color:#b9bdc2;color:var(--text)}
+  .oc-skipbtn.on{background:#eef3fb;border-color:var(--brand);color:var(--brand);font-weight:600}
+
+  /* 采纳后图标变灰 */
+  .icon-btn.off{opacity:.3;cursor:not-allowed}
+  .icon-btn.off:hover{background:transparent}
+
+  /* 元的推导态菜单 */
+  .goal-menu{width:290px}
+  .goal-row{display:flex;align-items:flex-start;gap:7px;padding:6px 9px;border-radius:5px;
+    font-size:12px;color:var(--text-2);line-height:1.5}
+  .goal-row.on{background:#eef3fb;color:var(--brand);font-weight:600}
+  .goal-mark{flex:none;font-size:8px;margin-top:5px}
+  .goal-body{display:flex;flex-direction:column;gap:1px;min-width:0}
+  .goal-name{font-size:12px}
+  .goal-why{font-size:10.5px;color:var(--text-3);font-weight:400}
+  .goal-row.on .goal-why{color:var(--brand);opacity:.75}
+
+  /* 元数据表 */
+  .d-meta-block{padding:8px 15px 10px;border-bottom:1px solid var(--border);
+    display:flex;flex-direction:column;gap:3px;flex:none}
+  .d-meta-row{display:flex;gap:8px;font-size:11.5px;line-height:1.6}
+  .d-meta-name{flex:none;width:64px;color:var(--text-3)}
+  .d-meta-value{flex:1;min-width:0;color:var(--text-2);word-break:break-all}
+
+  .d-meta-value.none{color:var(--text-3);font-style:italic}
+
 </style>
 </head>
 <body>
@@ -1367,14 +1441,25 @@ function renderTree(box, tasks) {
     path.setAttribute('d', 'M' + x1 + ' ' + y1
       + ' C' + (x1 + dx) + ' ' + (y1 + bow) + ' ' + (x2 - dx) + ' ' + (y2 + bow) + ' ' + x2 + ' ' + y2);
     path.setAttribute('fill', 'none');
+    /*
+     * 选中某条时，和它相连的箭头要突出显示。
+     *
+     * 用户原话：
+     *   > 点击卡片选中卡片的时候。这个卡片的关联箭头没有突出显示。
+     *
+     * 所以：相连的加粗 + 不透明，不相连的压暗。
+     */
+    const linked = state.selected !== '' && (edge.src === state.selected || edge.dst === state.selected);
+    const dimmed = state.selected !== '' && !linked;
+
     path.setAttribute('stroke', linkColor(edge.label || edge.kind));
-    path.setAttribute('stroke-width', edge.kind === 'parent' ? '1.2' : '1.5');
+    path.setAttribute('opacity', dimmed ? '0.12' : (linked ? '1' : '0.55'));
+    path.setAttribute('stroke-width', linked ? '2.6' : (edge.kind === 'parent' ? '1.2' : '1.5'));
     {
       const spec = LINK_KINDS.find((x) => x.key === (edge.label || edge.kind));
       if (spec && spec.dashed) path.setAttribute('stroke-dasharray', '4 3');
     }
     path.setAttribute('marker-end', 'url(#tree-arrow)');
-    path.setAttribute('opacity', '0.55');
     svg.appendChild(path);
   }
   canvas.appendChild(svg);
@@ -1682,7 +1767,12 @@ function compileAsk(raw) {
   const multi = raw.multi === true;
 
   /* 单选支持 picked，多选支持 picked_multi；两个都给时按 multi 取 */
-  const single = String(raw.picked === undefined || raw.picked === null ? '' : raw.picked);
+  /*
+   * 默认 '跳过'（没看这张卡片）。
+   * 用户原话：
+   *   > "跳过"，应该是默认选择，并且点击才激活。
+   */
+  const single = String(raw.picked === undefined || raw.picked === null ? '跳过' : raw.picked);
   const list = Array.isArray(raw.picked_multi)
     ? raw.picked_multi.map(String)
     : (Array.isArray(raw.picked) ? raw.picked.map(String) : []);
@@ -2419,15 +2509,27 @@ function renderMarkdownComponent(props) {
  * @param {HTMLElement} list 选项列表
  * @returns {HTMLElement}
  */
-function optionCard(props, list) {
+function optionCard(props, list, skipActive, onSkip) {
   const card = el('div', {class:'oc'});
 
   const head = el('div', {class:'oc-head'});
-  if (props.header) head.appendChild(el('div', {class:'oc-sub'}, String(props.header)));
+
+  /* 上面一行：灰色小字（header）+ 右边的「跳过」 */
+  const top = el('div', {class:'oc-top'});
+  if (props.header) top.appendChild(el('span', {class:'oc-sub'}, String(props.header)));
+  top.appendChild(el('span', {class:'oc-spacer'}));
+  top.appendChild(el('button', {
+    class: 'oc-skipbtn' + (skipActive ? ' on' : ''),
+    type: 'button',
+    title: '我没看这张卡片',
+    onclick: onSkip
+  }, '跳过'));
+  head.appendChild(top);
+
   if (props.question) head.appendChild(el('div', {class:'oc-title'}, String(props.question)));
   else if (props.placeholder) head.appendChild(el('div', {class:'oc-title'}, String(props.placeholder)));
-  if (head.childElementCount > 0) card.appendChild(head);
 
+  card.appendChild(head);
   card.appendChild(list);
   return card;
 }
@@ -2454,26 +2556,6 @@ function optionRow(opt, index, active, onClick) {
   );
 }
 
-/**
- * 「跳过」那行。
- *
- * 用户原话：
- *   > 渲染器给的渲染应该始终包含一个"未选择"或"跳过"。
- *   > 表示你查这个情况，而我实际上都没看这个卡片。
- *
- * @param {boolean} active
- * @param {Function} onClick
- * @returns {HTMLElement}
- */
-function skipRow(active, onClick) {
-  return el('button', {
-    class: 'oc-row oc-skip' + (active ? ' on' : ''),
-    type: 'button',
-    onclick: onClick
-  },
-    el('span', {class:'oc-no'}, '·'),
-    el('span', {class:'oc-label'}, '跳过（我没看这张卡片）'));
-}
 
 /**
  * 自己填的那一行。和普通选项长得一样，只是里面是输入框。
@@ -2565,9 +2647,22 @@ function renderAskComponent(props) {
   const single = String(props.picked === undefined || props.picked === null ? '' : props.picked);
   const list = Array.isArray(props.pickedMulti) ? props.pickedMulti.map(String) : [];
 
-  /* 没动过 = 跳过。这是默认状态。 */
-  const untouched = multi ? list.length === 0 : single === '';
-  const isSkip = untouched || single === '跳过';
+  /*
+   * 「跳过」的定义收窄了。
+   *
+   * 用户原话（GU-06 第 3 条）：
+   *   > "跳过"，应该是默认选择，并且点击才激活。
+   *   > 没选择不自动等于没看见。
+   *   > 因为多选有可能是看见了并且一个都不选。
+   *
+   * 所以「没选」不再等于「没看」：
+   *
+   *   picked === '跳过'      明确点了跳过
+   *   其它（含空）           没跳过
+   *
+   * 但**默认要给 '跳过'** —— 那是初值。用户一旦动了选项就离开跳过。
+   */
+  const isSkip = !multi && single === '跳过';
 
   /* 单选时：序号 / 自定义文字 */
   const pickedIndex = !multi && /^\d+$/u.test(single) ? Number(single) : -1;
@@ -2596,13 +2691,16 @@ function renderAskComponent(props) {
     listBox.appendChild(customRow(props, customText, hasCustom, multi));
   }
 
-  /* 跳过行 —— 始终有，而且默认就是它 */
-  listBox.appendChild(skipRow(isSkip, function () {
+  const card = optionCard(props, listBox, isSkip, function () {
+    if (isSkip) {
+      /* 再点一次取消跳过 */
+      if (multi) commit(props, { picked_multi: [] });
+      else commit(props, { picked: '' });
+      return;
+    }
     if (multi) commit(props, { picked_multi: [] });
     else commit(props, { picked: '跳过' });
-  }));
-
-  const card = optionCard(props, listBox);
+  });
 
   if (multi && list.length > 0) {
     card.appendChild(el('div', {class:'oc-foot'}, '已选 ' + list.length + ' 项'));
@@ -2927,6 +3025,14 @@ function renderDetail() {
        > 然后 GU-02 只有半行高度，他的下面半行放「目标」「通用」这两个 label。
        > 沙盘详情页的 label 写错了。「GU-02」的右边是「目标」。
        > 再右边应该是「领域」。而他是「GU」。冗余信息。 */
+  /*
+   * 采纳之后 = 锁定。
+   *
+   * 草稿（未指定）和重开后的「提交」都能改；
+   * 一旦用户采纳（提交之后的任何状态），声明就冻结了。
+   */
+  const locked = t.status !== '未指定';
+
   const head = el('div', {class:'d-head'},
     el('div', {class:'d-head-grid'},
       /* 左列：编号 + 两个标签（编号只占半行高） */
@@ -2939,12 +3045,30 @@ function renderDetail() {
       el('div', {class:'d-head-right'},
         el('div', {class:'d-head-title'}, t.title),
         el('div', {class:'d-head-icons'},
-          el('button', {class:'icon-btn', type:'button', title:'编辑标题与正文',
-            onclick(){ openEditor(t); }}, '✎'),
-          el('button', {class:'icon-btn', type:'button', title:'删除（连子事项）',
+          /*
+           * 采纳之后不准编辑、不准删除。
+           *
+           * 用户原话（GU-06 第 5 条）：
+           *   > 采纳以后不准编辑。不准删除。
+           *
+           * 这和「采纳后声明冻结」是同一条规则 —— 采纳意味着这份声明
+           * 被用户认可了，此后只能填值，不能改结构。
+           */
+          el('button', {
+            class:'icon-btn' + (locked ? ' off' : ''), type:'button',
+            title: locked ? '已采纳，不能编辑（要改先重开）' : '编辑标题与正文',
+            disabled: locked,
+            onclick(){ if (!locked) openEditor(t); }
+          }, '✎'),
+          el('button', {
+            class:'icon-btn' + (locked ? ' off' : ''), type:'button',
+            title: locked ? '已采纳，不能删除（要删先重开）' : '删除（连子事项）',
+            disabled: locked,
             onclick(){
+              if (locked) return;
               if (confirm('删除 ' + t.id + ' 和它下面所有子事项？')) deleteTask(t.id);
-            }}, '🗑'),
+            }
+          }, '🗑'),
           el('button', {class:'icon-btn', type:'button', title:'关闭',
             onclick(){ state.selected = ''; renderAll(); }}, '✕'))))
   );
@@ -2969,25 +3093,54 @@ function renderDetail() {
 
   /* 菜单 */
   if (state.menuOpen) {
-    const menu = el('div', {class:'status-menu'},
-      el('div', {class:'menu-cap'}, '变更状态'));
-    const actions = t.kind === 'goal' && t.status !== '未指定'
-      ? [{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'放弃目标',bad:true}]
-      : (TRANSITIONS[t.status] || []);
-    for (const a of actions) {
-      menu.appendChild(el('button', {
-        class:'menu-item' + (a.primary ? ' primary' : '') + (a.bad ? ' bad' : ''),
-        type:'button',
-        onclick(){
-          patchTask(t.id, { status: a.to });
-          state.menuOpen = false;
-          renderAll();
-        }
-      }, el('span', {class:'ic'}, a.primary ? '▶' : a.bad ? '✕' : '·'), a.label));
+    /*
+     * 目标的状态不能改，菜单改成「说明」。
+     *
+     * 用户原话（GU-06 第 6 条）：
+     *   > "目标"的状态不能更改。点开以后的菜单应该是描述这个的状态只读，
+     *   > 和状态判别依据（当前激活中的那个状态要高亮选中）
+     *
+     * 所以目标点开看到的是：
+     *   · 每个可能的状态 + 它的判别依据
+     *   · 当前处于哪个 —— 高亮
+     *   · 没有任何可点的按钮
+     */
+    if (t.kind === 'goal') {
+      const menu = el('div', {class:'status-menu goal-menu'},
+        el('div', {class:'menu-cap'}, '目标的推导状态（不是手动设的）'));
+
+      const derived = deriveGoalStatus(t);
+      for (const row of GOAL_STATES) {
+        const on = row.key === derived;
+        menu.appendChild(el('div', {class:'goal-row' + (on ? ' on' : '')},
+          el('span', {class:'goal-mark'}, on ? '●' : '○'),
+          el('span', {class:'goal-body'},
+            el('span', {class:'goal-name'}, row.key),
+            el('span', {class:'goal-why'}, row.why))));
+      }
+
+      menu.appendChild(el('div', {class:'menu-note'},
+        '目标的状态由子事项推导。要推进它，去推进子事项 —— 这里不给按钮。'));
+      head.appendChild(menu);
+    } else {
+      const menu = el('div', {class:'status-menu'},
+        el('div', {class:'menu-cap'}, '变更状态'));
+      const actions = TRANSITIONS[t.status] || [];
+      for (const a of actions) {
+        menu.appendChild(el('button', {
+          class:'menu-item' + (a.primary ? ' primary' : '') + (a.bad ? ' bad' : ''),
+          type:'button',
+          onclick(){
+            patchTask(t.id, { status: a.to });
+            state.menuOpen = false;
+            renderAll();
+          }
+        }, el('span', {class:'ic'}, a.primary ? '▶' : a.bad ? '✕' : '·'), a.label));
+      }
+      menu.appendChild(el('div', {class:'menu-note'},
+        '状态变更会影响 AI 能否继续这张单，所以都收在这里。'));
+      head.appendChild(menu);
     }
-    menu.appendChild(el('div', {class:'menu-note'},
-      '状态变更会影响 AI 能否继续这张单，所以都收在这里。'));
-    head.appendChild(menu);
   }
   box.appendChild(head);
 
@@ -3060,6 +3213,42 @@ function renderDetail() {
     box.appendChild(relBody);
   }
 
+  /*
+   * ── 元数据 ──
+   *
+   * 用户原话（GU-06 第 4 条）：
+   *   > 子工作空间，临时工作目录，权限。这几个元数据还没显示。
+   *
+   * 放成一张小表，两列：名字 / 值。没设的显示「（未指定）」。
+   */
+  const str = function (v) { return v === undefined || v === null ? '' : String(v); };
+  const metaRows = [
+    ['子工作区', str(t.workspace)],
+    ['临时工作区', str(t.tmpWorkspace)],
+    ['额外可读', str(t.workspaces)],
+    ['权限', str(t.permission)],
+    ['再收窄', str(t.deny)],
+    ['标记', Array.isArray(t.tags) && t.tags.length > 0 ? t.tags.join('、') : '']
+  ];
+  /*
+   * 用户原话（GU-06 第 4 条）：
+   *   > 子工作空间，临时工作目录，权限。这几个元数据还没显示。
+   *
+   * 注意是「没显示」——不是「没有」。所以没设也要画出来，
+   * 值写「（未指定）」。全藏起来的话，用户根本不知道有这几个字段。
+   */
+
+  let metaBox = null;
+  if (metaRows.length > 0) {
+    metaBox = el('div', {class:'d-meta-block'});
+    for (const [name, value] of metaRows) {
+      metaBox.appendChild(el('div', {class:'d-meta-row'},
+        el('span', {class:'d-meta-name'}, name),
+        el('span', {class:'d-meta-value' + (String(value).trim() === '' ? ' none' : '')},
+          String(value).trim() === '' ? '（未指定）' : String(value))));
+    }
+  }
+
   /* ── 正文（滚动区）──
    *
    * 用户原话：
@@ -3068,6 +3257,7 @@ function renderDetail() {
    * 所以这里加一个「看 mdx」开关 —— 直接看到这条事项被编译成什么，
    * 不用开 devtools。 */
   const body = el('div', {class:'d-body'});
+  if (metaBox !== null) body.appendChild(metaBox);
   body.appendChild(el('div', {class:'sec'},
     el('div', {class:'sec-title'},
       '正文',
@@ -3105,6 +3295,20 @@ function renderDetail() {
       onchange(e){ patchTask(t.id, { note: e.target.value }); }
     })));
 }
+
+/**
+ * 目标的四种推导态 + 判别依据。
+ *
+ * 用户原话：
+ *   > 点开以后的菜单应该是描述这个的状态只读，和状态判别依据
+ *   > （当前激活中的那个状态要高亮选中）
+ */
+const GOAL_STATES = [
+  { key: '未开始', why: '还没有子事项，或者子事项全是草稿' },
+  { key: '进行中', why: '有子事项在「进行」组（提交 / 处理中）' },
+  { key: '停滞', why: '没有进行中的，但有子事项卡在等待（需要补充 / 需要授权）' },
+  { key: '收尾', why: '所有子事项都在「完成」组' }
+];
 
 function deriveGoalStatus(t) {
   const kids = DB.filter((x) => x.parent === t.id);
@@ -3572,71 +3776,143 @@ function openEditor(t) {
 
 
 /* ══════════════════════════════════════════════════════════════
-   过滤栏 —— 二级菜单
+   过滤栏 —— 横向展开
 
-   用户原话：
+   用户原话（GU-06 第 2 条）：
 
-     > 过滤栏，应该做二级菜单。点击展开以后才有过滤选项。
-     > 一级菜单是"状态"，"类别"，"领域"。
-     > 当二级点进去的时候，他还会从旁边展开三级菜单（占文档流）。
-     > 例如"搁置"->"需要信息，需要权限"。"完成"-》"成功"，"失败"，"取消"。
-     > 而类别，就是这个类别下面的模板。
+     > 筛选的过滤器。我要的是横向的展开。不是竖的。行为是：
+     > 按钮默认写着   >状态<
+     > 点击以后变成   >状态|进行|搁置|完成
+     > 再次点击"状态"，或者没有选中类别进行筛选就失去焦点，那么他就会收回。
+     > 如果点击了筛选，他就会保持展开，同时，那个按钮还会进一步展开。
+     > 状态|进行|搁置-需要信息/需要授权|完成
 
-   ## 结构
+   ## 三态
 
-     一级（横排）：[状态 ▾] [类别 ▾] [领域 ▾]
-     二级（点开后，横向）：组 / 类别 / 领域
-     三级（点二级某一项后，**占文档流**展开）：该组下的具体状态 / 该类别下的模板
+     ① 收起         `>状态<`
+     ② 展开一级     `>状态|进行|搁置|完成<`
+     ③ 展开二级     `>状态|进行|搁置-需要信息/需要授权|完成<`
 
-   「占文档流」很重要：三级不是浮层，是往下推开内容。
-   因为选完就得看结果，浮层会挡住。
+   ②→③ 的触发：点了某一项。
+   ③ 里那一项变成 `搁置-需要信息/需要授权`（用 `-` 挂子项）。
+
+   ## 什么时候收回
+
+     · 再点「状态」那一格
+     · 没选任何项就失焦
+
+   选了项就**保持展开**（因为有筛选生效，得看得见）。
    ══════════════════════════════════════════════════════════════ */
+
+/** 三个过滤维度的定义：key / 面包屑 / 组 / 组下的子项 */
+const FILTER_DEFS = [
+  {
+    key: 'status',
+    label: '状态',
+    groups: [
+      { key: '进行', children: ['提交', '处理中'] },
+      { key: '搁置', children: ['需要补充', '需要授权'] },
+      { key: '完成', children: ['完成', '失败', '取消'] },
+      { key: '草稿', children: ['未指定'] }
+    ]
+  },
+  {
+    key: 'kind',
+    label: '类别',
+    groups: [
+      { key: 'goal', label: '目标', children: [] },
+      { key: 'design', label: '设计', children: [] },
+      { key: 'record', label: '记录', children: [] },
+      { key: 'work', label: '工作', children: [] }
+    ]
+  },
+  {
+    key: 'domain',
+    label: '领域',
+    groups: [
+      { key: 'code', label: '代码', children: [] },
+      { key: 'writing', label: '写作', children: [] },
+      { key: 'art', label: '绘画', children: [] },
+      { key: 'general', label: '通用', children: [] }
+    ]
+  }
+];
 
 /**
  * 渲染过滤栏。
  *
- * 状态存在 state 里：
- *   filterOpen   打开的是哪一级（'' / 'status' / 'kind' / 'domain'）
- *   filterStatus 选中的状态（组名或具体状态）
- *   filterKinds  选中的类别
- *   filterDomains 选中的领域
- *   filterSub    二级里展开的那一项
+ * state 里用到：
+ *   filterOpen   哪个维度是展开的（'' = 全收起）
+ *   filterSub    哪个组展开了子项
+ *   filterStatus / filterKinds / filterDomains  选中的值
  */
 function renderFilters() {
   const box = document.getElementById('filters');
-  if (!box) return;
+  if (box === null) return;
   box.innerHTML = '';
 
-  const groups = [
-    { key: 'status', label: '状态', picked: state.filterStatus },
-    { key: 'kind', label: '类别', picked: state.filterKinds },
-    { key: 'domain', label: '领域', picked: state.filterDomains }
-  ];
+  const bar = el('div', {class:'fb'});
 
-  /* 一级 */
-  const bar = el('div', {class:'filter-bar'});
-  for (const g of groups) {
-    const open = state.filterOpen === g.key;
-    const n = g.picked.length;
-    bar.appendChild(el('button', {
-      class: 'filter-btn' + (open ? ' on' : '') + (n > 0 ? ' has' : ''),
-      type: 'button',
-      onclick() {
-        state.filterOpen = open ? '' : g.key;
-        state.filterSub = '';
-        renderFilters();
-        renderAll();
-      }
-    },
-      g.label,
-      n > 0 ? el('span', {class:'n'}, String(n)) : null,
-      el('span', {class:'chev'}, '▾')));
+  for (const def of FILTER_DEFS) {
+    const picked = pickedOf(def.key);
+    const open = state.filterOpen === def.key;
+
+    bar.appendChild(el('div', {class:'fb-group' + (open ? ' open' : '') + (picked.length ? ' has' : '')},
+      /* 维度名那一格 —— 点它展开/收回 */
+      el('button', {
+        class:'fb-name', type:'button',
+        onclick(event) {
+          event.stopPropagation();
+          if (state.filterOpen === def.key) {
+            /* 再点一次：收回（前提是没选东西；选了就保留） */
+            state.filterOpen = '';
+            state.filterSub = '';
+          } else {
+            state.filterOpen = def.key;
+            state.filterSub = '';
+          }
+          renderFilters();
+          renderAll();
+        }
+      },
+        el('span', {class:'fb-chev'}, open ? '▾' : '▸'),
+        def.label),
+
+      /* 展开后：每一项一格，横向排 */
+      open ? def.groups.map(function (group) {
+        const active = picked.includes(group.key);
+        const hasSub = group.children.length > 0;
+        const subOpen = state.filterSub === group.key;
+
+        /* 这一格的文字：没展开子项就是组名，展开了就是 `组名-子项/子项` */
+        const text = subOpen && hasSub
+          ? group.key + '-' + group.children.join('/')
+          : (group.label || group.key);
+
+        return el('span', {class:'fb-item' + (active ? ' on' : ''), key: group.key},
+          el('span', {
+            class:'fb-item-name',
+            onclick(event) {
+              event.stopPropagation();
+              /* 点这一项：选中/取消 + 展开它的子项 */
+              togglePick(pickedOf(def.key), group.key);
+              state.filterSub = (subOpen || !hasSub) ? '' : group.key;
+              renderFilters();
+              renderAll();
+            }
+          }, text),
+
+          /* 子项不单独列 —— 用户要的就是
+             「搁置-需要信息/需要授权」这一整格。
+             点这一格 = 选中「搁置」组。 */);
+      }) : null));
   }
 
-  /* 全部 / 清空 */
-  if (state.filterStatus.length + state.filterKinds.length + state.filterDomains.length > 0) {
+  /* 清空 */
+  const total = state.filterStatus.length + state.filterKinds.length + state.filterDomains.length;
+  if (total > 0) {
     bar.appendChild(el('button', {
-      class:'filter-clear', type:'button',
+      class:'fb-clear', type:'button',
       onclick() {
         state.filterStatus = [];
         state.filterKinds = [];
@@ -3646,170 +3922,46 @@ function renderFilters() {
         renderFilters();
         renderAll();
       }
-    }, '清空筛选'));
+    }, '清空'));
   }
 
-  /* 搜索框放右边 */
+  /* 搜索 */
   bar.appendChild(el('input', {
-    class:'search', type:'search', placeholder:'搜编号或标题…', id:'search',
+    class:'search', type:'search', placeholder:'搜编号或标题…',
     value: state.search,
     oninput(e) { state.search = e.target.value; renderAll(); }
   }));
+
   box.appendChild(bar);
 
-  /* 二级：占文档流，往下推开 */
+  /* 失焦收回：点空白处，如果没选东西就收起 */
   if (state.filterOpen !== '') {
-    box.appendChild(renderFilterPanel(state.filterOpen));
+    setTimeout(function () {
+      const handler = function (event) {
+        if (box.contains(event.target)) return;
+        if (pickedOf(state.filterOpen).length === 0) {
+          state.filterOpen = '';
+          state.filterSub = '';
+          renderFilters();
+          renderAll();
+        }
+        document.removeEventListener('pointerdown', handler);
+      };
+      document.addEventListener('pointerdown', handler);
+    }, 0);
   }
 }
 
 /**
- * 二级 + 三级面板。
+ * 某个维度已选的值。
  *
- * @param {string} which 'status' / 'kind' / 'domain'
- * @returns {HTMLElement}
+ * @param {string} key
+ * @returns {string[]}
  */
-function renderFilterPanel(which) {
-  const panel = el('div', {class:'filter-panel'});
-
-  /* ── 状态 ── */
-  if (which === 'status') {
-    const left = el('div', {class:'filter-col'});
-    for (const row of STATUS_TREE) {
-      const picked = state.filterStatus.includes(row.key);
-      const active = state.filterSub === row.key;
-      left.appendChild(el('button', {
-        class: 'filter-item' + (active ? ' on' : '') + (picked ? ' picked' : ''),
-        type: 'button',
-        onclick() {
-          /* 点组名 = 选/取消这个组；同时展开它的三级 */
-          togglePick(state.filterStatus, row.key);
-          state.filterSub = active ? '' : row.key;
-          renderFilters();
-          renderAll();
-        }
-      }, row.key, el('span', {class:'chev'}, '▸')));
-    }
-
-    /* 三级：该组下的具体状态 */
-    const row = STATUS_TREE.find((x) => x.key === state.filterSub);
-    if (row) {
-      const right = el('div', {class:'filter-col sub'});
-      right.appendChild(el('div', {class:'filter-sub-head'}, row.key + ' 里包含'));
-      for (const child of row.children) {
-        const picked = state.filterStatus.includes(child);
-        right.appendChild(el('button', {
-          class: 'filter-item' + (picked ? ' picked' : ''),
-          type: 'button',
-          onclick() {
-            togglePick(state.filterStatus, child);
-            renderFilters();
-            renderAll();
-          }
-        }, child, picked ? el('span', {class:'tick'}, '✓') : null));
-      }
-      panel.appendChild(left);
-      panel.appendChild(right);
-      return panel;
-    }
-    panel.appendChild(left);
-    return panel;
-  }
-
-  /* ── 类别 ── */
-  if (which === 'kind') {
-    const left = el('div', {class:'filter-col'});
-    for (const row of KIND_TREE) {
-      const picked = state.filterKinds.includes(row.key);
-      const active = state.filterSub === row.key;
-      left.appendChild(el('button', {
-        class: 'filter-item' + (active ? ' on' : '') + (picked ? ' picked' : ''),
-        type: 'button',
-        onclick() {
-          togglePick(state.filterKinds, row.key);
-          state.filterSub = active ? '' : row.key;
-          renderFilters();
-          renderAll();
-        }
-      }, row.label, el('span', {class:'chev'}, '▸')));
-    }
-
-    /* 三级：该类别下的模板 */
-    const row = KIND_TREE.find((x) => x.key === state.filterSub);
-    if (row) {
-      const right = el('div', {class:'filter-col sub'});
-      right.appendChild(el('div', {class:'filter-sub-head'}, row.label + ' 的模板'));
-      const list = TEMPLATES.filter((t) => t.kind === row.key);
-      if (list.length === 0) {
-        right.appendChild(el('div', {class:'filter-empty'}, '（这个类别下没有模板）'));
-      }
-      for (const tpl of list) {
-        right.appendChild(el('button', {
-          class:'filter-item', type:'button',
-          onclick() {
-            /* 点模板 = 按模板编号筛。用 filterTypes 单独存 */
-            togglePick(state.filterTypes, tpl.code);
-            renderFilters();
-            renderAll();
-          }
-        },
-          el('span', {class:'tpl-code'}, tpl.letter),
-          tpl.name,
-          state.filterTypes.includes(tpl.code) ? el('span', {class:'tick'}, '✓') : null));
-      }
-      panel.appendChild(left);
-      panel.appendChild(right);
-      return panel;
-    }
-    panel.appendChild(left);
-    return panel;
-  }
-
-  /* ── 领域 ── */
-  const left = el('div', {class:'filter-col'});
-  for (const row of DOMAIN_TREE) {
-    const picked = state.filterDomains.includes(row.key);
-    const active = state.filterSub === row.key;
-    left.appendChild(el('button', {
-      class: 'filter-item' + (active ? ' on' : '') + (picked ? ' picked' : ''),
-      type: 'button',
-      onclick() {
-        togglePick(state.filterDomains, row.key);
-        state.filterSub = active ? '' : row.key;
-        renderFilters();
-        renderAll();
-      }
-    }, row.label, el('span', {class:'chev'}, '▸')));
-  }
-
-  /* 三级：该领域下的模板 */
-  const row = DOMAIN_TREE.find((x) => x.key === state.filterSub);
-  if (row) {
-    const right = el('div', {class:'filter-col sub'});
-    right.appendChild(el('div', {class:'filter-sub-head'}, row.label + ' 的模板'));
-    const list = TEMPLATES.filter((t) => t.domain === row.key);
-    if (list.length === 0) {
-      right.appendChild(el('div', {class:'filter-empty'}, '（这个领域下没有模板）'));
-    }
-    for (const tpl of list) {
-      right.appendChild(el('button', {
-        class:'filter-item', type:'button',
-        onclick() {
-          togglePick(state.filterTypes, tpl.code);
-          renderFilters();
-          renderAll();
-        }
-      },
-        el('span', {class:'tpl-code'}, tpl.code),
-        tpl.name,
-        state.filterTypes.includes(tpl.code) ? el('span', {class:'tick'}, '✓') : null));
-    }
-    panel.appendChild(left);
-    panel.appendChild(right);
-    return panel;
-  }
-  panel.appendChild(left);
-  return panel;
+function pickedOf(key) {
+  if (key === 'status') return state.filterStatus;
+  if (key === 'kind') return state.filterKinds;
+  return state.filterDomains;
 }
 
 /** 在数组里加/删一项。 */
@@ -3821,16 +3973,10 @@ function togglePick(list, key) {
 
 /* ══════════════════════════════════════════════════════════════
    图例 —— 每种关系一种颜色
-
-   用户原话：
-     > 这个图例只有父子和链接。但既然链接关系不多，
-     > 那就可以给每个关系都做一种图例。
-
-   只在科技树视图显示（列表里没有连线，图例没意义）。
    ══════════════════════════════════════════════════════════════ */
 function renderLegend() {
   const box = document.getElementById('legend');
-  if (!box) return;
+  if (box === null) return;
   box.innerHTML = '';
   for (const kind of LINK_KINDS) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

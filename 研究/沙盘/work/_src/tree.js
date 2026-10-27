@@ -161,14 +161,25 @@ function renderTree(box, tasks) {
     path.setAttribute('d', 'M' + x1 + ' ' + y1
       + ' C' + (x1 + dx) + ' ' + (y1 + bow) + ' ' + (x2 - dx) + ' ' + (y2 + bow) + ' ' + x2 + ' ' + y2);
     path.setAttribute('fill', 'none');
+    /*
+     * 选中某条时，和它相连的箭头要突出显示。
+     *
+     * 用户原话：
+     *   > 点击卡片选中卡片的时候。这个卡片的关联箭头没有突出显示。
+     *
+     * 所以：相连的加粗 + 不透明，不相连的压暗。
+     */
+    const linked = state.selected !== '' && (edge.src === state.selected || edge.dst === state.selected);
+    const dimmed = state.selected !== '' && !linked;
+
     path.setAttribute('stroke', linkColor(edge.label || edge.kind));
-    path.setAttribute('stroke-width', edge.kind === 'parent' ? '1.2' : '1.5');
+    path.setAttribute('opacity', dimmed ? '0.12' : (linked ? '1' : '0.55'));
+    path.setAttribute('stroke-width', linked ? '2.6' : (edge.kind === 'parent' ? '1.2' : '1.5'));
     {
       const spec = LINK_KINDS.find((x) => x.key === (edge.label || edge.kind));
       if (spec && spec.dashed) path.setAttribute('stroke-dasharray', '4 3');
     }
     path.setAttribute('marker-end', 'url(#tree-arrow)');
-    path.setAttribute('opacity', '0.55');
     svg.appendChild(path);
   }
   canvas.appendChild(svg);

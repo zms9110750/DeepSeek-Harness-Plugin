@@ -1,69 +1,141 @@
 /* ══════════════════════════════════════════════════════════════
-   过滤栏 —— 二级菜单
+   过滤栏 —— 横向展开
 
-   用户原话：
+   用户原话（GU-06 第 2 条）：
 
-     > 过滤栏，应该做二级菜单。点击展开以后才有过滤选项。
-     > 一级菜单是"状态"，"类别"，"领域"。
-     > 当二级点进去的时候，他还会从旁边展开三级菜单（占文档流）。
-     > 例如"搁置"->"需要信息，需要权限"。"完成"-》"成功"，"失败"，"取消"。
-     > 而类别，就是这个类别下面的模板。
+     > 筛选的过滤器。我要的是横向的展开。不是竖的。行为是：
+     > 按钮默认写着   >状态<
+     > 点击以后变成   >状态|进行|搁置|完成
+     > 再次点击"状态"，或者没有选中类别进行筛选就失去焦点，那么他就会收回。
+     > 如果点击了筛选，他就会保持展开，同时，那个按钮还会进一步展开。
+     > 状态|进行|搁置-需要信息/需要授权|完成
 
-   ## 结构
+   ## 三态
 
-     一级（横排）：[状态 ▾] [类别 ▾] [领域 ▾]
-     二级（点开后，横向）：组 / 类别 / 领域
-     三级（点二级某一项后，**占文档流**展开）：该组下的具体状态 / 该类别下的模板
+     ① 收起         `>状态<`
+     ② 展开一级     `>状态|进行|搁置|完成<`
+     ③ 展开二级     `>状态|进行|搁置-需要信息/需要授权|完成<`
 
-   「占文档流」很重要：三级不是浮层，是往下推开内容。
-   因为选完就得看结果，浮层会挡住。
+   ②→③ 的触发：点了某一项。
+   ③ 里那一项变成 `搁置-需要信息/需要授权`（用 `-` 挂子项）。
+
+   ## 什么时候收回
+
+     · 再点「状态」那一格
+     · 没选任何项就失焦
+
+   选了项就**保持展开**（因为有筛选生效，得看得见）。
    ══════════════════════════════════════════════════════════════ */
+
+/** 三个过滤维度的定义：key / 面包屑 / 组 / 组下的子项 */
+const FILTER_DEFS = [
+  {
+    key: 'status',
+    label: '状态',
+    groups: [
+      { key: '进行', children: ['提交', '处理中'] },
+      { key: '搁置', children: ['需要补充', '需要授权'] },
+      { key: '完成', children: ['完成', '失败', '取消'] },
+      { key: '草稿', children: ['未指定'] }
+    ]
+  },
+  {
+    key: 'kind',
+    label: '类别',
+    groups: [
+      { key: 'goal', label: '目标', children: [] },
+      { key: 'design', label: '设计', children: [] },
+      { key: 'record', label: '记录', children: [] },
+      { key: 'work', label: '工作', children: [] }
+    ]
+  },
+  {
+    key: 'domain',
+    label: '领域',
+    groups: [
+      { key: 'code', label: '代码', children: [] },
+      { key: 'writing', label: '写作', children: [] },
+      { key: 'art', label: '绘画', children: [] },
+      { key: 'general', label: '通用', children: [] }
+    ]
+  }
+];
 
 /**
  * 渲染过滤栏。
  *
- * 状态存在 state 里：
- *   filterOpen   打开的是哪一级（'' / 'status' / 'kind' / 'domain'）
- *   filterStatus 选中的状态（组名或具体状态）
- *   filterKinds  选中的类别
- *   filterDomains 选中的领域
- *   filterSub    二级里展开的那一项
+ * state 里用到：
+ *   filterOpen   哪个维度是展开的（'' = 全收起）
+ *   filterSub    哪个组展开了子项
+ *   filterStatus / filterKinds / filterDomains  选中的值
  */
 function renderFilters() {
   const box = document.getElementById('filters');
-  if (!box) return;
+  if (box === null) return;
   box.innerHTML = '';
 
-  const groups = [
-    { key: 'status', label: '状态', picked: state.filterStatus },
-    { key: 'kind', label: '类别', picked: state.filterKinds },
-    { key: 'domain', label: '领域', picked: state.filterDomains }
-  ];
+  const bar = el('div', {class:'fb'});
 
-  /* 一级 */
-  const bar = el('div', {class:'filter-bar'});
-  for (const g of groups) {
-    const open = state.filterOpen === g.key;
-    const n = g.picked.length;
-    bar.appendChild(el('button', {
-      class: 'filter-btn' + (open ? ' on' : '') + (n > 0 ? ' has' : ''),
-      type: 'button',
-      onclick() {
-        state.filterOpen = open ? '' : g.key;
-        state.filterSub = '';
-        renderFilters();
-        renderAll();
-      }
-    },
-      g.label,
-      n > 0 ? el('span', {class:'n'}, String(n)) : null,
-      el('span', {class:'chev'}, '▾')));
+  for (const def of FILTER_DEFS) {
+    const picked = pickedOf(def.key);
+    const open = state.filterOpen === def.key;
+
+    bar.appendChild(el('div', {class:'fb-group' + (open ? ' open' : '') + (picked.length ? ' has' : '')},
+      /* 维度名那一格 —— 点它展开/收回 */
+      el('button', {
+        class:'fb-name', type:'button',
+        onclick(event) {
+          event.stopPropagation();
+          if (state.filterOpen === def.key) {
+            /* 再点一次：收回（前提是没选东西；选了就保留） */
+            state.filterOpen = '';
+            state.filterSub = '';
+          } else {
+            state.filterOpen = def.key;
+            state.filterSub = '';
+          }
+          renderFilters();
+          renderAll();
+        }
+      },
+        el('span', {class:'fb-chev'}, open ? '▾' : '▸'),
+        def.label),
+
+      /* 展开后：每一项一格，横向排 */
+      open ? def.groups.map(function (group) {
+        const active = picked.includes(group.key);
+        const hasSub = group.children.length > 0;
+        const subOpen = state.filterSub === group.key;
+
+        /* 这一格的文字：没展开子项就是组名，展开了就是 `组名-子项/子项` */
+        const text = subOpen && hasSub
+          ? group.key + '-' + group.children.join('/')
+          : (group.label || group.key);
+
+        return el('span', {class:'fb-item' + (active ? ' on' : ''), key: group.key},
+          el('span', {
+            class:'fb-item-name',
+            onclick(event) {
+              event.stopPropagation();
+              /* 点这一项：选中/取消 + 展开它的子项 */
+              togglePick(pickedOf(def.key), group.key);
+              state.filterSub = (subOpen || !hasSub) ? '' : group.key;
+              renderFilters();
+              renderAll();
+            }
+          }, text),
+
+          /* 子项不单独列 —— 用户要的就是
+             「搁置-需要信息/需要授权」这一整格。
+             点这一格 = 选中「搁置」组。 */);
+      }) : null));
   }
 
-  /* 全部 / 清空 */
-  if (state.filterStatus.length + state.filterKinds.length + state.filterDomains.length > 0) {
+  /* 清空 */
+  const total = state.filterStatus.length + state.filterKinds.length + state.filterDomains.length;
+  if (total > 0) {
     bar.appendChild(el('button', {
-      class:'filter-clear', type:'button',
+      class:'fb-clear', type:'button',
       onclick() {
         state.filterStatus = [];
         state.filterKinds = [];
@@ -73,170 +145,46 @@ function renderFilters() {
         renderFilters();
         renderAll();
       }
-    }, '清空筛选'));
+    }, '清空'));
   }
 
-  /* 搜索框放右边 */
+  /* 搜索 */
   bar.appendChild(el('input', {
-    class:'search', type:'search', placeholder:'搜编号或标题…', id:'search',
+    class:'search', type:'search', placeholder:'搜编号或标题…',
     value: state.search,
     oninput(e) { state.search = e.target.value; renderAll(); }
   }));
+
   box.appendChild(bar);
 
-  /* 二级：占文档流，往下推开 */
+  /* 失焦收回：点空白处，如果没选东西就收起 */
   if (state.filterOpen !== '') {
-    box.appendChild(renderFilterPanel(state.filterOpen));
+    setTimeout(function () {
+      const handler = function (event) {
+        if (box.contains(event.target)) return;
+        if (pickedOf(state.filterOpen).length === 0) {
+          state.filterOpen = '';
+          state.filterSub = '';
+          renderFilters();
+          renderAll();
+        }
+        document.removeEventListener('pointerdown', handler);
+      };
+      document.addEventListener('pointerdown', handler);
+    }, 0);
   }
 }
 
 /**
- * 二级 + 三级面板。
+ * 某个维度已选的值。
  *
- * @param {string} which 'status' / 'kind' / 'domain'
- * @returns {HTMLElement}
+ * @param {string} key
+ * @returns {string[]}
  */
-function renderFilterPanel(which) {
-  const panel = el('div', {class:'filter-panel'});
-
-  /* ── 状态 ── */
-  if (which === 'status') {
-    const left = el('div', {class:'filter-col'});
-    for (const row of STATUS_TREE) {
-      const picked = state.filterStatus.includes(row.key);
-      const active = state.filterSub === row.key;
-      left.appendChild(el('button', {
-        class: 'filter-item' + (active ? ' on' : '') + (picked ? ' picked' : ''),
-        type: 'button',
-        onclick() {
-          /* 点组名 = 选/取消这个组；同时展开它的三级 */
-          togglePick(state.filterStatus, row.key);
-          state.filterSub = active ? '' : row.key;
-          renderFilters();
-          renderAll();
-        }
-      }, row.key, el('span', {class:'chev'}, '▸')));
-    }
-
-    /* 三级：该组下的具体状态 */
-    const row = STATUS_TREE.find((x) => x.key === state.filterSub);
-    if (row) {
-      const right = el('div', {class:'filter-col sub'});
-      right.appendChild(el('div', {class:'filter-sub-head'}, row.key + ' 里包含'));
-      for (const child of row.children) {
-        const picked = state.filterStatus.includes(child);
-        right.appendChild(el('button', {
-          class: 'filter-item' + (picked ? ' picked' : ''),
-          type: 'button',
-          onclick() {
-            togglePick(state.filterStatus, child);
-            renderFilters();
-            renderAll();
-          }
-        }, child, picked ? el('span', {class:'tick'}, '✓') : null));
-      }
-      panel.appendChild(left);
-      panel.appendChild(right);
-      return panel;
-    }
-    panel.appendChild(left);
-    return panel;
-  }
-
-  /* ── 类别 ── */
-  if (which === 'kind') {
-    const left = el('div', {class:'filter-col'});
-    for (const row of KIND_TREE) {
-      const picked = state.filterKinds.includes(row.key);
-      const active = state.filterSub === row.key;
-      left.appendChild(el('button', {
-        class: 'filter-item' + (active ? ' on' : '') + (picked ? ' picked' : ''),
-        type: 'button',
-        onclick() {
-          togglePick(state.filterKinds, row.key);
-          state.filterSub = active ? '' : row.key;
-          renderFilters();
-          renderAll();
-        }
-      }, row.label, el('span', {class:'chev'}, '▸')));
-    }
-
-    /* 三级：该类别下的模板 */
-    const row = KIND_TREE.find((x) => x.key === state.filterSub);
-    if (row) {
-      const right = el('div', {class:'filter-col sub'});
-      right.appendChild(el('div', {class:'filter-sub-head'}, row.label + ' 的模板'));
-      const list = TEMPLATES.filter((t) => t.kind === row.key);
-      if (list.length === 0) {
-        right.appendChild(el('div', {class:'filter-empty'}, '（这个类别下没有模板）'));
-      }
-      for (const tpl of list) {
-        right.appendChild(el('button', {
-          class:'filter-item', type:'button',
-          onclick() {
-            /* 点模板 = 按模板编号筛。用 filterTypes 单独存 */
-            togglePick(state.filterTypes, tpl.code);
-            renderFilters();
-            renderAll();
-          }
-        },
-          el('span', {class:'tpl-code'}, tpl.letter),
-          tpl.name,
-          state.filterTypes.includes(tpl.code) ? el('span', {class:'tick'}, '✓') : null));
-      }
-      panel.appendChild(left);
-      panel.appendChild(right);
-      return panel;
-    }
-    panel.appendChild(left);
-    return panel;
-  }
-
-  /* ── 领域 ── */
-  const left = el('div', {class:'filter-col'});
-  for (const row of DOMAIN_TREE) {
-    const picked = state.filterDomains.includes(row.key);
-    const active = state.filterSub === row.key;
-    left.appendChild(el('button', {
-      class: 'filter-item' + (active ? ' on' : '') + (picked ? ' picked' : ''),
-      type: 'button',
-      onclick() {
-        togglePick(state.filterDomains, row.key);
-        state.filterSub = active ? '' : row.key;
-        renderFilters();
-        renderAll();
-      }
-    }, row.label, el('span', {class:'chev'}, '▸')));
-  }
-
-  /* 三级：该领域下的模板 */
-  const row = DOMAIN_TREE.find((x) => x.key === state.filterSub);
-  if (row) {
-    const right = el('div', {class:'filter-col sub'});
-    right.appendChild(el('div', {class:'filter-sub-head'}, row.label + ' 的模板'));
-    const list = TEMPLATES.filter((t) => t.domain === row.key);
-    if (list.length === 0) {
-      right.appendChild(el('div', {class:'filter-empty'}, '（这个领域下没有模板）'));
-    }
-    for (const tpl of list) {
-      right.appendChild(el('button', {
-        class:'filter-item', type:'button',
-        onclick() {
-          togglePick(state.filterTypes, tpl.code);
-          renderFilters();
-          renderAll();
-        }
-      },
-        el('span', {class:'tpl-code'}, tpl.code),
-        tpl.name,
-        state.filterTypes.includes(tpl.code) ? el('span', {class:'tick'}, '✓') : null));
-    }
-    panel.appendChild(left);
-    panel.appendChild(right);
-    return panel;
-  }
-  panel.appendChild(left);
-  return panel;
+function pickedOf(key) {
+  if (key === 'status') return state.filterStatus;
+  if (key === 'kind') return state.filterKinds;
+  return state.filterDomains;
 }
 
 /** 在数组里加/删一项。 */
@@ -248,16 +196,10 @@ function togglePick(list, key) {
 
 /* ══════════════════════════════════════════════════════════════
    图例 —— 每种关系一种颜色
-
-   用户原话：
-     > 这个图例只有父子和链接。但既然链接关系不多，
-     > 那就可以给每个关系都做一种图例。
-
-   只在科技树视图显示（列表里没有连线，图例没意义）。
    ══════════════════════════════════════════════════════════════ */
 function renderLegend() {
   const box = document.getElementById('legend');
-  if (!box) return;
+  if (box === null) return;
   box.innerHTML = '';
   for (const kind of LINK_KINDS) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
