@@ -623,12 +623,12 @@ test('正文校验：对象形态按模板章节校验，不合法就拒绝提�
 				title: '用错行动',
 				type: 'GU',
 				body: {
-					want: { action: 'choose', options: ['A', 'B'] },
+					want: { action: 'ask', options: [{ title: 'A' }, { title: 'B' }] },
 					done: { action: 'textarea', value: 'x' },
 				},
 				group,
 			}),
-		/不接受 action「choose」/u,
+		/不接受 action「ask」/u,
 		'章节不接受的 action 应该被拒',
 	);
 

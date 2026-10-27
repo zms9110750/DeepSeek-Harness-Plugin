@@ -82,24 +82,35 @@ export function defineAction(action) {
 		throw new TypeError(`defineAction(${name}): schema.properties 必须是对象`);
 	}
 	/*
-	 * 每个行动都自动带上两个公共字段：
+	 * 每个行动都自动带上五个公共字段。
 	 *
-	 *   description  模板给的那句说明。用户原话：
-	 *                > 行为的架构里面也一定要写能放说明的地方。因为基于行为进行渲染。
-	 *                > 所以这个模板怎么用的是肯定与参数无关了。那么参数给的选项
-	 *                > 就要有位置放没选择时怎么选的地方。
+	 * 用户定的原则：
+	 *   > 你的一个架构，就要描述掉一个渲染里的所有可能。
+	 *   > 而渲染是有灰色字的，所以你的架构里面就要保留这个字段的可能性，
+	 *   > 进行描述出来。
 	 *
-	 *   row          渲染参数（行高）。markdown 和 textarea 用得上。
+	 * 所以凡是渲染器会画的**位置**，schema 里必须有字段：
 	 *
-	 * 统一注入而不是每个行动各写一遍：漏一个就会在文档里显得不一致，
-	 * 而它们对每个行动的含义本来就相同。
+	 *   placeholder  灰字（输入框里 / 选项下方）
+	 *   label        标题（这一章上方那行）
+	 *   row          高度（多行控件）
+	 *   description  详细说明（控件下方的小字）
+	 *   required     必填（星号 + 提交时拦）
+	 *
+	 * 统一注入而不是每个行动各写一遍：这五个对每个行动的含义都一样，
+	 * 漏写一个就会在文档里显得不一致。
 	 */
-	if (!('description' in properties)) {
-		properties.description = { type: 'string', description: '这一章怎么用的说明（模板给的）' };
+	const COMMON = {
+		placeholder: { type: 'string', description: '灰字提示（输入框里 / 选项下方）' },
+		label: { type: 'string', description: '这一章上方的标题' },
+		row: { type: 'integer', minimum: 1, maximum: 40, description: '高度；1 = 单行' },
+		description: { type: 'string', description: '控件下方的详细说明' },
+		required: { type: 'boolean', description: '必填（画星号 + 提交时拦）' },
+	};
+	for (const [key, spec] of Object.entries(COMMON)) {
+		if (!(key in properties)) properties[key] = spec;
 	}
-	if (!('row' in properties)) {
-		properties.row = { type: 'integer', minimum: 1, maximum: 40, description: '渲染行高' };
-	}
+
 	/*
 	 * required 里写的字段必须真的在 properties 里。
 	 * 这个错很常见（改名后忘了同步），而且只在运行时校验才会暴露，
@@ -135,12 +146,18 @@ export function defineAction(action) {
 
 /** 取一个行动（未注册返回 undefined）。 */
 export function getAction(name) {
-	return ACTIONS.get(String(name ?? '').trim());
+	const key = String(name ?? '').trim();
+	const direct = ACTIONS.get(key);
+	if (direct !== undefined) return direct;
+	/* 别名：textarea → text，choose → ask 之类 */
+	const target = ALIASES[key];
+	return target === undefined ? undefined : ACTIONS.get(target);
 }
 
 /** 是否认识这个行动名。 */
 export function hasAction(name) {
-	return ACTIONS.has(String(name ?? '').trim());
+	const key = String(name ?? '').trim();
+	return ACTIONS.has(key) || ALIASES[key] !== undefined;
 }
 
 /** 全部行动名（按注册顺序）。 */
@@ -184,13 +201,55 @@ export function actionCatalog() {
 
 /* ─────────────────────────────────────────────────────────────
  * 内置行动
+ *
+ * ## 设计原则（用户定的）
+ *
+ *   > 你的一个架构，就要描述掉一个渲染里的所有可能。
+ *   > 而渲染是有灰色字的，所以你的架构里面就要保留这个字段的可能性，
+ *   > 进行描述出来。
+ *
+ * 也就是说：**渲染器画出来的每一个可见位置，schema 里都得有对应的字段**。
+ * 画了灰字就必须有 placeholder；画了标题就必须有 label；
+ * 能调高度就必须有 row。
+ *
+ * 不写「给 AI 看的说明」—— 那种东西不该进 schema（AI 从字段名就能懂）。
+ * 写进 schema 的每一条，都是界面上真实存在的一个位置。
+ *
+ * ## 公共字段
+ *
+ * 下面每个行动都带这五个（由 defineAction 自动注入）：
+ *
+ *   placeholder   灰字。输入框里 / 选项下方的次要文字
+ *   label         标题。这一章上方那行字
+ *   row           高度。多行控件生效
+ *   description   详细说明。画在控件下方的小字
+ *   required      必填。画星号 + 提交时拦
  * ───────────────────────────────────────────────────────────── */
 
 /*
- * 前三个是**现在就有**的（模板里已经在用，客户端已经能渲染），
- * 只是以前没有成体系。把它们收进注册表，不改变任何现有行为。
+ * text —— 一段可输入的文本。
+ *
+ * 不再分 input / textarea：两者只差一个 row，分成两个行动
+ * 只会让模板作者多记一个名字。row: 1 就是单行。
  */
+defineAction({
+	name: 'text',
+	summary: '一段可输入的文本',
+	render: 'Text',
+	schema: {
+		required: ['value'],
+		properties: {
+			value: { type: 'string', description: '存下来的内容' },
+			row: { type: 'integer', minimum: 1, maximum: 40, description: '高度；1 = 单行' },
+		},
+	},
+});
 
+/*
+ * markdown —— 只读的一段富文本。
+ *
+ * 没有输入框，所以不需要 placeholder；但可能需要 label（章节标题）。
+ */
 defineAction({
 	name: 'markdown',
 	summary: '只读的一段说明，不收集数据',
@@ -203,65 +262,45 @@ defineAction({
 	},
 });
 
-defineAction({
-	name: 'textarea',
-	summary: '多行文本输入',
-	render: 'Textarea',
-	schema: {
-		required: ['value'],
-		properties: {
-			value: { type: 'string', description: '填进去的文字' },
-			placeholder: { type: 'string', description: '输入框的灰字提示' },
-		},
-	},
-});
-
-defineAction({
-	name: 'input',
-	summary: '单行文本输入',
-	render: 'Input',
-	schema: {
-		required: ['value'],
-		properties: {
-			value: { type: 'string', description: '填进去的文字' },
-			placeholder: { type: 'string', description: '输入框的灰字提示' },
-		},
-	},
-});
-
 /*
- * 下面三个是新的 —— 需要结构，纯文本表达不了。
+ * ask —— 让用户从几个选项里挑一个。
+ *
+ * 每个选项可以有主标题和副标题（用户原话：
+ *   > 又比如，ask，每个选项，可能就有主标题副标题。
+ *   > 这个副标题可能也是选项里面的描述。）
+ *
+ * 所以 options 是 object 数组，每项 { title, placeholder? }。
  */
-
 defineAction({
-	name: 'choose',
+	name: 'ask',
 	summary: '从几个互斥选项里挑一个',
-	render: 'Choose',
+	render: 'Ask',
 	schema: {
 		required: ['options'],
 		properties: {
 			options: {
 				type: 'array',
 				minItems: 2,
-				items: { type: 'string' },
+				items: {
+					type: 'object',
+					required: ['title'],
+					properties: {
+						title: { type: 'string', description: '选项的主标题' },
+						placeholder: { type: 'string', description: '选项下方的灰字（副标题）' },
+					},
+				},
 				description: '候选项，至少两个',
 			},
-			picked: {
-				type: 'string',
-				description: '已选中的那一项；没选就是空',
-			},
-			allow_custom: {
-				type: 'boolean',
-				description: '允许「都不是，我自己写一句」',
-			},
-			allow_defer: {
-				type: 'boolean',
-				description: '允许「先不选，要更多信息」',
-			},
+			picked: { type: 'string', description: '已选中的那一项（按 title 匹配）' },
+			allow_custom: { type: 'boolean', description: '允许「都不是，我自己写一句」' },
+			allow_defer: { type: 'boolean', description: '允许「先不选，要更多信息」' },
 		},
 	},
 });
 
+/*
+ * rank —— 给一组东西排先后顺序。
+ */
 defineAction({
 	name: 'rank',
 	summary: '给一组东西排先后顺序',
@@ -272,7 +311,14 @@ defineAction({
 			items: {
 				type: 'array',
 				minItems: 1,
-				items: { type: 'string' },
+				items: {
+					type: 'object',
+					required: ['title'],
+					properties: {
+						title: { type: 'string', description: '条目的主标题' },
+						placeholder: { type: 'string', description: '条目下方的灰字' },
+					},
+				},
 				description: '条目，顺序就是当前排出的先后',
 			},
 			keep: {
@@ -284,6 +330,9 @@ defineAction({
 	},
 });
 
+/*
+ * derive —— 从这一条派生子任务。
+ */
 defineAction({
 	name: 'derive',
 	summary: '从这一条派生子任务',
@@ -305,6 +354,21 @@ defineAction({
 		},
 	},
 });
+
+/*
+ * 兼容别名。
+ *
+ * 27 个模板里还在用 textarea / input / choose 三个旧名字。
+ * 与其改 27 个 YAML（一次改错就全坏），不如在行动库里留别名。
+ *
+ * textarea 和 input 都是 text，只是默认行高不同；
+ * choose 是 ask 的旧名。
+ *
+ * 用户说「不存在不指定时的类别」那套逻辑同样适用于这里：
+ * 能少一个名字就少一个。所以这三个**不单独列在文档里**，
+ * 只在 getAction 查不到时兜底。
+ */
+const ALIASES = { textarea: 'text', input: 'text', choose: 'ask' };
 
 /* 内置行动在模块加载时注册完毕，不需要 apply()。 */
 

@@ -21,21 +21,21 @@ import {
 
 /* ─────────── 注册表 ─────────── */
 
-test('内置六个行动都在', () => {
+test('内置五个行动都在', () => {
 	const names = listActionNames();
-	for (const name of ['markdown', 'textarea', 'input', 'choose', 'rank', 'derive']) {
-		assert.ok(names.includes(name), `缺少内置行动 ${name}`);
+	for (const name of ['text', 'markdown', 'ask', 'rank', 'derive']) {
+		assert.ok(names.includes(name), '缺少内置行动 ' + name);
 	}
 });
 
 test('getAction 拿得到定义，字段齐全', () => {
-	const choose = getAction('choose');
-	assert.ok(choose, 'choose 应该已注册');
-	assert.equal(choose.name, 'choose');
-	assert.equal(choose.render, 'Choose');
-	assert.ok(choose.summary.length > 0, 'summary 不能为空');
-	assert.deepEqual(choose.schema.required, ['options']);
-	assert.ok('options' in choose.schema.properties);
+	const ask = getAction('ask');
+	assert.ok(ask, 'ask 应该已注册');
+	assert.equal(ask.name, 'ask');
+	assert.equal(ask.render, 'Ask');
+	assert.ok(ask.summary.length > 0, 'summary 不能为空');
+	assert.deepEqual(ask.schema.required, ['options']);
+	assert.ok('options' in ask.schema.properties);
 });
 
 test('未注册的行动返回 undefined，不抛错', () => {
@@ -43,7 +43,7 @@ test('未注册的行动返回 undefined，不抛错', () => {
 	assert.equal(getAction(''), undefined);
 	assert.equal(getAction(null), undefined);
 	assert.equal(hasAction('nope'), false);
-	assert.equal(hasAction('choose'), true);
+	assert.equal(hasAction('ask'), true);
 });
 
 test('注册时挡住三类别名和坏 schema', () => {
@@ -72,42 +72,42 @@ test('同一个名字重复注册会覆盖，不报错', () => {
 /* ─────────── 校验 ─────────── */
 
 test('合法数据通过', () => {
-	const issues = validate(getAction('choose').schema, {
-		options: ['A', 'B'],
+	const issues = validate(getAction('ask').schema, {
+		options: [{ title: 'A' }, { title: 'B' }],
 		picked: 'A',
 	});
 	assert.deepEqual(issues, [], formatIssues(issues));
 });
 
 test('必填缺失被指出', () => {
-	const issues = validate(getAction('choose').schema, { picked: 'A' });
+	const issues = validate(getAction('ask').schema, { picked: 'A' });
 	assert.equal(issues.length, 1);
 	assert.equal(issues[0].path, 'options');
 	assert.match(issues[0].message, /必填/);
 });
 
 test('null 和 undefined 都算没给', () => {
-	const a = validate(getAction('choose').schema, { options: null });
-	const b = validate(getAction('choose').schema, {});
+	const a = validate(getAction('ask').schema, { options: null });
+	const b = validate(getAction('ask').schema, {});
 	assert.equal(a.length, 1);
 	assert.equal(b.length, 1);
 });
 
 test('类型不对被指出，且不做后续判断', () => {
-	const issues = validate(getAction('choose').schema, { options: 'A,B' });
+	const issues = validate(getAction('ask').schema, { options: 'A,B' });
 	assert.equal(issues.length, 1);
 	assert.match(issues[0].message, /应该是 数组，实际是 文本/);
 });
 
 test('数组元素逐个校验，路径带下标', () => {
-	const issues = validate(getAction('choose').schema, { options: ['A', 42] });
+	const issues = validate(getAction('ask').schema, { options: [{ title: 'A' }, 42] });
 	assert.equal(issues.length, 1);
 	assert.equal(issues[0].path, 'options.1');
-	assert.match(issues[0].message, /文本/);
+	assert.match(issues[0].message, /对象/);
 });
 
 test('minItems 生效', () => {
-	const issues = validate(getAction('choose').schema, { options: ['只有一个'] });
+	const issues = validate(getAction('ask').schema, { options: [{ title: '只有一个' }] });
 	assert.equal(issues.length, 1);
 	assert.match(issues[0].message, /至少 2 项/);
 });
@@ -123,13 +123,13 @@ test('enum 生效', () => {
 });
 
 test('可选字段没给不报错', () => {
-	const issues = validate(getAction('textarea').schema, { value: '写点什么' });
+	const issues = validate(getAction('text').schema, { value: '写点什么' });
 	assert.deepEqual(issues, []);
 });
 
 test('额外的字段：只有 additionalProperties=false 才拦', () => {
 	/* textarea 没声明 additionalProperties，所以多余字段放过 */
-	const loose = validate(getAction('textarea').schema, { value: 'x', extra: 1 });
+	const loose = validate(getAction('text').schema, { value: 'x', extra: 1 });
 	assert.deepEqual(loose, []);
 
 	/* 显式 false 时拦住 */
@@ -165,7 +165,7 @@ test('布尔和对象的基本类型判断', () => {
 });
 
 test('多条错误一次性全给，不是遇到第一条就停', () => {
-	const issues = validate(getAction('choose').schema, {
+	const issues = validate(getAction('ask').schema, {
 		options: 'not-array',
 		allow_custom: 'yes',
 	});
@@ -186,9 +186,9 @@ test('formatIssues 把错误打成一行', () => {
 
 test('actionCatalog 给出每个行动的字段清单，必填带星号', () => {
 	const text = actionCatalog();
-	assert.match(text, /^\s*textarea\(value\*, placeholder, description, row\)$/mu);
-	assert.match(text, /^\s*choose\(options\*, picked, allow_custom, allow_defer, description, row\)$/mu);
-	assert.match(text, /^\s*derive\(templates\*, mode, description, row\)$/mu);
+	assert.match(text, /^\s*text\(value\*, row, placeholder, label, description, required\)$/mu);
+	assert.match(text, /^\s*ask\(options\*, picked, allow_custom, allow_defer, placeholder, label, row, description, required\)$/mu);
+	assert.match(text, /^\s*derive\(templates\*, mode, placeholder, label, row, description, required\)$/mu);
 });
 
 test('词表每条一个行动，数量对得上', () => {
