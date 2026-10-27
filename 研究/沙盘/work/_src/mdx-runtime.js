@@ -321,7 +321,61 @@ function commit(props, patch) {
 
   Object.assign(section, patch);
   scheduleSave();
-  renderAll();
+  repaintBody();
+}
+
+/**
+ * 只重绘正文，保住滚动位置和焦点。
+ *
+ * 用户原话：
+ *
+ *   > 我一旦失去焦点。这个东西就整个重新绘制。回到了顶端
+ *
+ * 之前 commit 调的是 renderAll()，整页重建 —— 正文区滚到哪、
+ * 光标在哪个输入框，全丢。
+ *
+ * 现在只重绘 .d-body 里面，并且：
+ *   · 记下滚动位置，重绘后还原
+ *   · 记下焦点在哪个输入框、光标在第几个字符，重绘后还原
+ */
+function repaintBody() {
+  const holder = document.querySelector('.d-body');
+  if (holder === null) { renderAll(); return; }
+
+  /* ① 记滚动 */
+  const scroll = holder.scrollTop;
+
+  /* ② 记焦点：哪个输入框、光标位置 */
+  const active = document.activeElement;
+  let focusInfo = null;
+  if (active !== null && holder.contains(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
+    const all = [...holder.querySelectorAll('textarea, input[type="text"]')];
+    focusInfo = { index: all.indexOf(active), start: active.selectionStart, end: active.selectionEnd };
+  }
+
+  /* ③ 重绘 */
+  const task = taskOf(renderCtx.taskId);
+  if (task === undefined) return;
+  const fresh = renderBody(task);
+  holder.innerHTML = '';
+  if (fresh !== null) holder.appendChild(fresh);
+
+  /* ④ 还原滚动。
+     必须等下一帧：刚插进去时内容还没布局，scrollHeight 是旧的，
+     直接 set 会被浏览器 clamp 到旧的高度。 */
+  requestAnimationFrame(function () {
+    holder.scrollTop = scroll;
+  });
+
+  /* ⑤ 还原焦点 */
+  if (focusInfo !== null && focusInfo.index >= 0) {
+    const all = [...holder.querySelectorAll('textarea, input[type="text"]')];
+    const el2 = all[focusInfo.index];
+    if (el2 !== undefined) {
+      el2.focus();
+      try { el2.setSelectionRange(focusInfo.start, focusInfo.end); } catch { /* 某些 input 不支持 */ }
+    }
+  }
 }
 
 /**
