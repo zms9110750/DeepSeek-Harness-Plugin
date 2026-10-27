@@ -229,3 +229,11 @@
     border-radius:6px;font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;
     color:var(--text);white-space:pre-wrap;word-break:break-all;overflow:auto;max-height:420px}
   .mdx{display:flex;flex-direction:column;gap:0}
+
+  /* 多选的方框（和单选的圆点区分） */
+  .choice .checkbox{flex:none;width:13px;height:13px;border-radius:3px;
+    border:1.5px solid var(--border-2);display:grid;place-items:center;margin-top:2px}
+  .choice.multi.on .checkbox{border-color:var(--brand);background:var(--brand)}
+  .choice .checkbox .tick{color:#fff;font-size:9px;line-height:1;font-weight:700}
+  .choice.multi.on .choice-sub{color:var(--brand);opacity:.75}
+  .multi-count{font-size:10.5px;color:var(--text-3);margin-top:5px}

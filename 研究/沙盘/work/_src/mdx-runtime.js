@@ -193,6 +193,9 @@ const MDX_COMPONENTS = {
   Ask: function Ask(props) {
     return renderAskComponent(props);
   },
+  Multi: function Multi(props) {
+    return renderMultiComponent(props);
+  },
   Rank: function Rank(props) {
     return renderRankComponent(props);
   },
@@ -312,6 +315,42 @@ function renderAskComponent(props) {
   }
   if (props.allowDefer === true && picked !== '') {
     box.appendChild(el('button', {class:'link-btn', type:'button'}, '先不选，要更多信息'));
+  }
+
+  return sectionShell(props, [box]);
+}
+
+/**
+ * Multi —— 多选。
+ *
+ * 和 Ask 的区别：Ask 是单选（互斥），Multi 是集合。
+ * 视觉上也不同：单选是圆点，多选是方框 ✓。
+ */
+function renderMultiComponent(props) {
+  const options = Array.isArray(props.options) ? props.options : [];
+  const picked = Array.isArray(props.picked) ? props.picked.map(String) : [];
+  const box = el('div', {class:'inter'});
+
+  if (props.placeholder) {
+    box.appendChild(el('div', {class:'inter-cap'}, String(props.placeholder)));
+  }
+
+  for (const opt of options) {
+    const title = typeof opt === 'string' ? opt : String(opt.title || '');
+    const sub = typeof opt === 'string' ? '' : String(opt.placeholder || '');
+    const on = picked.includes(title);
+
+    box.appendChild(el('button', {
+      class:'choice multi' + (on ? ' on' : ''), type:'button'
+    },
+      el('span', {class:'checkbox'}, on ? el('span', {class:'tick'}, '✓') : null),
+      el('span', {class:'choice-body'},
+        el('span', {class:'choice-title'}, title),
+        sub === '' ? null : el('span', {class:'choice-sub'}, sub))));
+  }
+
+  if (picked.length > 0) {
+    box.appendChild(el('div', {class:'multi-count'}, '已选 ' + picked.length + ' 项'));
   }
 
   return sectionShell(props, [box]);

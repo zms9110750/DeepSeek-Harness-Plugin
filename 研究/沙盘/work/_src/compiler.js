@@ -128,6 +128,34 @@ function compileAsk(raw) {
 }
 
 /**
+ * multi —— 从几个选项里挑**多个**。
+ *
+ * 和 ask 的区别：ask 是互斥选择（picked 一个），multi 是集合（picked 多个）。
+ *
+ * @param {object} raw
+ * @returns {string}
+ */
+function compileMulti(raw) {
+  const options = Array.isArray(raw.options)
+    ? raw.options.map(function (o) {
+        if (typeof o === 'string') return { title: o, placeholder: '' };
+        return { title: String(o.title || ''), placeholder: String(o.placeholder || '') };
+      })
+    : [];
+  const picked = Array.isArray(raw.picked) ? raw.picked.map(String) : [];
+
+  return '<Multi'
+    + attr('options', options)
+    + attr('picked', picked)
+    + attr('allowCustom', raw.allow_custom === true ? true : undefined)
+    + attr('placeholder', raw.placeholder)
+    + attr('label', raw.label)
+    + attr('description', raw.description)
+    + attr('required', raw.required === true ? true : undefined)
+    + ' />';
+}
+
+/**
  * rank —— 排先后顺序。
  *
  * @param {object} raw
@@ -175,6 +203,7 @@ const ACTION_COMPILERS = {
   text: compileText,
   markdown: compileMarkdown,
   ask: compileAsk,
+  multi: compileMulti,
   rank: compileRank,
   derive: compileDerive
 };
@@ -270,9 +299,10 @@ function compileLegacyString(task, body) {
       return s.label === chunk.title || s.id === chunk.title;
     });
 
-    /* 查不到：归给 other 那章的行为，再不行当 markdown */
-    const fallback = sections.find(function (s) { return s.id === 'other'; });
-    const action = section ? section.action : (fallback ? fallback.action : 'markdown');
+    /* 查不到这个标题 = 旧数据里的自由分节。
+       这种内容只能当**只读展示** —— 我们不知道它该填什么，也不能编一个输入框出来。
+       所以降级成 markdown，不是 text。 */
+    const action = section ? section.action : 'markdown';
 
     const raw = { action: action, value: text, label: chunk.title };
     /* 章节表里有 placeholder 就带上 */
