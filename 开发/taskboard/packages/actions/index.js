@@ -265,35 +265,63 @@ defineAction({
 /*
  * ask —— 让用户从几个选项里挑一个。
  *
- * 每个选项可以有主标题和副标题（用户原话：
- *   > 又比如，ask，每个选项，可能就有主标题副标题。
- *   > 这个副标题可能也是选项里面的描述。）
+ * ## 样式照宿主
  *
- * 所以 options 是 object 数组，每项 { title, placeholder? }。
+ * 用户截图指出的几点：
+ *
+ *   > 主标题，副标题，手动输入。
+ *   > 他们没有选项点和选项框。选中了就是框框有焦点。
+ *   > 自己填写的那个也是合法的选项框。
+ *   > 同时，渲染器给的渲染应该始终包含一个"未选择"或"跳过"。
+ *   > 表示你查这个情况，而我实际上都没看这个卡片。
+ *
+ * 所以：
+ *
+ *   选项   不画圆点/方框。选中 = 整行加边框 + 变色。
+ *   自定义 和选项长得一模一样（不是另起一个输入框）。
+ *   跳过   **始终有**，不是可选开关。
+ *
+ * ## 为什么「跳过」必须始终有
+ *
+ * 「没选」是一个真实且重要的状态 —— 它表示用户压根没看这张卡片，
+ * 和「看了但选不出来」是两回事。
+ *
+ * 如果跳过是可选的，那「没选」和「没来得及选」就分不清了。
  */
 defineAction({
 	name: 'ask',
-	summary: '从几个互斥选项里挑一个',
+	summary: '从几个选项里挑一个',
 	render: 'Ask',
 	schema: {
 		required: ['options'],
 		properties: {
+			/* 卡片自己的两行标题 —— 和宿主一样：小字副标题在上，大字主标题在下 */
+			header: { type: 'string', description: '卡片副标题（小字，在主标题上方）' },
+			question: { type: 'string', description: '卡片主标题（大字）' },
+
 			options: {
 				type: 'array',
 				minItems: 2,
 				items: {
 					type: 'object',
-					required: ['title'],
+					required: ['label'],
 					properties: {
-						title: { type: 'string', description: '选项的主标题' },
-						placeholder: { type: 'string', description: '选项下方的灰字（副标题）' },
+						label: { type: 'string', description: '选项标题（粗体那行）' },
+						description: { type: 'string', description: '选项说明（标题后面的灰字）' },
+						recommended: { type: 'boolean', description: '标一个「推荐」' },
 					},
 				},
 				description: '候选项，至少两个',
 			},
-			picked: { type: 'string', description: '已选中的那一项（按 title 匹配）' },
-			allow_custom: { type: 'boolean', description: '允许「都不是，我自己写一句」' },
-			allow_defer: { type: 'boolean', description: '允许「先不选，要更多信息」' },
+
+			/* picked 有三种状态：
+			     ''         没选（= 跳过）
+			     数字字符串 选了第几个（从 1 开始，和界面上的编号一致）
+			     其它文字   自己填的 */
+			picked: { type: 'string', description: '已选的那一项：序号、"跳过"、或自己填的文字' },
+
+			/* 允不允许自己填。默认允许 —— 宿主那个也是允许的。 */
+			allow_custom: { type: 'boolean', description: '允许自己填一个（默认 true）' },
 		},
 	},
 });
@@ -301,11 +329,7 @@ defineAction({
 /*
  * multi —— 从几个选项里挑**多个**。
  *
- * 和 ask 的区别：
- *   ask    互斥，picked 是一个字符串
- *   multi  集合，picked 是一个数组
- *
- * 视觉上也分开：单选画圆点，多选画方框 + ✓。
+ * 和 ask 的区别只在 picked 是数组。样式和跳过规则完全照 ask。
  */
 defineAction({
 	name: 'multi',
@@ -314,26 +338,29 @@ defineAction({
 	schema: {
 		required: ['options'],
 		properties: {
+			header: { type: 'string', description: '卡片副标题（小字）' },
+			question: { type: 'string', description: '卡片主标题（大字）' },
 			options: {
 				type: 'array',
 				minItems: 2,
 				items: {
 					type: 'object',
-					required: ['title'],
+					required: ['label'],
 					properties: {
-						title: { type: 'string', description: '选项的主标题' },
-						placeholder: { type: 'string', description: '选项下方的灰字（副标题）' },
+						label: { type: 'string', description: '选项标题' },
+						description: { type: 'string', description: '选项说明' },
+						recommended: { type: 'boolean', description: '标一个「推荐」' },
 					},
 				},
 				description: '候选项，至少两个',
 			},
-			/* 注意：这里是数组，ask 那里是字符串 */
+			/* 数组；空数组 = 跳过 */
 			picked: {
 				type: 'array',
 				items: { type: 'string' },
-				description: '已选中的那些（按 title 匹配），可以是空数组',
+				description: '已选中的那些（序号或自己填的文字）',
 			},
-			allow_custom: { type: 'boolean', description: '允许「都不是，我自己写」' },
+			allow_custom: { type: 'boolean', description: '允许自己填（默认 true）' },
 		},
 	},
 });

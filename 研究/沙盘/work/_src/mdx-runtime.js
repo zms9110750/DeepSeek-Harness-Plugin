@@ -475,82 +475,173 @@ function renderMarkdownComponent(props) {
   return sectionShell(props, [d]);
 }
 
-function renderAskComponent(props) {
-  const options = Array.isArray(props.options) ? props.options : [];
-  const picked = String(props.picked || '');
-  const box = el('div', {class:'inter'});
+/* ══════════════════════════════════════════════════════════════
+   选项卡 —— 照宿主那个 ask 的样式
 
-  if (props.placeholder) {
-    box.appendChild(el('div', {class:'inter-cap'}, String(props.placeholder)));
-  }
+   用户截图的要点：
 
-  for (const opt of options) {
-    const title = typeof opt === 'string' ? opt : String(opt.title || '');
-    const sub = typeof opt === 'string' ? '' : String(opt.placeholder || '');
-    const on = title === picked;
-    box.appendChild(el('button', {
-      class:'choice' + (on ? ' on' : ''), type:'button',
-      /* 行为在这里 —— mdx 里写不出来，是渲染器给的 */
-      onclick() { toggleAsk(props, title); }
-    },
-      el('span', {class:'radio'}),
-      el('span', {class:'choice-body'},
-        el('span', {class:'choice-title'}, title),
-        sub === '' ? null : el('span', {class:'choice-sub'}, sub))));
-  }
+     > 主标题，副标题，手动输入。
+     > 他们没有选项点和选项框。选中了就是框框有焦点。
+     > 自己填写的那个也是合法的选项框。
+     > 渲染器给的渲染应该始终包含一个"未选择"或"跳过"。
 
-  if (props.allowCustom === true) {
-    box.appendChild(el('input', {
-      type:'text', class:'text-input', placeholder:'都不是，我自己写一句',
-      value: picked,
-      onchange(e) { commit(props, { picked: e.target.value }); }
-    }));
-  }
-  if (props.allowDefer === true && picked !== '') {
-    box.appendChild(el('button', {
-      class:'link-btn', type:'button',
-      onclick() { commit(props, { picked: '' }); }
-    }, '先不选，要更多信息'));
-  }
+   所以：
+     · 不画圆点/方框，选中 = 整行加边框
+     · 自定义输入框和选项长得一样
+     · 「跳过」始终有
+   ══════════════════════════════════════════════════════════════ */
 
-  return sectionShell(props, [box]);
+/**
+ * 一张选项卡的外壳：副标题（小字）+ 主标题（大字）。
+ *
+ * @param {object} props
+ * @param {HTMLElement} list 选项列表
+ * @returns {HTMLElement}
+ */
+function optionCard(props, list) {
+  const card = el('div', {class:'oc'});
+
+  const head = el('div', {class:'oc-head'});
+  if (props.header) head.appendChild(el('div', {class:'oc-sub'}, String(props.header)));
+  if (props.question) head.appendChild(el('div', {class:'oc-title'}, String(props.question)));
+  else if (props.placeholder) head.appendChild(el('div', {class:'oc-title'}, String(props.placeholder)));
+  if (head.childElementCount > 0) card.appendChild(head);
+
+  card.appendChild(list);
+  return card;
 }
 
 /**
- * Multi —— 多选。
+ * 一行选项。编号 + 粗体标题 + 灰字说明 + 可选「推荐」。
  *
- * 和 Ask 的区别：Ask 是单选（互斥），Multi 是集合。
- * 视觉上也不同：单选是圆点，多选是方框 ✓。
+ * @param {object} opt      { label, description, recommended }
+ * @param {number} index    从 0 开始
+ * @param {boolean} active  是否选中
+ * @param {Function} onClick
+ * @returns {HTMLElement}
+ */
+function optionRow(opt, index, active, onClick) {
+  return el('button', {
+    class: 'oc-row' + (active ? ' on' : ''),
+    type: 'button',
+    onclick: onClick
+  },
+    el('span', {class:'oc-no'}, String(index + 1)),
+    el('span', {class:'oc-label'}, opt.label),
+    opt.recommended ? el('span', {class:'oc-rec'}, '推荐') : null,
+    opt.description ? el('span', {class:'oc-desc'}, opt.description) : null
+  );
+}
+
+/**
+ * 「跳过」那行。
+ *
+ * 用户原话：
+ *   > 渲染器给的渲染应该始终包含一个"未选择"或"跳过"。
+ *   > 表示你查这个情况，而我实际上都没看这个卡片。
+ *
+ * @param {boolean} active
+ * @param {Function} onClick
+ * @returns {HTMLElement}
+ */
+function skipRow(active, onClick) {
+  return el('button', {
+    class: 'oc-row oc-skip' + (active ? ' on' : ''),
+    type: 'button',
+    onclick: onClick
+  },
+    el('span', {class:'oc-no'}, '·'),
+    el('span', {class:'oc-label'}, '跳过（我没看这张卡片）'));
+}
+
+/**
+ * 自己填的那一行。和普通选项长得一样，只是里面是输入框。
+ *
+ * @param {object} props
+ * @param {string} current
+ * @param {boolean} active
+ * @returns {HTMLElement}
+ */
+function customRow(props, current, active) {
+  const input = el('input', {
+    type: 'text',
+    class: 'oc-input',
+    placeholder: '自己填一个……',
+    value: current,
+    onchange(e) { commit(props, { picked: e.target.value }); }
+  });
+  return el('div', {class:'oc-row oc-custom' + (active ? ' on' : '')},
+    el('span', {class:'oc-no'}, '✎'),
+    input);
+}
+
+/**
+ * ask —— 单选。
+ *
+ * @param {object} props
+ * @returns {HTMLElement}
+ */
+function renderAskComponent(props) {
+  const options = Array.isArray(props.options) ? props.options : [];
+  const picked = String(props.picked || '');
+
+  /* picked 的三种形态：'' / '跳过' / 序号 / 自定义文字 */
+  const isSkip = picked === '跳过';
+  const pickedIndex = /^\d+$/u.test(picked) ? Number(picked) : -1;
+  const isCustom = picked !== '' && !isSkip && pickedIndex < 0;
+
+  const list = el('div', {class:'oc-list'});
+
+  options.forEach(function (opt, i) {
+    list.appendChild(optionRow(opt, i, pickedIndex === i + 1, function () {
+      commit(props, { picked: String(i + 1) });
+    }));
+  });
+
+  if (props.allowCustom !== false) {
+    list.appendChild(customRow(props, isCustom ? picked : '', isCustom));
+  }
+
+  list.appendChild(skipRow(isSkip, function () {
+    commit(props, { picked: isSkip ? '' : '跳过' });
+  }));
+
+  return optionCard(props, list);
+}
+
+/**
+ * multi —— 多选。
+ *
+ * @param {object} props
+ * @returns {HTMLElement}
  */
 function renderMultiComponent(props) {
   const options = Array.isArray(props.options) ? props.options : [];
   const picked = Array.isArray(props.picked) ? props.picked.map(String) : [];
-  const box = el('div', {class:'inter'});
 
-  if (props.placeholder) {
-    box.appendChild(el('div', {class:'inter-cap'}, String(props.placeholder)));
+  const list = el('div', {class:'oc-list'});
+  const customs = picked.filter(function (x) { return !/^\d+$/u.test(x) && x !== '跳过'; });
+
+  options.forEach(function (opt, i) {
+    const key = String(i + 1);
+    list.appendChild(optionRow(opt, i, picked.includes(key), function () {
+      toggleMulti(props, key);
+    }));
+  });
+
+  if (props.allowCustom !== false) {
+    list.appendChild(customRow(props, customs.join('、'), customs.length > 0));
   }
 
-  for (const opt of options) {
-    const title = typeof opt === 'string' ? opt : String(opt.title || '');
-    const sub = typeof opt === 'string' ? '' : String(opt.placeholder || '');
-    const on = picked.includes(title);
+  list.appendChild(skipRow(picked.length === 0, function () {
+    commit(props, { picked: [] });
+  }));
 
-    box.appendChild(el('button', {
-      class:'choice multi' + (on ? ' on' : ''), type:'button',
-      onclick() { toggleMulti(props, title); }
-    },
-      el('span', {class:'checkbox'}, on ? el('span', {class:'tick'}, '✓') : null),
-      el('span', {class:'choice-body'},
-        el('span', {class:'choice-title'}, title),
-        sub === '' ? null : el('span', {class:'choice-sub'}, sub))));
-  }
-
+  const card = optionCard(props, list);
   if (picked.length > 0) {
-    box.appendChild(el('div', {class:'multi-count'}, '已选 ' + picked.length + ' 项'));
+    card.appendChild(el('div', {class:'oc-foot'}, '已选 ' + picked.length + ' 项'));
   }
-
-  return sectionShell(props, [box]);
+  return card;
 }
 
 function renderRankComponent(props) {

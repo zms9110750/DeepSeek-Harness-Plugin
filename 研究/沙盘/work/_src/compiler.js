@@ -100,26 +100,44 @@ function compileMarkdown(raw) {
 }
 
 /**
+ * 把 options 归一成 { label, description, recommended }。
+ *
+ * 兼容两种旧写法：
+ *   'A'                             纯字符串
+ *   { title: 'A', placeholder: 'x' } 旧字段名
+ *
+ * @param {unknown} options
+ * @returns {Array<{label: string, description: string, recommended: boolean}>}
+ */
+function normalizeOptions(options) {
+  if (!Array.isArray(options)) return [];
+  return options.map(function (o) {
+    if (typeof o === 'string') return { label: o, description: '', recommended: false };
+    return {
+      label: String(o.label || o.title || ''),
+      description: String(o.description || o.placeholder || ''),
+      recommended: o.recommended === true
+    };
+  });
+}
+
+/**
  * ask —— 从几个选项里挑一个。
  *
- * options 每项 { title, placeholder }。
+ * options 每项 { label, description, recommended }。
+ * picked 是序号字符串 / "跳过" / 自己填的文字。
  *
  * @param {object} raw
  * @returns {string}
  */
 function compileAsk(raw) {
-  const options = Array.isArray(raw.options)
-    ? raw.options.map(function (o) {
-        if (typeof o === 'string') return { title: o, placeholder: '' };
-        return { title: String(o.title || ''), placeholder: String(o.placeholder || '') };
-      })
-    : [];
-
+  const options = normalizeOptions(raw.options);
   return '<Ask'
+    + attr('header', raw.header)
+    + attr('question', raw.question)
     + attr('options', options)
     + attr('picked', String(raw.picked || ''))
-    + attr('allowCustom', raw.allow_custom === true ? true : undefined)
-    + attr('allowDefer', raw.allow_defer === true ? true : undefined)
+    + attr('allowCustom', raw.allow_custom === false ? false : true)
     + attr('placeholder', raw.placeholder)
     + attr('label', raw.label)
     + attr('description', raw.description)
@@ -128,26 +146,20 @@ function compileAsk(raw) {
 }
 
 /**
- * multi —— 从几个选项里挑**多个**。
- *
- * 和 ask 的区别：ask 是互斥选择（picked 一个），multi 是集合（picked 多个）。
+ * multi —— 从几个选项里挑多个。
  *
  * @param {object} raw
  * @returns {string}
  */
 function compileMulti(raw) {
-  const options = Array.isArray(raw.options)
-    ? raw.options.map(function (o) {
-        if (typeof o === 'string') return { title: o, placeholder: '' };
-        return { title: String(o.title || ''), placeholder: String(o.placeholder || '') };
-      })
-    : [];
+  const options = normalizeOptions(raw.options);
   const picked = Array.isArray(raw.picked) ? raw.picked.map(String) : [];
-
   return '<Multi'
+    + attr('header', raw.header)
+    + attr('question', raw.question)
     + attr('options', options)
     + attr('picked', picked)
-    + attr('allowCustom', raw.allow_custom === true ? true : undefined)
+    + attr('allowCustom', raw.allow_custom === false ? false : true)
     + attr('placeholder', raw.placeholder)
     + attr('label', raw.label)
     + attr('description', raw.description)

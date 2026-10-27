@@ -511,6 +511,51 @@
     padding:9px 11px;font-size:11.5px;color:var(--text-2)}
   .unknown pre{margin:5px 0 0;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
 
+  /* ══════════════════════════════════════════════════════════
+     选项卡（Ask / Multi）—— 照宿主那个 ask 的样式
+
+     要点：没有圆点、没有方框。选中 = 整行加边框 + 淡蓝底。
+     ══════════════════════════════════════════════════════════ */
+  .oc{border:1px solid var(--border);border-radius:10px;background:#fff;
+    padding:12px 14px 10px;margin-bottom:10px}
+  .oc-head{margin-bottom:10px}
+  .oc-sub{font-size:11px;color:var(--text-3);margin-bottom:4px}
+  .oc-title{font-size:13.5px;color:var(--text);line-height:1.5;font-weight:400}
+
+  .oc-list{display:flex;flex-direction:column;gap:5px}
+
+  .oc-row{display:flex;align-items:baseline;gap:8px;width:100%;padding:7px 10px;
+    font:inherit;font-size:12.5px;text-align:left;color:var(--text);
+    background:#f7f8f9;border:1px solid transparent;border-radius:7px;
+    cursor:pointer;transition:border-color .12s,background .12s}
+  .oc-row:hover{background:#f1f3f5}
+  .oc-row.on{background:#f4f8fe;border-color:var(--brand);color:var(--brand)}
+
+  .oc-no{flex:none;width:16px;font-size:10px;font-weight:700;color:var(--text-3);
+    text-align:center;line-height:1.6}
+  .oc-row.on .oc-no{color:var(--brand)}
+  .oc-label{flex:none;font-weight:600}
+  .oc-rec{flex:none;font-size:9.5px;font-weight:700;color:var(--brand);
+    background:rgba(59,125,216,.12);padding:0 5px;border-radius:3px;line-height:15px}
+  .oc-desc{flex:1;min-width:0;font-size:11.5px;font-weight:400;color:var(--text-3);
+    line-height:1.5}
+  .oc-row.on .oc-desc{color:var(--brand);opacity:.8}
+
+  /* 自己填的那行 —— 和普通选项同高同底色 */
+  .oc-custom{align-items:center;cursor:default}
+  .oc-custom:hover{background:#f7f8f9}
+  .oc-input{flex:1;min-width:0;font:inherit;font-size:12.5px;color:var(--text);
+    background:transparent;border:0;outline:none;padding:0}
+  .oc-input::placeholder{color:var(--text-3)}
+
+  /* 跳过 */
+  .oc-skip{color:var(--text-3)}
+  .oc-skip .oc-label{font-weight:400}
+  .oc-skip.on{color:var(--brand)}
+  .oc-skip.on .oc-label{font-weight:600}
+
+  .oc-foot{margin-top:8px;font-size:10.5px;color:var(--text-3)}
+
 </style>
 </head>
 <body>
@@ -1603,26 +1648,44 @@ function compileMarkdown(raw) {
 }
 
 /**
+ * 把 options 归一成 { label, description, recommended }。
+ *
+ * 兼容两种旧写法：
+ *   'A'                             纯字符串
+ *   { title: 'A', placeholder: 'x' } 旧字段名
+ *
+ * @param {unknown} options
+ * @returns {Array<{label: string, description: string, recommended: boolean}>}
+ */
+function normalizeOptions(options) {
+  if (!Array.isArray(options)) return [];
+  return options.map(function (o) {
+    if (typeof o === 'string') return { label: o, description: '', recommended: false };
+    return {
+      label: String(o.label || o.title || ''),
+      description: String(o.description || o.placeholder || ''),
+      recommended: o.recommended === true
+    };
+  });
+}
+
+/**
  * ask —— 从几个选项里挑一个。
  *
- * options 每项 { title, placeholder }。
+ * options 每项 { label, description, recommended }。
+ * picked 是序号字符串 / "跳过" / 自己填的文字。
  *
  * @param {object} raw
  * @returns {string}
  */
 function compileAsk(raw) {
-  const options = Array.isArray(raw.options)
-    ? raw.options.map(function (o) {
-        if (typeof o === 'string') return { title: o, placeholder: '' };
-        return { title: String(o.title || ''), placeholder: String(o.placeholder || '') };
-      })
-    : [];
-
+  const options = normalizeOptions(raw.options);
   return '<Ask'
+    + attr('header', raw.header)
+    + attr('question', raw.question)
     + attr('options', options)
     + attr('picked', String(raw.picked || ''))
-    + attr('allowCustom', raw.allow_custom === true ? true : undefined)
-    + attr('allowDefer', raw.allow_defer === true ? true : undefined)
+    + attr('allowCustom', raw.allow_custom === false ? false : true)
     + attr('placeholder', raw.placeholder)
     + attr('label', raw.label)
     + attr('description', raw.description)
@@ -1631,26 +1694,20 @@ function compileAsk(raw) {
 }
 
 /**
- * multi —— 从几个选项里挑**多个**。
- *
- * 和 ask 的区别：ask 是互斥选择（picked 一个），multi 是集合（picked 多个）。
+ * multi —— 从几个选项里挑多个。
  *
  * @param {object} raw
  * @returns {string}
  */
 function compileMulti(raw) {
-  const options = Array.isArray(raw.options)
-    ? raw.options.map(function (o) {
-        if (typeof o === 'string') return { title: o, placeholder: '' };
-        return { title: String(o.title || ''), placeholder: String(o.placeholder || '') };
-      })
-    : [];
+  const options = normalizeOptions(raw.options);
   const picked = Array.isArray(raw.picked) ? raw.picked.map(String) : [];
-
   return '<Multi'
+    + attr('header', raw.header)
+    + attr('question', raw.question)
     + attr('options', options)
     + attr('picked', picked)
-    + attr('allowCustom', raw.allow_custom === true ? true : undefined)
+    + attr('allowCustom', raw.allow_custom === false ? false : true)
     + attr('placeholder', raw.placeholder)
     + attr('label', raw.label)
     + attr('description', raw.description)
@@ -2336,82 +2393,173 @@ function renderMarkdownComponent(props) {
   return sectionShell(props, [d]);
 }
 
-function renderAskComponent(props) {
-  const options = Array.isArray(props.options) ? props.options : [];
-  const picked = String(props.picked || '');
-  const box = el('div', {class:'inter'});
+/* ══════════════════════════════════════════════════════════════
+   选项卡 —— 照宿主那个 ask 的样式
 
-  if (props.placeholder) {
-    box.appendChild(el('div', {class:'inter-cap'}, String(props.placeholder)));
-  }
+   用户截图的要点：
 
-  for (const opt of options) {
-    const title = typeof opt === 'string' ? opt : String(opt.title || '');
-    const sub = typeof opt === 'string' ? '' : String(opt.placeholder || '');
-    const on = title === picked;
-    box.appendChild(el('button', {
-      class:'choice' + (on ? ' on' : ''), type:'button',
-      /* 行为在这里 —— mdx 里写不出来，是渲染器给的 */
-      onclick() { toggleAsk(props, title); }
-    },
-      el('span', {class:'radio'}),
-      el('span', {class:'choice-body'},
-        el('span', {class:'choice-title'}, title),
-        sub === '' ? null : el('span', {class:'choice-sub'}, sub))));
-  }
+     > 主标题，副标题，手动输入。
+     > 他们没有选项点和选项框。选中了就是框框有焦点。
+     > 自己填写的那个也是合法的选项框。
+     > 渲染器给的渲染应该始终包含一个"未选择"或"跳过"。
 
-  if (props.allowCustom === true) {
-    box.appendChild(el('input', {
-      type:'text', class:'text-input', placeholder:'都不是，我自己写一句',
-      value: picked,
-      onchange(e) { commit(props, { picked: e.target.value }); }
-    }));
-  }
-  if (props.allowDefer === true && picked !== '') {
-    box.appendChild(el('button', {
-      class:'link-btn', type:'button',
-      onclick() { commit(props, { picked: '' }); }
-    }, '先不选，要更多信息'));
-  }
+   所以：
+     · 不画圆点/方框，选中 = 整行加边框
+     · 自定义输入框和选项长得一样
+     · 「跳过」始终有
+   ══════════════════════════════════════════════════════════════ */
 
-  return sectionShell(props, [box]);
+/**
+ * 一张选项卡的外壳：副标题（小字）+ 主标题（大字）。
+ *
+ * @param {object} props
+ * @param {HTMLElement} list 选项列表
+ * @returns {HTMLElement}
+ */
+function optionCard(props, list) {
+  const card = el('div', {class:'oc'});
+
+  const head = el('div', {class:'oc-head'});
+  if (props.header) head.appendChild(el('div', {class:'oc-sub'}, String(props.header)));
+  if (props.question) head.appendChild(el('div', {class:'oc-title'}, String(props.question)));
+  else if (props.placeholder) head.appendChild(el('div', {class:'oc-title'}, String(props.placeholder)));
+  if (head.childElementCount > 0) card.appendChild(head);
+
+  card.appendChild(list);
+  return card;
 }
 
 /**
- * Multi —— 多选。
+ * 一行选项。编号 + 粗体标题 + 灰字说明 + 可选「推荐」。
  *
- * 和 Ask 的区别：Ask 是单选（互斥），Multi 是集合。
- * 视觉上也不同：单选是圆点，多选是方框 ✓。
+ * @param {object} opt      { label, description, recommended }
+ * @param {number} index    从 0 开始
+ * @param {boolean} active  是否选中
+ * @param {Function} onClick
+ * @returns {HTMLElement}
+ */
+function optionRow(opt, index, active, onClick) {
+  return el('button', {
+    class: 'oc-row' + (active ? ' on' : ''),
+    type: 'button',
+    onclick: onClick
+  },
+    el('span', {class:'oc-no'}, String(index + 1)),
+    el('span', {class:'oc-label'}, opt.label),
+    opt.recommended ? el('span', {class:'oc-rec'}, '推荐') : null,
+    opt.description ? el('span', {class:'oc-desc'}, opt.description) : null
+  );
+}
+
+/**
+ * 「跳过」那行。
+ *
+ * 用户原话：
+ *   > 渲染器给的渲染应该始终包含一个"未选择"或"跳过"。
+ *   > 表示你查这个情况，而我实际上都没看这个卡片。
+ *
+ * @param {boolean} active
+ * @param {Function} onClick
+ * @returns {HTMLElement}
+ */
+function skipRow(active, onClick) {
+  return el('button', {
+    class: 'oc-row oc-skip' + (active ? ' on' : ''),
+    type: 'button',
+    onclick: onClick
+  },
+    el('span', {class:'oc-no'}, '·'),
+    el('span', {class:'oc-label'}, '跳过（我没看这张卡片）'));
+}
+
+/**
+ * 自己填的那一行。和普通选项长得一样，只是里面是输入框。
+ *
+ * @param {object} props
+ * @param {string} current
+ * @param {boolean} active
+ * @returns {HTMLElement}
+ */
+function customRow(props, current, active) {
+  const input = el('input', {
+    type: 'text',
+    class: 'oc-input',
+    placeholder: '自己填一个……',
+    value: current,
+    onchange(e) { commit(props, { picked: e.target.value }); }
+  });
+  return el('div', {class:'oc-row oc-custom' + (active ? ' on' : '')},
+    el('span', {class:'oc-no'}, '✎'),
+    input);
+}
+
+/**
+ * ask —— 单选。
+ *
+ * @param {object} props
+ * @returns {HTMLElement}
+ */
+function renderAskComponent(props) {
+  const options = Array.isArray(props.options) ? props.options : [];
+  const picked = String(props.picked || '');
+
+  /* picked 的三种形态：'' / '跳过' / 序号 / 自定义文字 */
+  const isSkip = picked === '跳过';
+  const pickedIndex = /^\d+$/u.test(picked) ? Number(picked) : -1;
+  const isCustom = picked !== '' && !isSkip && pickedIndex < 0;
+
+  const list = el('div', {class:'oc-list'});
+
+  options.forEach(function (opt, i) {
+    list.appendChild(optionRow(opt, i, pickedIndex === i + 1, function () {
+      commit(props, { picked: String(i + 1) });
+    }));
+  });
+
+  if (props.allowCustom !== false) {
+    list.appendChild(customRow(props, isCustom ? picked : '', isCustom));
+  }
+
+  list.appendChild(skipRow(isSkip, function () {
+    commit(props, { picked: isSkip ? '' : '跳过' });
+  }));
+
+  return optionCard(props, list);
+}
+
+/**
+ * multi —— 多选。
+ *
+ * @param {object} props
+ * @returns {HTMLElement}
  */
 function renderMultiComponent(props) {
   const options = Array.isArray(props.options) ? props.options : [];
   const picked = Array.isArray(props.picked) ? props.picked.map(String) : [];
-  const box = el('div', {class:'inter'});
 
-  if (props.placeholder) {
-    box.appendChild(el('div', {class:'inter-cap'}, String(props.placeholder)));
+  const list = el('div', {class:'oc-list'});
+  const customs = picked.filter(function (x) { return !/^\d+$/u.test(x) && x !== '跳过'; });
+
+  options.forEach(function (opt, i) {
+    const key = String(i + 1);
+    list.appendChild(optionRow(opt, i, picked.includes(key), function () {
+      toggleMulti(props, key);
+    }));
+  });
+
+  if (props.allowCustom !== false) {
+    list.appendChild(customRow(props, customs.join('、'), customs.length > 0));
   }
 
-  for (const opt of options) {
-    const title = typeof opt === 'string' ? opt : String(opt.title || '');
-    const sub = typeof opt === 'string' ? '' : String(opt.placeholder || '');
-    const on = picked.includes(title);
+  list.appendChild(skipRow(picked.length === 0, function () {
+    commit(props, { picked: [] });
+  }));
 
-    box.appendChild(el('button', {
-      class:'choice multi' + (on ? ' on' : ''), type:'button',
-      onclick() { toggleMulti(props, title); }
-    },
-      el('span', {class:'checkbox'}, on ? el('span', {class:'tick'}, '✓') : null),
-      el('span', {class:'choice-body'},
-        el('span', {class:'choice-title'}, title),
-        sub === '' ? null : el('span', {class:'choice-sub'}, sub))));
-  }
-
+  const card = optionCard(props, list);
   if (picked.length > 0) {
-    box.appendChild(el('div', {class:'multi-count'}, '已选 ' + picked.length + ' 项'));
+    card.appendChild(el('div', {class:'oc-foot'}, '已选 ' + picked.length + ' 项'));
   }
-
-  return sectionShell(props, [box]);
+  return card;
 }
 
 function renderRankComponent(props) {
