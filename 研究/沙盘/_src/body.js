@@ -112,3 +112,26 @@ function md(source) {
   return out.join('');
 }
 
+/* ══════════════════════════════════════════════════════════════
+   页面状态
+   ══════════════════════════════════════════════════════════════ */
+const state = {
+  view: 'tree',
+  group: 'g-2',
+  /* 过滤：三个维度各自多选，维度之间是「与」 */
+  filterOpen: '',
+  filterSub: '',
+  filterStatus: [],
+  filterKinds: [],
+  filterDomains: [],
+  filterTypes: [],
+  search: '',
+  selected: '',
+  menuOpen: false,
+  relOpen: false
+};
+
+/** 按 id 取一条（内存里的，不是磁盘）。 */
+function taskOf(id) {
+  return DB.find((x) => x.id === id);
+}

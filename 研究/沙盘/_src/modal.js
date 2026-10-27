@@ -149,7 +149,7 @@ function openCreator(init) {
     col3.appendChild(el('button', {
       class:'tpl-item' + (picker.tpl === '' ? ' on' : ''),
       type:'button',
-      onclick() { picker.tpl = ''; closePop(); }
+      onclick() { picker.tpl = ''; closePop(); refreshSections(); }
     }, el('span', {class:'tpl-code'}, '—'), el('span', {class:'tpl-name'}, '空模板')));
 
     const list = TEMPLATES.filter((t) => t.kind === picker.kind
@@ -158,7 +158,7 @@ function openCreator(init) {
       col3.appendChild(el('button', {
         class:'tpl-item' + (picker.tpl === t.code ? ' on' : ''),
         type:'button', title: t.desc,
-        onclick() { picker.tpl = t.code; closePop(); }
+        onclick() { picker.tpl = t.code; closePop(); refreshSections(); }
       }, el('span', {class:'tpl-code'}, t.letter), el('span', {class:'tpl-name'}, t.name)));
     }
 
@@ -172,6 +172,8 @@ function openCreator(init) {
     tplPop.appendChild(el('div', {class:'tpl-preview'},
       '编号前缀 ', el('b', null, prefix),
       '　最终编号形如 ', el('b', null, prefix + '-01')));
+
+
   };
 
   tplBtn.addEventListener('click', (e) => {
@@ -274,6 +276,40 @@ function openCreator(init) {
 
   tabRel.addEventListener('click', () => press(tabRel, tabAdv));
   tabAdv.addEventListener('click', () => press(tabAdv, tabRel));
+
+  /* ── 这个模板的正文会问你要什么 ──
+   *
+   * 用户原话：
+   *   > 展示，用户操作创建怎么在模板里面选择行动的
+   *
+   * 模板决定章节，章节决定行动。选中模板之后应该直接看到
+   * 「正文会长什么样、每章用什么行动」——不用点开面板去找。
+   * 所以放在左栏常驻，跟着模板切换实时更新。 */
+  const sectionsBox = el('div', {class:'tpl-sections inline'});
+  function refreshSections() {
+    sectionsBox.innerHTML = '';
+    const sections = sectionsOf(picker.tpl);
+    if (sections.length === 0) {
+      sectionsBox.appendChild(el('div', {class:'tpl-sec-empty'},
+        picker.tpl === '' ? '空模板：正文只有一整块自由文本，不加任何章节。' : '（这个模板还没配章节）'));
+      return;
+    }
+    sectionsBox.appendChild(el('div', {class:'tpl-sec-head'},
+      '正文会问这些', el('span', {class:'tpl-sec-count'}, String(sections.length) + ' 章')));
+    for (const s of sections) {
+      sectionsBox.appendChild(el('div', {class:'tpl-sec'},
+        el('span', {class:'tpl-sec-act', 'data-act': s.action}, ACTION_LABEL[s.action] || s.action),
+        el('span', {class:'tpl-sec-label'}, s.label),
+        s.required ? el('span', {class:'req'}, '*') : null,
+        s.placeholder ? el('span', {class:'tpl-sec-ph'}, s.placeholder) : null));
+    }
+    const used = actionsOf(picker.tpl);
+    sectionsBox.appendChild(el('div', {class:'tpl-sec-foot'},
+      '用到 ' + used.length + ' 个行动：',
+      used.map((a) => el('span', {class:'tpl-act-chip', 'data-act': a}, ACTION_LABEL[a] || a))));
+  }
+  refreshSections();
+  left.appendChild(sectionsBox);
 
   left.appendChild(tabs);
   left.appendChild(panelRel);

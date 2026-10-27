@@ -1,40 +1,252 @@
 /* ══════════════════════════════════════════════════════════════
-   模板章节表 —— 只为了显示章节标题和顺序
+   模板章节表 —— 每章用哪个行动、什么标题、什么灰字
 
-   正文存成 { want: {...}, done: {...} }，键是 id。
-   但界面上要显示「要什么」「什么算做到了」—— 那是模板里 type 的说明
-   或者章节的 label。沙盘不需要完整模板，能对上标题就行。
+   ## 这张表是干什么的
+
+   真实插件的模板是 YAML，章节这么写：
+
+     - id: want
+       type:
+         text: 用户原话优先，不要改写
+       required: true
+
+   沙盘不需要完整的 YAML 解析，但要能演示「章节 → 行动」的对应关系。
+   所以这里用紧凑的数组表达同样的信息：
+
+     ['字段 id', '标题', '行动', '灰字', 必填]
+
+   ## 为什么每个模板的章节不同
+
+   模板决定「这一条要填哪些东西」。
+    GU（用户任务）问「要什么、什么算做到了」；
+    WF（修复）问「怎么复现、根因是什么」。
+
+   同一个行动可以用在不同章节里 —— 比如 `text` 到处都在用，
+   `ask` 只在需要用户拍板的地方出现。
    ══════════════════════════════════════════════════════════════ */
-const SECTION_LABELS = {
-  GU: [['want','要什么'],['done','什么算做到了'],['bounds','边界'],['split','怎么拆'],['other','其他']],
-  GA: [['want','要什么'],['done','什么算做到了'],['risk','风险'],['split','怎么拆'],['other','其他']],
-  GO: [['symptom','现象'],['measure','怎么衡量'],['enough','什么算够'],['split','怎么拆'],['other','其他']],
-  GV: [['want','要什么'],['done','什么算做到了'],['bounds','边界'],['split','怎么拆'],['other','其他']],
-  DP: [['problem','问题'],['plan','方案'],['cost','代价'],['alternative','别的选择'],['risk','风险'],['other','其他']],
-  DB: [['pain','痛点'],['scenario','场景'],['fitness','合不合适'],['precedent','先例'],['other','其他']],
-  DC: [['question','要定什么'],['options','选项'],['unknown','我还不知道什么'],['recommend','我的建议'],['other','其他']],
-  DI: [['goal','目标'],['contract','接口'],['errors','错误'],['breaking','破坏性'],['other','其他']],
-  DQ: [['ask','问什么'],['why','为什么要问'],['guess','我的猜测'],['other','其他']],
-  DT: [['setup','前置'],['persp','视角'],['style','风格'],['check','检查点'],['cost','代价'],['other','其他']],
-  RR: [['conclusion','结论'],['evidence','依据'],['limits','局限'],['deliver','交付'],['other','其他']],
-  RB: [['where','卡在哪'],['why','为什么'],['next','下一步'],['bypass','绕过'],['reason','原因'],['deliver','交付'],['other','其他']],
-  RD: [['what','是什么'],['repro','复现'],['expect','预期'],['actual','实际'],['scope','范围'],['accept','验收'],['deliver','交付'],['other','其他']],
-  RF: [['outcome','结果'],['root','根因'],['lesson','教训'],['apply','怎么用'],['deliver','交付'],['other','其他']],
-  WI: [['goal','目标'],['change','改什么'],['verify','怎么验'],['magic','魔法数字'],['other','其他']],
-  WF: [['repro','复现'],['expect','预期'],['root','根因'],['fix','修法'],['regression','回归'],['other','其他']],
-  WR: [['target','调研什么'],['how','怎么查'],['conclusion','结论'],['evidence','依据'],['other','其他']],
-  WX: [['reader','读者'],['path','读法'],['must','必须有'],['skip','可以跳过'],['verify','校验'],['deliver','交付'],['other','其他']],
-  WD: [['target','目标'],['approach','手法'],['scene','场景'],['leave','留白'],['verify','怎么验'],['other','其他']],
-  WC: [['setup','前置'],['order','顺序'],['check','检查点'],['leave','留白'],['other','其他']]
+
+/**
+ * 模板 → 章节表。
+ *
+ * 每项：[id, 标题, 行动, 灰字, 必填]
+ *
+ * 行动是五个之一：text / markdown / ask / rank / derive
+ */
+const SECTIONS = {
+  /* ── 目标 ── */
+  GU: [
+    ['notice', '说明', 'markdown', '', false],
+    ['want', '要什么', 'text', '用户原话优先。不要改写、不要提炼', true],
+    ['done', '什么算做到了', 'text', '一句话一个判据，能验证的', true],
+    ['bounds', '边界', 'text', '明确不做什么、什么时候必须停下来问', false],
+    ['split', '怎么拆', 'derive', '拆完就派出去，别在这一条里写方案', false],
+    ['other', '其他', 'text', '装不下的东西写这里', false]
+  ],
+  GO: [
+    ['symptom', '现象', 'text', '哪里觉得不对？', true],
+    ['measure', '怎么衡量', 'text', '现在是什么数，想变成什么数', true],
+    ['enough', '什么算够', 'text', '到哪一步就停', false],
+    ['split', '怎么拆', 'derive', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  GA: [
+    ['want', '要什么', 'text', '用户说得含糊的地方，先问清', true],
+    ['done', '什么算做到了', 'text', '', true],
+    ['risk', '风险', 'text', '理解错了会怎样', false],
+    ['split', '怎么拆', 'derive', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  GV: [
+    ['want', '验证什么', 'text', '哪个假设要被证明或推翻', true],
+    ['done', '什么算成立', 'text', '', true],
+    ['bounds', '边界', 'text', '', false],
+    ['split', '怎么拆', 'derive', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+
+  /* ── 设计 ── */
+  DP: [
+    ['problem', '问题', 'text', '要解决的是什么', true],
+    ['plan', '方案', 'text', '怎么写，为什么这么写', true],
+    ['cost', '代价', 'text', '要放弃什么', false],
+    ['alternative', '别的选择', 'ask', '', false],
+    ['risk', '风险', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DB: [
+    ['pain', '痛点', 'text', '', true],
+    ['scenario', '场景', 'text', '', true],
+    ['fitness', '合不合适', 'text', '', false],
+    ['precedent', '先例', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DC: [
+    ['question', '要定什么', 'text', '一句话说清要拍板的是哪件事', true],
+    ['options', '选项', 'ask', '每个选项后面写清代价', true],
+    ['unknown', '我还不知道什么', 'text', '', false],
+    ['recommend', '我的建议', 'text', '', true],
+    ['other', '其他', 'text', '', false]
+  ],
+  DI: [
+    ['goal', '目标', 'text', '', true],
+    ['contract', '接口', 'text', '函数签名 / 协议 / 数据结构', true],
+    ['errors', '错误', 'text', '出错时返回什么', false],
+    ['breaking', '破坏性', 'text', '哪些调用方要改', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DQ: [
+    ['ask', '问什么', 'text', '一个问题。两个问号就拆成两条', true],
+    ['why', '为什么要问', 'text', '没有这个信息，我只能做 X 或 Y 的假设', true],
+    ['guess', '我的猜测', 'text', '给出一个假设答案，用户只要说对不对', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DT: [
+    ['setup', '前置', 'text', '', true],
+    ['persp', '视角', 'rank', '排一下从哪个角度先想', false],
+    ['style', '风格', 'text', '', false],
+    ['check', '检查点', 'text', '', false],
+    ['cost', '代价', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+
+  /* ── 记录 ── */
+  RR: [
+    ['conclusion', '结论', 'text', '先说结论', true],
+    ['evidence', '依据', 'text', '凭什么这么说', true],
+    ['limits', '局限', 'text', '什么情况下这个结论不成立', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  RB: [
+    ['where', '卡在哪', 'text', '具体到哪一步过不去', true],
+    ['why', '为什么', 'text', '', true],
+    ['next', '下一步', 'derive', '绕过去 / 换条路 / 找人', false],
+    ['bypass', '绕过', 'text', '如果要带债关闭，债是什么', false],
+    ['reason', '原因', 'text', '', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  RD: [
+    ['what', '是什么', 'text', '一句话说清坏在哪', true],
+    ['repro', '复现', 'text', '按步骤能重现', true],
+    ['expect', '预期', 'text', '', true],
+    ['actual', '实际', 'text', '', true],
+    ['scope', '范围', 'text', '影响哪些用户 / 功能', false],
+    ['accept', '验收', 'text', '', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  RF: [
+    ['outcome', '结果', 'text', '成了还是败了', true],
+    ['root', '根因', 'text', '真正的原因是什么', true],
+    ['lesson', '教训', 'text', '', true],
+    ['apply', '怎么用', 'text', '下次什么情况该想起来', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+
+  /* ── 工作 ── */
+  WI: [
+    ['goal', '目标', 'text', '改完之后什么样', true],
+    ['change', '改什么', 'text', '具体到文件 / 函数', true],
+    ['verify', '怎么验', 'text', '跑什么命令、看什么结果', true],
+    ['magic', '魔法数字', 'text', '写死的值为什么是这个值', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WF: [
+    ['repro', '复现', 'text', '', true],
+    ['expect', '预期', 'text', '', true],
+    ['root', '根因', 'text', '不是「哪里错了」，是「为什么会错」', true],
+    ['fix', '修法', 'text', '', true],
+    ['regression', '回归', 'text', '加什么测试防止再来一次', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WR: [
+    ['target', '调研什么', 'text', '', true],
+    ['how', '怎么查', 'rank', '排一下先查哪个', false],
+    ['conclusion', '结论', 'text', '', true],
+    ['evidence', '依据', 'text', '', true],
+    ['other', '其他', 'text', '', false]
+  ],
+  WX: [
+    ['reader', '读者', 'text', '写给人看的，先想清是谁', true],
+    ['path', '读法', 'text', '从头读还是跳着查', false],
+    ['must', '必须有', 'text', '', true],
+    ['skip', '可以跳过', 'text', '', false],
+    ['verify', '校验', 'text', '', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WD: [
+    ['target', '目标', 'text', '画出来要让人看到什么', true],
+    ['approach', '手法', 'text', '', false],
+    ['scene', '场景', 'text', '', false],
+    ['leave', '留白', 'text', '', false],
+    ['verify', '怎么验', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WC: [
+    ['setup', '前置', 'text', '', true],
+    ['order', '顺序', 'rank', '先写哪段', false],
+    ['check', '检查点', 'text', '', false],
+    ['leave', '留白', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ]
 };
 
-/** 取某模板的章节表；没有就返回空（渲染时回退成键名）。 */
+/**
+ * 取某模板的章节表。
+ *
+ * @param {string} type 模板编号
+ * @returns {Array<{id: string, label: string, action: string, placeholder: string, required: boolean}>}
+ */
 function sectionsOf(type) {
-  const rows = SECTION_LABELS[String(type || '').toUpperCase()] || [];
+  const rows = SECTIONS[String(type || '').toUpperCase()] || [];
   return rows.map(function (row) {
-    return { id: row[0], label: row[1], type: ['textarea'], required: false };
+    return {
+      id: row[0],
+      label: row[1],
+      action: row[2],
+      placeholder: row[3] || '',
+      required: row[4] === true
+    };
   });
 }
+
+/**
+ * 某模板用到的行动（去重，按出现顺序）。
+ *
+ * 新建时用它给用户看「选了这个模板，正文会问你要哪些东西」。
+ *
+ * @param {string} type
+ * @returns {string[]}
+ */
+function actionsOf(type) {
+  const out = [];
+  for (const s of sectionsOf(type)) {
+    if (s.action && !out.includes(s.action)) out.push(s.action);
+  }
+  return out;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   行动的中文名和一句话说明
+   ══════════════════════════════════════════════════════════════ */
+const ACTION_LABEL = {
+  text: '文本',
+  markdown: '说明',
+  ask: '选一个',
+  rank: '排序',
+  derive: '派生'
+};
+
+const ACTION_HINT = {
+  text: '一段可输入的文本',
+  markdown: '只读的一段说明',
+  ask: '从几个选项里挑一个',
+  rank: '排先后顺序',
+  derive: '从这一条派生子任务'
+};
 
 const DOMAIN_LABEL = { code: '代码', writing: '写作', art: '绘画', general: '通用' };
 

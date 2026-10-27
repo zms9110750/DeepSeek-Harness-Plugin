@@ -55,9 +55,10 @@
   .tpl-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:40;
     background:#fff;border:1px solid var(--border-2);border-radius:8px;
     box-shadow:0 4px 10px rgba(16,18,22,.08),0 16px 40px rgba(16,18,22,.16);
-    width:520px;max-width:calc(100vw - 80px);max-height:60vh;overflow:auto}
+    width:560px;max-width:calc(100vw - 80px);max-height:min(360px, 46vh);
+    display:flex;flex-direction:column;overflow:hidden}
   .tpl-pop[hidden]{display:none}
-  .tpl-grid{display:grid;grid-template-columns:1fr 1fr 1.35fr;max-height:300px;overflow:auto}
+  .tpl-grid{display:grid;grid-template-columns:1fr 1fr 1.35fr;max-height:150px;overflow:auto;flex:none}
   .tpl-col{border-right:1px solid var(--border);padding:5px 4px 6px}
   .tpl-col:last-child{border-right:0}
   .tpl-col-head{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.06em;
@@ -164,3 +165,61 @@
   .filter-sub-head{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.05em;
     padding:3px 8px 4px;white-space:nowrap}
   .filter-empty{font-size:11.5px;color:var(--text-3);padding:6px 9px}
+
+  /* ── 五个行动的渲染样式 ── */
+  .sec-desc{font-size:11px;color:var(--text-3);line-height:1.6;margin-top:5px}
+  .muted{color:var(--text-3);font-style:italic}
+  .req{color:var(--danger);font-weight:700}
+  .text-input{width:100%;box-sizing:border-box;padding:7px 10px;font:inherit;font-size:12.5px;
+    line-height:1.6;color:var(--text);background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;outline:none;resize:vertical}
+  .text-input:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(59,125,216,.1)}
+
+  .choice-body{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+  .choice-title{font-size:12.5px;line-height:1.45}
+  .choice-sub{font-size:11px;color:var(--text-3);line-height:1.45}
+  .choice.on .choice-sub{color:var(--brand);opacity:.75}
+
+  .rank-body{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+  .rank-title{font-size:12.5px}
+  .rank-sub{font-size:11px;color:var(--text-3)}
+  .rank-btns{display:flex;gap:2px;flex:none}
+  .rank-btns button{padding:0 5px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;border-radius:4px;cursor:pointer}
+  .rank-btns button:hover:not(:disabled){background:#f2f4f6;color:var(--text)}
+  .rank-btns button:disabled{opacity:.3;cursor:default}
+
+  .link-btn{padding:4px 2px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;text-decoration:underline}
+  .link-btn:hover{color:var(--brand)}
+
+  .derive-row{display:flex;flex-wrap:wrap;gap:6px}
+  .derive-row .quick-task .mode{font-size:9.5px;color:var(--text-3);margin-left:4px}
+
+  /* ── 模板里章节 → 行动的预览 ── */
+  .tpl-sections{border-top:1px solid var(--border);padding:8px 10px 9px;overflow:auto;flex:1;min-height:0}
+  .tpl-sec-head{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.05em;margin-bottom:5px}
+  .tpl-sec{display:flex;align-items:baseline;gap:6px;padding:2px 0;font-size:11px;line-height:1.5}
+  .tpl-sec-act{flex:none;font-size:9.5px;font-weight:700;padding:0 5px;border-radius:3px;
+    line-height:15px;background:#eceef0;color:var(--text-2)}
+  .tpl-sec-act[data-act="text"]{background:#e8f0fb;color:#2c6ab8}
+  .tpl-sec-act[data-act="markdown"]{background:#f0f1f3;color:#6b7075}
+  .tpl-sec-act[data-act="ask"]{background:#eaf5ee;color:#2c7a52}
+  .tpl-sec-act[data-act="rank"]{background:#fdf2e3;color:#a9701a}
+  .tpl-sec-act[data-act="derive"]{background:#f0ebfa;color:#6a4bc4}
+  .tpl-sec-id{flex:none;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:10px;color:var(--text-3)}
+  .tpl-sec-label{color:var(--text);flex:none}
+  .tpl-sec-ph{color:var(--text-3);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;min-width:0}
+  .tpl-sec-foot{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px;
+    padding-top:6px;border-top:1px dashed var(--border);font-size:10.5px;color:var(--text-3)}
+  .tpl-act-chip{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:3px;
+    line-height:15px;background:#eceef0;color:var(--text-2)}
+  .tpl-sec-empty{font-size:11px;color:var(--text-3);line-height:1.5}
+
+  /* 左栏常驻的「正文会问这些」 */
+  .tpl-sections.inline{border:1px solid var(--border);border-radius:7px;
+    background:#fafbfc;padding:8px 10px;max-height:250px;overflow:auto}
+  .tpl-sec-count{margin-left:auto;font-size:9.5px;color:var(--text-3);font-weight:500}
+  .tpl-sec-head{display:flex;align-items:center}

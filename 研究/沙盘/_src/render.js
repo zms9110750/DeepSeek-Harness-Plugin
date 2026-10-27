@@ -1,120 +1,326 @@
-function renderBody(task) {
-  const body = task.body;
-  /* 旧格式字符串：整段按 Markdown 纯文本显示 */
-  if (typeof body === 'string') {
-    const d = el('div', {class:'prose'});
-    d.innerHTML = md(body);
-    return d;
-  }
-  /* 新格式 object：按章节渲染 */
-  const out = [];
-  for (const [key, section] of Object.entries(body || {})) {
-    const action = section.action;
-    if (action === 'markdown' || action === 'textarea') {
-      {
-        const d = el('div', {class:'prose'});
-        d.innerHTML = md(section.value || '');
-        out.push(el('div', {class:'sec'}, el('div', {class:'sec-title'}, key), d));
-      }
-    } else if (action === 'choose') {
-      out.push(renderChoose(key, section));
-    } else if (action === 'rank') {
-      out.push(renderRank(key, section));
-    } else if (action === 'derive') {
-      out.push(renderDerive(key, section));
-    } else {
-      out.push(el('div', {class:'sec'},
-        el('div', {class:'sec-title'}, key),
-        el('div', {class:'unknown'}, '未注册的交互类型「' + action + '」',
-          el('pre', null, JSON.stringify(section, null, 2)))));
-    }
-  }
-  return out.length ? el('div', null, out) : null;
-}
-
-function renderChoose(key, section) {
-  const options = Array.isArray(section.options) ? section.options : [];
-  const picked = section.picked || '';
-  return el('div', {class:'sec'},
-    el('div', {class:'sec-title'}, key),
-    el('div', {class:'inter'},
-      el('div', {class:'inter-cap'}, '需要你选', el('span', {class:'src'}, '来自正文')),
-      ...options.map((text) => el('button', {
-        class:'choice' + (text === picked ? ' on' : ''),
-        type:'button',
-        onclick() { this.classList.toggle('on'); }
-      }, el('span', {class:'radio'}), el('span', null, text)))));
-}
-
-function renderRank(key, section) {
-  const items = Array.isArray(section.items) ? section.items : [];
-  return el('div', {class:'sec'},
-    el('div', {class:'sec-title'}, key),
-    el('div', {class:'inter'},
-      el('div', {class:'inter-cap'}, '排一下顺序', el('span', {class:'src'}, '来自正文')),
-      ...items.map((text, i) => el('div', {class:'rank-row'},
-        el('span', {class:'no'}, String(i + 1)),
-        el('span', {class:'txt'}, text)))));
-}
-
-function renderDerive(key, section) {
-  const tpls = Array.isArray(section.templates) ? section.templates : [];
-  const mode = section.mode || 'ask';
-  const modeLabel = mode === 'auto' ? '直接建' : mode === 'manual' ? '只能你建' : '问你';
-  return el('div', {class:'sec'},
-    el('div', {class:'sec-title'}, key),
-    el('div', {class:'inter'},
-      el('div', {class:'inter-cap'}, '拆成子任务', el('span', {class:'src'}, '模板默认 · union 槽位 derive')),
-      ...tpls.map((t) => el('button', {class:'quick-task', type:'button'},
-        el('span', {class:'code'}, t), '派生任务',
-        el('span', {style:{fontSize:'9.5px',color:'var(--text-3)',marginLeft:'5px'}}, modeLabel)))));
-}
-
 /* ══════════════════════════════════════════════════════════════
-   工具
+   建 DOM 的小工具
+
+   整个沙盘不用框架，就靠这一个函数。
+   class / style / onclick / 其它属性 / 子节点，一次搞定。
    ══════════════════════════════════════════════════════════════ */
+
 function el(tag, props, ...children) {
   const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(props || {})) {
-    if (k === 'class') node.className = v;
-    else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
-    else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
-    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === 'class') node.className = value;
+    else if (key === 'style' && typeof value === 'object') Object.assign(node.style, value);
+    else if (key.startsWith('on') && typeof value === 'function') {
+      node.addEventListener(key.slice(2), value);
+    } else if (key === 'hidden') {
+      if (value) node.hidden = true;
+    } else if (key === 'value') {
+      node.value = value;
+    } else {
+      node.setAttribute(key, value);
+    }
   }
-  for (const child of children.flat(Infinity)) {
-    if (child === null || child === undefined || child === false) continue;
+  const append = (child) => {
+    if (child === null || child === undefined || child === false) return;
+    if (Array.isArray(child)) { child.forEach(append); return; }
     node.appendChild(typeof child === 'object' ? child : document.createTextNode(String(child)));
-  }
+  };
+  children.forEach(append);
   return node;
 }
 
 /* ══════════════════════════════════════════════════════════════
-   状态
-   ══════════════════════════════════════════════════════════════ */
-const state = {
-  view: 'tree',
-  group: 'g-2',
-  /* 过滤：三个维度各自多选，维度之间是「与」 */
-  filterOpen: '',
-  filterSub: '',
-  filterStatus: [],
-  filterKinds: [],
-  filterDomains: [],
-  filterTypes: [],
-  filter: '全部',
-  search: '',
-  selected: '',
-  menuOpen: false,
-  relOpen: false,
-  /* 本地改的状态（不写盘，只是让界面能点） */
-  overrides: {}
-};
-const taskOf = (id) => DB.find((x) => x.id === id);
-const statusOf = (t) => t.status;
+   正文渲染 —— 按行动分发
 
-/* ══════════════════════════════════════════════════════════════
-   渲染列表
+   ## 架构
+
+   每个行动带五个公共字段（和 packages/actions 一致）：
+
+     placeholder   灰字（输入框里 / 选项下方）
+     label         这一章上方的标题（可缺省，缺省就用章节 id）
+     row           高度；1 = 单行
+     description   控件下方的详细说明
+     required      必填（画星号）
+
+   外加各自的业务字段：
+
+     text      value
+     markdown  value
+     ask       options[{title, placeholder}] / picked / allow_custom / allow_defer
+     rank      items[{title, placeholder}] / keep
+     derive    templates[] / mode
+
+   ## 为什么五个行动就够了
+
+   用户原话：
+
+     > 你的一个架构，就要描述掉一个渲染里的所有可能。
+
+   所以渲染器只认得行动名，所有可见位置都从 schema 里读，
+   不在渲染器里硬编码任何文案。
    ══════════════════════════════════════════════════════════════ */
+
+/** 行动 → 渲染函数。别名（textarea / input / choose）也指向这里。 */
+const ACTION_RENDERERS = {
+  text: renderText,
+  markdown: renderMarkdownSection,
+  ask: renderAsk,
+  rank: renderRank,
+  derive: renderDerive
+};
+
+/** 别名表：旧模板还在用这些名字。 */
+const ACTION_ALIASES = { textarea: 'text', input: 'text', choose: 'ask' };
+
+/**
+ * 渲染正文。
+ *
+ * @param {object} task
+ * @returns {HTMLElement|null}
+ */
+function renderBody(task) {
+  const body = task.body;
+
+  /* 旧格式字符串：整段按 Markdown 显示，没有章节结构 */
+  if (typeof body === 'string') {
+    if (body.trim() === '') return null;
+    const d = el('div', {class:'prose'});
+    d.innerHTML = md(body);
+    return d;
+  }
+
+  if (body === null || typeof body !== 'object') return null;
+
+  /* 按模板章节的顺序渲染；模板里没有的键排在后面 */
+  const sections = sectionsOf(task.type);
+  const order = [];
+  for (const s of sections) {
+    if (body[s.id] !== undefined) order.push([s.id, body[s.id], s.label]);
+  }
+  for (const [key, value] of Object.entries(body)) {
+    if (!sections.some((s) => s.id === key)) order.push([key, value, key]);
+  }
+
+  const out = [];
+  for (const [key, raw, label] of order) {
+    const node = renderSection(key, raw, label);
+    if (node !== null) out.push(node);
+  }
+  return out.length === 0 ? null : el('div', null, out);
+}
+
+/**
+ * 渲染一章。
+ *
+ * @param {string} key   章节 id
+ * @param {object} raw   这一章的值
+ * @param {string} fallbackLabel 模板里的标题（没有 label 时用）
+ * @returns {HTMLElement|null}
+ */
+function renderSection(key, raw, fallbackLabel) {
+  if (raw === null || typeof raw !== 'object') return null;
+
+  const given = String(raw.action || raw.type || '').trim();
+  if (given === '') return null;
+
+  /* 别名归一 */
+  const action = ACTION_ALIASES[given] || given;
+  const draw = ACTION_RENDERERS[action];
+
+  const title = String(raw.label || fallbackLabel || key);
+  const required = raw.required === true;
+
+  const sec = el('div', {class:'sec'});
+
+  /* 标题：markdown 不需要（它自己就是一段说明） */
+  if (action !== 'markdown' || title !== '') {
+    sec.appendChild(el('div', {class:'sec-title'}, title, required ? el('span', {class:'req'}, ' *') : null));
+  }
+
+  if (draw === undefined) {
+    /* 不认识这个行动：灰卡 + 原始 JSON。数据不丢，也不崩。 */
+    sec.appendChild(el('div', {class:'unknown'},
+      '未注册的交互类型「' + given + '」',
+      el('pre', null, JSON.stringify(raw, null, 2))));
+    return sec;
+  }
+
+  sec.appendChild(draw(raw, key));
+
+  /* description 画在控件下方 */
+  if (raw.description) {
+    sec.appendChild(el('div', {class:'sec-desc'}, String(raw.description)));
+  }
+  return sec;
+}
+
+/**
+ * text —— 一段可输入的文本。
+ *
+ * row: 1 就是单行（原来的 input），否则多行。
+ */
+function renderText(raw) {
+  const rows = Number(raw.row) > 0 ? Number(raw.row) : 3;
+  const value = String(raw.value || '');
+  const placeholder = String(raw.placeholder || '');
+
+  const box = el('div', {class:'inter'});
+  if (rows <= 1) {
+    box.appendChild(el('input', {
+      type: 'text', value, placeholder, class:'text-input',
+      onchange(e) { raw.value = e.target.value; }
+    }));
+  } else {
+    const ta = el('textarea', {
+      class:'text-input', rows: String(rows), placeholder,
+      onchange(e) { raw.value = e.target.value; }
+    });
+    ta.value = value;
+    box.appendChild(ta);
+  }
+  return box;
+}
+
+/**
+ * markdown —— 只读富文本。
+ *
+ * 没有输入框，所以不用 placeholder。但如果给了 placeholder，当空状态提示。
+ */
+function renderMarkdownSection(raw) {
+  const text = String(raw.value || '');
+  const d = el('div', {class:'prose'});
+  if (text.trim() === '') {
+    d.appendChild(el('span', {class:'muted'}, String(raw.placeholder || '（空）')));
+  } else {
+    d.innerHTML = md(text);
+  }
+  return d;
+}
+
+/**
+ * ask —— 从几个选项里挑一个。
+ *
+ * options 是 [{title, placeholder}]：placeholder 当副标题。
+ */
+function renderAsk(raw) {
+  const options = Array.isArray(raw.options) ? raw.options : [];
+  const picked = String(raw.picked || '');
+  const box = el('div', {class:'inter'});
+
+  if (raw.placeholder) {
+    box.appendChild(el('div', {class:'inter-cap'}, String(raw.placeholder)));
+  }
+
+  for (const opt of options) {
+    /* 兼容旧格式（纯字符串） */
+    const title = typeof opt === 'string' ? opt : String(opt.title || '');
+    const sub = typeof opt === 'string' ? '' : String(opt.placeholder || '');
+    const on = title === picked;
+
+    const btn = el('button', {
+      class: 'choice' + (on ? ' on' : ''), type: 'button',
+      onclick() {
+        raw.picked = on ? '' : title;
+        renderAll();
+      }
+    },
+      el('span', {class:'radio'}),
+      el('span', {class:'choice-body'},
+        el('span', {class:'choice-title'}, title),
+        sub === '' ? null : el('span', {class:'choice-sub'}, sub)));
+    box.appendChild(btn);
+  }
+
+  /* 「都不是，我自己写一句」 */
+  if (raw.allow_custom === true) {
+    const current = options.some((o) => (typeof o === 'string' ? o : o.title) === picked);
+    const input = el('input', {
+      type:'text', class:'text-input', placeholder:'都不是，我自己写一句',
+      onchange(e) { raw.picked = e.target.value; }
+    });
+    input.value = current ? '' : picked;
+    box.appendChild(input);
+  }
+
+  /* 「先不选，要更多信息」 */
+  if (raw.allow_defer === true && picked !== '') {
+    box.appendChild(el('button', {
+      class:'link-btn', type:'button',
+      onclick() { raw.picked = ''; renderAll(); }
+    }, '先不选，要更多信息'));
+  }
+
+  return box;
+}
+
+/**
+ * rank —— 排先后顺序。
+ */
+function renderRank(raw) {
+  const items = Array.isArray(raw.items) ? raw.items : [];
+  const box = el('div', {class:'inter'});
+
+  if (raw.placeholder) {
+    box.appendChild(el('div', {class:'inter-cap'}, String(raw.placeholder)));
+  }
+
+  items.forEach((item, index) => {
+    const title = typeof item === 'string' ? item : String(item.title || '');
+    const sub = typeof item === 'string' ? '' : String(item.placeholder || '');
+
+    const move = (delta) => {
+      const target = index + delta;
+      if (target < 0 || target >= items.length) return;
+      const [moved] = items.splice(index, 1);
+      items.splice(target, 0, moved);
+      renderAll();
+    };
+
+    box.appendChild(el('div', {class:'rank-row'},
+      el('span', {class:'no'}, String(index + 1)),
+      el('span', {class:'rank-body'},
+        el('span', {class:'rank-title'}, title),
+        sub === '' ? null : el('span', {class:'rank-sub'}, sub)),
+      el('span', {class:'rank-btns'},
+        el('button', {type:'button', disabled: index === 0,
+          onclick() { move(-1); }}, '↑'),
+        el('button', {type:'button', disabled: index === items.length - 1,
+          onclick() { move(1); }}, '↓'))));
+  });
+
+  return box;
+}
+
+/**
+ * derive —— 从这一条派生子任务。
+ */
+function renderDerive(raw) {
+  const templates = Array.isArray(raw.templates) ? raw.templates : [];
+  const mode = String(raw.mode || 'ask');
+  const modeLabel = mode === 'auto' ? '直接建' : mode === 'manual' ? '只能你建' : '问你';
+
+  const box = el('div', {class:'inter'});
+  if (raw.placeholder) {
+    box.appendChild(el('div', {class:'inter-cap'}, String(raw.placeholder)));
+  }
+
+  const row = el('div', {class:'derive-row'});
+  for (const code of templates) {
+    const tpl = (typeof TEMPLATES !== 'undefined' ? TEMPLATES : []).find((x) => x.code === code);
+    row.appendChild(el('button', {
+      class:'quick-task', type:'button',
+      onclick() { openCreator({ type: String(code) }); }
+    },
+      el('span', {class:'code'}, String(code)),
+      tpl ? tpl.name : '派生任务',
+      el('span', {class:'mode'}, modeLabel)));
+  }
+  box.appendChild(row);
+  return box;
+}
+
+
 function renderGroups() {
   const box = document.getElementById('groups');
   box.innerHTML = '';

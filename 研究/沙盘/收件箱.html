@@ -268,9 +268,10 @@
   .tpl-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:40;
     background:#fff;border:1px solid var(--border-2);border-radius:8px;
     box-shadow:0 4px 10px rgba(16,18,22,.08),0 16px 40px rgba(16,18,22,.16);
-    width:520px;max-width:calc(100vw - 80px);max-height:60vh;overflow:auto}
+    width:560px;max-width:calc(100vw - 80px);max-height:min(360px, 46vh);
+    display:flex;flex-direction:column;overflow:hidden}
   .tpl-pop[hidden]{display:none}
-  .tpl-grid{display:grid;grid-template-columns:1fr 1fr 1.35fr;max-height:300px;overflow:auto}
+  .tpl-grid{display:grid;grid-template-columns:1fr 1fr 1.35fr;max-height:150px;overflow:auto;flex:none}
   .tpl-col{border-right:1px solid var(--border);padding:5px 4px 6px}
   .tpl-col:last-child{border-right:0}
   .tpl-col-head{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.06em;
@@ -377,6 +378,64 @@
   .filter-sub-head{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.05em;
     padding:3px 8px 4px;white-space:nowrap}
   .filter-empty{font-size:11.5px;color:var(--text-3);padding:6px 9px}
+
+  /* ── 五个行动的渲染样式 ── */
+  .sec-desc{font-size:11px;color:var(--text-3);line-height:1.6;margin-top:5px}
+  .muted{color:var(--text-3);font-style:italic}
+  .req{color:var(--danger);font-weight:700}
+  .text-input{width:100%;box-sizing:border-box;padding:7px 10px;font:inherit;font-size:12.5px;
+    line-height:1.6;color:var(--text);background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;outline:none;resize:vertical}
+  .text-input:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(59,125,216,.1)}
+
+  .choice-body{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+  .choice-title{font-size:12.5px;line-height:1.45}
+  .choice-sub{font-size:11px;color:var(--text-3);line-height:1.45}
+  .choice.on .choice-sub{color:var(--brand);opacity:.75}
+
+  .rank-body{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+  .rank-title{font-size:12.5px}
+  .rank-sub{font-size:11px;color:var(--text-3)}
+  .rank-btns{display:flex;gap:2px;flex:none}
+  .rank-btns button{padding:0 5px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;border-radius:4px;cursor:pointer}
+  .rank-btns button:hover:not(:disabled){background:#f2f4f6;color:var(--text)}
+  .rank-btns button:disabled{opacity:.3;cursor:default}
+
+  .link-btn{padding:4px 2px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;text-decoration:underline}
+  .link-btn:hover{color:var(--brand)}
+
+  .derive-row{display:flex;flex-wrap:wrap;gap:6px}
+  .derive-row .quick-task .mode{font-size:9.5px;color:var(--text-3);margin-left:4px}
+
+  /* ── 模板里章节 → 行动的预览 ── */
+  .tpl-sections{border-top:1px solid var(--border);padding:8px 10px 9px;overflow:auto;flex:1;min-height:0}
+  .tpl-sec-head{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.05em;margin-bottom:5px}
+  .tpl-sec{display:flex;align-items:baseline;gap:6px;padding:2px 0;font-size:11px;line-height:1.5}
+  .tpl-sec-act{flex:none;font-size:9.5px;font-weight:700;padding:0 5px;border-radius:3px;
+    line-height:15px;background:#eceef0;color:var(--text-2)}
+  .tpl-sec-act[data-act="text"]{background:#e8f0fb;color:#2c6ab8}
+  .tpl-sec-act[data-act="markdown"]{background:#f0f1f3;color:#6b7075}
+  .tpl-sec-act[data-act="ask"]{background:#eaf5ee;color:#2c7a52}
+  .tpl-sec-act[data-act="rank"]{background:#fdf2e3;color:#a9701a}
+  .tpl-sec-act[data-act="derive"]{background:#f0ebfa;color:#6a4bc4}
+  .tpl-sec-id{flex:none;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:10px;color:var(--text-3)}
+  .tpl-sec-label{color:var(--text);flex:none}
+  .tpl-sec-ph{color:var(--text-3);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;min-width:0}
+  .tpl-sec-foot{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px;
+    padding-top:6px;border-top:1px dashed var(--border);font-size:10.5px;color:var(--text-3)}
+  .tpl-act-chip{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:3px;
+    line-height:15px;background:#eceef0;color:var(--text-2)}
+  .tpl-sec-empty{font-size:11px;color:var(--text-3);line-height:1.5}
+
+  /* 左栏常驻的「正文会问这些」 */
+  .tpl-sections.inline{border:1px solid var(--border);border-radius:7px;
+    background:#fafbfc;padding:8px 10px;max-height:250px;overflow:auto}
+  .tpl-sec-count{margin-left:auto;font-size:9.5px;color:var(--text-3);font-weight:500}
+  .tpl-sec-head{display:flex;align-items:center}
 
 </style>
 </head>
@@ -690,42 +749,254 @@ function updateHint() {
 
 
 /* ══════════════════════════════════════════════════════════════
-   模板章节表 —— 只为了显示章节标题和顺序
+   模板章节表 —— 每章用哪个行动、什么标题、什么灰字
 
-   正文存成 { want: {...}, done: {...} }，键是 id。
-   但界面上要显示「要什么」「什么算做到了」—— 那是模板里 type 的说明
-   或者章节的 label。沙盘不需要完整模板，能对上标题就行。
+   ## 这张表是干什么的
+
+   真实插件的模板是 YAML，章节这么写：
+
+     - id: want
+       type:
+         text: 用户原话优先，不要改写
+       required: true
+
+   沙盘不需要完整的 YAML 解析，但要能演示「章节 → 行动」的对应关系。
+   所以这里用紧凑的数组表达同样的信息：
+
+     ['字段 id', '标题', '行动', '灰字', 必填]
+
+   ## 为什么每个模板的章节不同
+
+   模板决定「这一条要填哪些东西」。
+    GU（用户任务）问「要什么、什么算做到了」；
+    WF（修复）问「怎么复现、根因是什么」。
+
+   同一个行动可以用在不同章节里 —— 比如 `text` 到处都在用，
+   `ask` 只在需要用户拍板的地方出现。
    ══════════════════════════════════════════════════════════════ */
-const SECTION_LABELS = {
-  GU: [['want','要什么'],['done','什么算做到了'],['bounds','边界'],['split','怎么拆'],['other','其他']],
-  GA: [['want','要什么'],['done','什么算做到了'],['risk','风险'],['split','怎么拆'],['other','其他']],
-  GO: [['symptom','现象'],['measure','怎么衡量'],['enough','什么算够'],['split','怎么拆'],['other','其他']],
-  GV: [['want','要什么'],['done','什么算做到了'],['bounds','边界'],['split','怎么拆'],['other','其他']],
-  DP: [['problem','问题'],['plan','方案'],['cost','代价'],['alternative','别的选择'],['risk','风险'],['other','其他']],
-  DB: [['pain','痛点'],['scenario','场景'],['fitness','合不合适'],['precedent','先例'],['other','其他']],
-  DC: [['question','要定什么'],['options','选项'],['unknown','我还不知道什么'],['recommend','我的建议'],['other','其他']],
-  DI: [['goal','目标'],['contract','接口'],['errors','错误'],['breaking','破坏性'],['other','其他']],
-  DQ: [['ask','问什么'],['why','为什么要问'],['guess','我的猜测'],['other','其他']],
-  DT: [['setup','前置'],['persp','视角'],['style','风格'],['check','检查点'],['cost','代价'],['other','其他']],
-  RR: [['conclusion','结论'],['evidence','依据'],['limits','局限'],['deliver','交付'],['other','其他']],
-  RB: [['where','卡在哪'],['why','为什么'],['next','下一步'],['bypass','绕过'],['reason','原因'],['deliver','交付'],['other','其他']],
-  RD: [['what','是什么'],['repro','复现'],['expect','预期'],['actual','实际'],['scope','范围'],['accept','验收'],['deliver','交付'],['other','其他']],
-  RF: [['outcome','结果'],['root','根因'],['lesson','教训'],['apply','怎么用'],['deliver','交付'],['other','其他']],
-  WI: [['goal','目标'],['change','改什么'],['verify','怎么验'],['magic','魔法数字'],['other','其他']],
-  WF: [['repro','复现'],['expect','预期'],['root','根因'],['fix','修法'],['regression','回归'],['other','其他']],
-  WR: [['target','调研什么'],['how','怎么查'],['conclusion','结论'],['evidence','依据'],['other','其他']],
-  WX: [['reader','读者'],['path','读法'],['must','必须有'],['skip','可以跳过'],['verify','校验'],['deliver','交付'],['other','其他']],
-  WD: [['target','目标'],['approach','手法'],['scene','场景'],['leave','留白'],['verify','怎么验'],['other','其他']],
-  WC: [['setup','前置'],['order','顺序'],['check','检查点'],['leave','留白'],['other','其他']]
+
+/**
+ * 模板 → 章节表。
+ *
+ * 每项：[id, 标题, 行动, 灰字, 必填]
+ *
+ * 行动是五个之一：text / markdown / ask / rank / derive
+ */
+const SECTIONS = {
+  /* ── 目标 ── */
+  GU: [
+    ['notice', '说明', 'markdown', '', false],
+    ['want', '要什么', 'text', '用户原话优先。不要改写、不要提炼', true],
+    ['done', '什么算做到了', 'text', '一句话一个判据，能验证的', true],
+    ['bounds', '边界', 'text', '明确不做什么、什么时候必须停下来问', false],
+    ['split', '怎么拆', 'derive', '拆完就派出去，别在这一条里写方案', false],
+    ['other', '其他', 'text', '装不下的东西写这里', false]
+  ],
+  GO: [
+    ['symptom', '现象', 'text', '哪里觉得不对？', true],
+    ['measure', '怎么衡量', 'text', '现在是什么数，想变成什么数', true],
+    ['enough', '什么算够', 'text', '到哪一步就停', false],
+    ['split', '怎么拆', 'derive', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  GA: [
+    ['want', '要什么', 'text', '用户说得含糊的地方，先问清', true],
+    ['done', '什么算做到了', 'text', '', true],
+    ['risk', '风险', 'text', '理解错了会怎样', false],
+    ['split', '怎么拆', 'derive', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  GV: [
+    ['want', '验证什么', 'text', '哪个假设要被证明或推翻', true],
+    ['done', '什么算成立', 'text', '', true],
+    ['bounds', '边界', 'text', '', false],
+    ['split', '怎么拆', 'derive', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+
+  /* ── 设计 ── */
+  DP: [
+    ['problem', '问题', 'text', '要解决的是什么', true],
+    ['plan', '方案', 'text', '怎么写，为什么这么写', true],
+    ['cost', '代价', 'text', '要放弃什么', false],
+    ['alternative', '别的选择', 'ask', '', false],
+    ['risk', '风险', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DB: [
+    ['pain', '痛点', 'text', '', true],
+    ['scenario', '场景', 'text', '', true],
+    ['fitness', '合不合适', 'text', '', false],
+    ['precedent', '先例', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DC: [
+    ['question', '要定什么', 'text', '一句话说清要拍板的是哪件事', true],
+    ['options', '选项', 'ask', '每个选项后面写清代价', true],
+    ['unknown', '我还不知道什么', 'text', '', false],
+    ['recommend', '我的建议', 'text', '', true],
+    ['other', '其他', 'text', '', false]
+  ],
+  DI: [
+    ['goal', '目标', 'text', '', true],
+    ['contract', '接口', 'text', '函数签名 / 协议 / 数据结构', true],
+    ['errors', '错误', 'text', '出错时返回什么', false],
+    ['breaking', '破坏性', 'text', '哪些调用方要改', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DQ: [
+    ['ask', '问什么', 'text', '一个问题。两个问号就拆成两条', true],
+    ['why', '为什么要问', 'text', '没有这个信息，我只能做 X 或 Y 的假设', true],
+    ['guess', '我的猜测', 'text', '给出一个假设答案，用户只要说对不对', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DT: [
+    ['setup', '前置', 'text', '', true],
+    ['persp', '视角', 'rank', '排一下从哪个角度先想', false],
+    ['style', '风格', 'text', '', false],
+    ['check', '检查点', 'text', '', false],
+    ['cost', '代价', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+
+  /* ── 记录 ── */
+  RR: [
+    ['conclusion', '结论', 'text', '先说结论', true],
+    ['evidence', '依据', 'text', '凭什么这么说', true],
+    ['limits', '局限', 'text', '什么情况下这个结论不成立', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  RB: [
+    ['where', '卡在哪', 'text', '具体到哪一步过不去', true],
+    ['why', '为什么', 'text', '', true],
+    ['next', '下一步', 'derive', '绕过去 / 换条路 / 找人', false],
+    ['bypass', '绕过', 'text', '如果要带债关闭，债是什么', false],
+    ['reason', '原因', 'text', '', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  RD: [
+    ['what', '是什么', 'text', '一句话说清坏在哪', true],
+    ['repro', '复现', 'text', '按步骤能重现', true],
+    ['expect', '预期', 'text', '', true],
+    ['actual', '实际', 'text', '', true],
+    ['scope', '范围', 'text', '影响哪些用户 / 功能', false],
+    ['accept', '验收', 'text', '', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  RF: [
+    ['outcome', '结果', 'text', '成了还是败了', true],
+    ['root', '根因', 'text', '真正的原因是什么', true],
+    ['lesson', '教训', 'text', '', true],
+    ['apply', '怎么用', 'text', '下次什么情况该想起来', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+
+  /* ── 工作 ── */
+  WI: [
+    ['goal', '目标', 'text', '改完之后什么样', true],
+    ['change', '改什么', 'text', '具体到文件 / 函数', true],
+    ['verify', '怎么验', 'text', '跑什么命令、看什么结果', true],
+    ['magic', '魔法数字', 'text', '写死的值为什么是这个值', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WF: [
+    ['repro', '复现', 'text', '', true],
+    ['expect', '预期', 'text', '', true],
+    ['root', '根因', 'text', '不是「哪里错了」，是「为什么会错」', true],
+    ['fix', '修法', 'text', '', true],
+    ['regression', '回归', 'text', '加什么测试防止再来一次', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WR: [
+    ['target', '调研什么', 'text', '', true],
+    ['how', '怎么查', 'rank', '排一下先查哪个', false],
+    ['conclusion', '结论', 'text', '', true],
+    ['evidence', '依据', 'text', '', true],
+    ['other', '其他', 'text', '', false]
+  ],
+  WX: [
+    ['reader', '读者', 'text', '写给人看的，先想清是谁', true],
+    ['path', '读法', 'text', '从头读还是跳着查', false],
+    ['must', '必须有', 'text', '', true],
+    ['skip', '可以跳过', 'text', '', false],
+    ['verify', '校验', 'text', '', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WD: [
+    ['target', '目标', 'text', '画出来要让人看到什么', true],
+    ['approach', '手法', 'text', '', false],
+    ['scene', '场景', 'text', '', false],
+    ['leave', '留白', 'text', '', false],
+    ['verify', '怎么验', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WC: [
+    ['setup', '前置', 'text', '', true],
+    ['order', '顺序', 'rank', '先写哪段', false],
+    ['check', '检查点', 'text', '', false],
+    ['leave', '留白', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ]
 };
 
-/** 取某模板的章节表；没有就返回空（渲染时回退成键名）。 */
+/**
+ * 取某模板的章节表。
+ *
+ * @param {string} type 模板编号
+ * @returns {Array<{id: string, label: string, action: string, placeholder: string, required: boolean}>}
+ */
 function sectionsOf(type) {
-  const rows = SECTION_LABELS[String(type || '').toUpperCase()] || [];
+  const rows = SECTIONS[String(type || '').toUpperCase()] || [];
   return rows.map(function (row) {
-    return { id: row[0], label: row[1], type: ['textarea'], required: false };
+    return {
+      id: row[0],
+      label: row[1],
+      action: row[2],
+      placeholder: row[3] || '',
+      required: row[4] === true
+    };
   });
 }
+
+/**
+ * 某模板用到的行动（去重，按出现顺序）。
+ *
+ * 新建时用它给用户看「选了这个模板，正文会问你要哪些东西」。
+ *
+ * @param {string} type
+ * @returns {string[]}
+ */
+function actionsOf(type) {
+  const out = [];
+  for (const s of sectionsOf(type)) {
+    if (s.action && !out.includes(s.action)) out.push(s.action);
+  }
+  return out;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   行动的中文名和一句话说明
+   ══════════════════════════════════════════════════════════════ */
+const ACTION_LABEL = {
+  text: '文本',
+  markdown: '说明',
+  ask: '选一个',
+  rank: '排序',
+  derive: '派生'
+};
+
+const ACTION_HINT = {
+  text: '一段可输入的文本',
+  markdown: '只读的一段说明',
+  ask: '从几个选项里挑一个',
+  rank: '排先后顺序',
+  derive: '从这一条派生子任务'
+};
 
 const DOMAIN_LABEL = { code: '代码', writing: '写作', art: '绘画', general: '通用' };
 
@@ -1125,100 +1396,8 @@ function md(source) {
   return out.join('');
 }
 
-
-
-function renderBody(task) {
-  const body = task.body;
-  /* 旧格式字符串：整段按 Markdown 纯文本显示 */
-  if (typeof body === 'string') {
-    const d = el('div', {class:'prose'});
-    d.innerHTML = md(body);
-    return d;
-  }
-  /* 新格式 object：按章节渲染 */
-  const out = [];
-  for (const [key, section] of Object.entries(body || {})) {
-    const action = section.action;
-    if (action === 'markdown' || action === 'textarea') {
-      {
-        const d = el('div', {class:'prose'});
-        d.innerHTML = md(section.value || '');
-        out.push(el('div', {class:'sec'}, el('div', {class:'sec-title'}, key), d));
-      }
-    } else if (action === 'choose') {
-      out.push(renderChoose(key, section));
-    } else if (action === 'rank') {
-      out.push(renderRank(key, section));
-    } else if (action === 'derive') {
-      out.push(renderDerive(key, section));
-    } else {
-      out.push(el('div', {class:'sec'},
-        el('div', {class:'sec-title'}, key),
-        el('div', {class:'unknown'}, '未注册的交互类型「' + action + '」',
-          el('pre', null, JSON.stringify(section, null, 2)))));
-    }
-  }
-  return out.length ? el('div', null, out) : null;
-}
-
-function renderChoose(key, section) {
-  const options = Array.isArray(section.options) ? section.options : [];
-  const picked = section.picked || '';
-  return el('div', {class:'sec'},
-    el('div', {class:'sec-title'}, key),
-    el('div', {class:'inter'},
-      el('div', {class:'inter-cap'}, '需要你选', el('span', {class:'src'}, '来自正文')),
-      ...options.map((text) => el('button', {
-        class:'choice' + (text === picked ? ' on' : ''),
-        type:'button',
-        onclick() { this.classList.toggle('on'); }
-      }, el('span', {class:'radio'}), el('span', null, text)))));
-}
-
-function renderRank(key, section) {
-  const items = Array.isArray(section.items) ? section.items : [];
-  return el('div', {class:'sec'},
-    el('div', {class:'sec-title'}, key),
-    el('div', {class:'inter'},
-      el('div', {class:'inter-cap'}, '排一下顺序', el('span', {class:'src'}, '来自正文')),
-      ...items.map((text, i) => el('div', {class:'rank-row'},
-        el('span', {class:'no'}, String(i + 1)),
-        el('span', {class:'txt'}, text)))));
-}
-
-function renderDerive(key, section) {
-  const tpls = Array.isArray(section.templates) ? section.templates : [];
-  const mode = section.mode || 'ask';
-  const modeLabel = mode === 'auto' ? '直接建' : mode === 'manual' ? '只能你建' : '问你';
-  return el('div', {class:'sec'},
-    el('div', {class:'sec-title'}, key),
-    el('div', {class:'inter'},
-      el('div', {class:'inter-cap'}, '拆成子任务', el('span', {class:'src'}, '模板默认 · union 槽位 derive')),
-      ...tpls.map((t) => el('button', {class:'quick-task', type:'button'},
-        el('span', {class:'code'}, t), '派生任务',
-        el('span', {style:{fontSize:'9.5px',color:'var(--text-3)',marginLeft:'5px'}}, modeLabel)))));
-}
-
 /* ══════════════════════════════════════════════════════════════
-   工具
-   ══════════════════════════════════════════════════════════════ */
-function el(tag, props, ...children) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(props || {})) {
-    if (k === 'class') node.className = v;
-    else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
-    else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
-    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
-  }
-  for (const child of children.flat(Infinity)) {
-    if (child === null || child === undefined || child === false) continue;
-    node.appendChild(typeof child === 'object' ? child : document.createTextNode(String(child)));
-  }
-  return node;
-}
-
-/* ══════════════════════════════════════════════════════════════
-   状态
+   页面状态
    ══════════════════════════════════════════════════════════════ */
 const state = {
   view: 'tree',
@@ -1230,20 +1409,341 @@ const state = {
   filterKinds: [],
   filterDomains: [],
   filterTypes: [],
-  filter: '全部',
   search: '',
   selected: '',
   menuOpen: false,
-  relOpen: false,
-  /* 本地改的状态（不写盘，只是让界面能点） */
-  overrides: {}
+  relOpen: false
 };
-const taskOf = (id) => DB.find((x) => x.id === id);
-const statusOf = (t) => t.status;
+
+/** 按 id 取一条（内存里的，不是磁盘）。 */
+function taskOf(id) {
+  return DB.find((x) => x.id === id);
+}
+
 
 /* ══════════════════════════════════════════════════════════════
-   渲染列表
+   建 DOM 的小工具
+
+   整个沙盘不用框架，就靠这一个函数。
+   class / style / onclick / 其它属性 / 子节点，一次搞定。
    ══════════════════════════════════════════════════════════════ */
+
+function el(tag, props, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === 'class') node.className = value;
+    else if (key === 'style' && typeof value === 'object') Object.assign(node.style, value);
+    else if (key.startsWith('on') && typeof value === 'function') {
+      node.addEventListener(key.slice(2), value);
+    } else if (key === 'hidden') {
+      if (value) node.hidden = true;
+    } else if (key === 'value') {
+      node.value = value;
+    } else {
+      node.setAttribute(key, value);
+    }
+  }
+  const append = (child) => {
+    if (child === null || child === undefined || child === false) return;
+    if (Array.isArray(child)) { child.forEach(append); return; }
+    node.appendChild(typeof child === 'object' ? child : document.createTextNode(String(child)));
+  };
+  children.forEach(append);
+  return node;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   正文渲染 —— 按行动分发
+
+   ## 架构
+
+   每个行动带五个公共字段（和 packages/actions 一致）：
+
+     placeholder   灰字（输入框里 / 选项下方）
+     label         这一章上方的标题（可缺省，缺省就用章节 id）
+     row           高度；1 = 单行
+     description   控件下方的详细说明
+     required      必填（画星号）
+
+   外加各自的业务字段：
+
+     text      value
+     markdown  value
+     ask       options[{title, placeholder}] / picked / allow_custom / allow_defer
+     rank      items[{title, placeholder}] / keep
+     derive    templates[] / mode
+
+   ## 为什么五个行动就够了
+
+   用户原话：
+
+     > 你的一个架构，就要描述掉一个渲染里的所有可能。
+
+   所以渲染器只认得行动名，所有可见位置都从 schema 里读，
+   不在渲染器里硬编码任何文案。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 行动 → 渲染函数。别名（textarea / input / choose）也指向这里。 */
+const ACTION_RENDERERS = {
+  text: renderText,
+  markdown: renderMarkdownSection,
+  ask: renderAsk,
+  rank: renderRank,
+  derive: renderDerive
+};
+
+/** 别名表：旧模板还在用这些名字。 */
+const ACTION_ALIASES = { textarea: 'text', input: 'text', choose: 'ask' };
+
+/**
+ * 渲染正文。
+ *
+ * @param {object} task
+ * @returns {HTMLElement|null}
+ */
+function renderBody(task) {
+  const body = task.body;
+
+  /* 旧格式字符串：整段按 Markdown 显示，没有章节结构 */
+  if (typeof body === 'string') {
+    if (body.trim() === '') return null;
+    const d = el('div', {class:'prose'});
+    d.innerHTML = md(body);
+    return d;
+  }
+
+  if (body === null || typeof body !== 'object') return null;
+
+  /* 按模板章节的顺序渲染；模板里没有的键排在后面 */
+  const sections = sectionsOf(task.type);
+  const order = [];
+  for (const s of sections) {
+    if (body[s.id] !== undefined) order.push([s.id, body[s.id], s.label]);
+  }
+  for (const [key, value] of Object.entries(body)) {
+    if (!sections.some((s) => s.id === key)) order.push([key, value, key]);
+  }
+
+  const out = [];
+  for (const [key, raw, label] of order) {
+    const node = renderSection(key, raw, label);
+    if (node !== null) out.push(node);
+  }
+  return out.length === 0 ? null : el('div', null, out);
+}
+
+/**
+ * 渲染一章。
+ *
+ * @param {string} key   章节 id
+ * @param {object} raw   这一章的值
+ * @param {string} fallbackLabel 模板里的标题（没有 label 时用）
+ * @returns {HTMLElement|null}
+ */
+function renderSection(key, raw, fallbackLabel) {
+  if (raw === null || typeof raw !== 'object') return null;
+
+  const given = String(raw.action || raw.type || '').trim();
+  if (given === '') return null;
+
+  /* 别名归一 */
+  const action = ACTION_ALIASES[given] || given;
+  const draw = ACTION_RENDERERS[action];
+
+  const title = String(raw.label || fallbackLabel || key);
+  const required = raw.required === true;
+
+  const sec = el('div', {class:'sec'});
+
+  /* 标题：markdown 不需要（它自己就是一段说明） */
+  if (action !== 'markdown' || title !== '') {
+    sec.appendChild(el('div', {class:'sec-title'}, title, required ? el('span', {class:'req'}, ' *') : null));
+  }
+
+  if (draw === undefined) {
+    /* 不认识这个行动：灰卡 + 原始 JSON。数据不丢，也不崩。 */
+    sec.appendChild(el('div', {class:'unknown'},
+      '未注册的交互类型「' + given + '」',
+      el('pre', null, JSON.stringify(raw, null, 2))));
+    return sec;
+  }
+
+  sec.appendChild(draw(raw, key));
+
+  /* description 画在控件下方 */
+  if (raw.description) {
+    sec.appendChild(el('div', {class:'sec-desc'}, String(raw.description)));
+  }
+  return sec;
+}
+
+/**
+ * text —— 一段可输入的文本。
+ *
+ * row: 1 就是单行（原来的 input），否则多行。
+ */
+function renderText(raw) {
+  const rows = Number(raw.row) > 0 ? Number(raw.row) : 3;
+  const value = String(raw.value || '');
+  const placeholder = String(raw.placeholder || '');
+
+  const box = el('div', {class:'inter'});
+  if (rows <= 1) {
+    box.appendChild(el('input', {
+      type: 'text', value, placeholder, class:'text-input',
+      onchange(e) { raw.value = e.target.value; }
+    }));
+  } else {
+    const ta = el('textarea', {
+      class:'text-input', rows: String(rows), placeholder,
+      onchange(e) { raw.value = e.target.value; }
+    });
+    ta.value = value;
+    box.appendChild(ta);
+  }
+  return box;
+}
+
+/**
+ * markdown —— 只读富文本。
+ *
+ * 没有输入框，所以不用 placeholder。但如果给了 placeholder，当空状态提示。
+ */
+function renderMarkdownSection(raw) {
+  const text = String(raw.value || '');
+  const d = el('div', {class:'prose'});
+  if (text.trim() === '') {
+    d.appendChild(el('span', {class:'muted'}, String(raw.placeholder || '（空）')));
+  } else {
+    d.innerHTML = md(text);
+  }
+  return d;
+}
+
+/**
+ * ask —— 从几个选项里挑一个。
+ *
+ * options 是 [{title, placeholder}]：placeholder 当副标题。
+ */
+function renderAsk(raw) {
+  const options = Array.isArray(raw.options) ? raw.options : [];
+  const picked = String(raw.picked || '');
+  const box = el('div', {class:'inter'});
+
+  if (raw.placeholder) {
+    box.appendChild(el('div', {class:'inter-cap'}, String(raw.placeholder)));
+  }
+
+  for (const opt of options) {
+    /* 兼容旧格式（纯字符串） */
+    const title = typeof opt === 'string' ? opt : String(opt.title || '');
+    const sub = typeof opt === 'string' ? '' : String(opt.placeholder || '');
+    const on = title === picked;
+
+    const btn = el('button', {
+      class: 'choice' + (on ? ' on' : ''), type: 'button',
+      onclick() {
+        raw.picked = on ? '' : title;
+        renderAll();
+      }
+    },
+      el('span', {class:'radio'}),
+      el('span', {class:'choice-body'},
+        el('span', {class:'choice-title'}, title),
+        sub === '' ? null : el('span', {class:'choice-sub'}, sub)));
+    box.appendChild(btn);
+  }
+
+  /* 「都不是，我自己写一句」 */
+  if (raw.allow_custom === true) {
+    const current = options.some((o) => (typeof o === 'string' ? o : o.title) === picked);
+    const input = el('input', {
+      type:'text', class:'text-input', placeholder:'都不是，我自己写一句',
+      onchange(e) { raw.picked = e.target.value; }
+    });
+    input.value = current ? '' : picked;
+    box.appendChild(input);
+  }
+
+  /* 「先不选，要更多信息」 */
+  if (raw.allow_defer === true && picked !== '') {
+    box.appendChild(el('button', {
+      class:'link-btn', type:'button',
+      onclick() { raw.picked = ''; renderAll(); }
+    }, '先不选，要更多信息'));
+  }
+
+  return box;
+}
+
+/**
+ * rank —— 排先后顺序。
+ */
+function renderRank(raw) {
+  const items = Array.isArray(raw.items) ? raw.items : [];
+  const box = el('div', {class:'inter'});
+
+  if (raw.placeholder) {
+    box.appendChild(el('div', {class:'inter-cap'}, String(raw.placeholder)));
+  }
+
+  items.forEach((item, index) => {
+    const title = typeof item === 'string' ? item : String(item.title || '');
+    const sub = typeof item === 'string' ? '' : String(item.placeholder || '');
+
+    const move = (delta) => {
+      const target = index + delta;
+      if (target < 0 || target >= items.length) return;
+      const [moved] = items.splice(index, 1);
+      items.splice(target, 0, moved);
+      renderAll();
+    };
+
+    box.appendChild(el('div', {class:'rank-row'},
+      el('span', {class:'no'}, String(index + 1)),
+      el('span', {class:'rank-body'},
+        el('span', {class:'rank-title'}, title),
+        sub === '' ? null : el('span', {class:'rank-sub'}, sub)),
+      el('span', {class:'rank-btns'},
+        el('button', {type:'button', disabled: index === 0,
+          onclick() { move(-1); }}, '↑'),
+        el('button', {type:'button', disabled: index === items.length - 1,
+          onclick() { move(1); }}, '↓'))));
+  });
+
+  return box;
+}
+
+/**
+ * derive —— 从这一条派生子任务。
+ */
+function renderDerive(raw) {
+  const templates = Array.isArray(raw.templates) ? raw.templates : [];
+  const mode = String(raw.mode || 'ask');
+  const modeLabel = mode === 'auto' ? '直接建' : mode === 'manual' ? '只能你建' : '问你';
+
+  const box = el('div', {class:'inter'});
+  if (raw.placeholder) {
+    box.appendChild(el('div', {class:'inter-cap'}, String(raw.placeholder)));
+  }
+
+  const row = el('div', {class:'derive-row'});
+  for (const code of templates) {
+    const tpl = (typeof TEMPLATES !== 'undefined' ? TEMPLATES : []).find((x) => x.code === code);
+    row.appendChild(el('button', {
+      class:'quick-task', type:'button',
+      onclick() { openCreator({ type: String(code) }); }
+    },
+      el('span', {class:'code'}, String(code)),
+      tpl ? tpl.name : '派生任务',
+      el('span', {class:'mode'}, modeLabel)));
+  }
+  box.appendChild(row);
+  return box;
+}
+
+
 function renderGroups() {
   const box = document.getElementById('groups');
   box.innerHTML = '';
@@ -1723,7 +2223,7 @@ function openCreator(init) {
     col3.appendChild(el('button', {
       class:'tpl-item' + (picker.tpl === '' ? ' on' : ''),
       type:'button',
-      onclick() { picker.tpl = ''; closePop(); }
+      onclick() { picker.tpl = ''; closePop(); refreshSections(); }
     }, el('span', {class:'tpl-code'}, '—'), el('span', {class:'tpl-name'}, '空模板')));
 
     const list = TEMPLATES.filter((t) => t.kind === picker.kind
@@ -1732,7 +2232,7 @@ function openCreator(init) {
       col3.appendChild(el('button', {
         class:'tpl-item' + (picker.tpl === t.code ? ' on' : ''),
         type:'button', title: t.desc,
-        onclick() { picker.tpl = t.code; closePop(); }
+        onclick() { picker.tpl = t.code; closePop(); refreshSections(); }
       }, el('span', {class:'tpl-code'}, t.letter), el('span', {class:'tpl-name'}, t.name)));
     }
 
@@ -1746,6 +2246,8 @@ function openCreator(init) {
     tplPop.appendChild(el('div', {class:'tpl-preview'},
       '编号前缀 ', el('b', null, prefix),
       '　最终编号形如 ', el('b', null, prefix + '-01')));
+
+
   };
 
   tplBtn.addEventListener('click', (e) => {
@@ -1848,6 +2350,40 @@ function openCreator(init) {
 
   tabRel.addEventListener('click', () => press(tabRel, tabAdv));
   tabAdv.addEventListener('click', () => press(tabAdv, tabRel));
+
+  /* ── 这个模板的正文会问你要什么 ──
+   *
+   * 用户原话：
+   *   > 展示，用户操作创建怎么在模板里面选择行动的
+   *
+   * 模板决定章节，章节决定行动。选中模板之后应该直接看到
+   * 「正文会长什么样、每章用什么行动」——不用点开面板去找。
+   * 所以放在左栏常驻，跟着模板切换实时更新。 */
+  const sectionsBox = el('div', {class:'tpl-sections inline'});
+  function refreshSections() {
+    sectionsBox.innerHTML = '';
+    const sections = sectionsOf(picker.tpl);
+    if (sections.length === 0) {
+      sectionsBox.appendChild(el('div', {class:'tpl-sec-empty'},
+        picker.tpl === '' ? '空模板：正文只有一整块自由文本，不加任何章节。' : '（这个模板还没配章节）'));
+      return;
+    }
+    sectionsBox.appendChild(el('div', {class:'tpl-sec-head'},
+      '正文会问这些', el('span', {class:'tpl-sec-count'}, String(sections.length) + ' 章')));
+    for (const s of sections) {
+      sectionsBox.appendChild(el('div', {class:'tpl-sec'},
+        el('span', {class:'tpl-sec-act', 'data-act': s.action}, ACTION_LABEL[s.action] || s.action),
+        el('span', {class:'tpl-sec-label'}, s.label),
+        s.required ? el('span', {class:'req'}, '*') : null,
+        s.placeholder ? el('span', {class:'tpl-sec-ph'}, s.placeholder) : null));
+    }
+    const used = actionsOf(picker.tpl);
+    sectionsBox.appendChild(el('div', {class:'tpl-sec-foot'},
+      '用到 ' + used.length + ' 个行动：',
+      used.map((a) => el('span', {class:'tpl-act-chip', 'data-act': a}, ACTION_LABEL[a] || a))));
+  }
+  refreshSections();
+  left.appendChild(sectionsBox);
 
   left.appendChild(tabs);
   left.appendChild(panelRel);
