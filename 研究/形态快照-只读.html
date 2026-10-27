@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>任务板 · 形态快照（写死数据）</title>
+<style>
+  :root{
+    --bg:#f4f5f6; --card:#fff; --border:#e4e6e8; --border-2:#d3d6da;
+    --text:#23262b; --text-2:#6b7075; --text-3:#9ba0a6;
+    --black:#1a1d21; --brand:#3b7dd8; --goal:#7c5cd6; --work:#2e9e6b;
+    --record:#8a9099; --warn:#c98a20; --danger:#c0392b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px 20px 60px;background:var(--bg);color:var(--text);
+    font:13px/1.5 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  h1{margin:0 0 4px;font-size:18px;font-weight:650}
+  .sub{margin:0 0 18px;color:var(--text-2);font-size:12.5px;max-width:900px}
+  .sub code{font:11.5px ui-monospace,Menlo,Consolas,monospace;background:#eceef0;padding:1px 5px;border-radius:3px}
+  .toplink{float:right;font-size:12px;color:var(--brand);text-decoration:none;
+    padding:5px 11px;border:1px solid var(--brand);border-radius:6px}
+  .toplink:hover{background:rgba(59,125,216,.07)}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:18px;align-items:start}
+  @media(max-width:1180px){.layout{grid-template-columns:1fr}}
+
+  /* ── 面板 ── */
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 1px 3px rgba(16,18,22,.06),0 8px 24px rgba(16,18,22,.05);overflow:hidden}
+  .panel-head{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border)}
+  .panel-title{font-weight:650;font-size:13.5px}
+  .count{color:var(--text-3);font-size:11.5px}
+  .grow{flex:1}
+  .btn{font:inherit;font-size:12px;padding:5px 11px;border-radius:6px;border:1px solid var(--border-2);
+    background:#fff;color:var(--text);cursor:pointer}
+  .btn:hover{border-color:#b9bdc2}
+  .btn.primary{background:var(--black);border-color:var(--black);color:#fff;font-weight:550}
+
+  /* 分组条 */
+  .groups{display:flex;align-items:center;gap:6px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;background:#fcfcfd}
+  .group{font:inherit;font-size:12px;padding:4px 11px;border-radius:14px;border:1px solid var(--border-2);
+    background:#fff;color:var(--text-2);cursor:pointer}
+  .group.on{background:var(--black);border-color:var(--black);color:#fff;font-weight:600}
+  .group .n{opacity:.65;font-size:11px;margin-left:3px}
+
+  /* 筛选条 */
+  .filters{display:flex;align-items:center;gap:6px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .chip{font:inherit;font-size:11.5px;padding:3px 10px;border-radius:12px;border:1px solid var(--border-2);
+    background:#fff;color:var(--text-2);cursor:pointer}
+  .chip.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+  .search{font:inherit;font-size:12px;padding:5px 9px;border-radius:6px;border:1px solid var(--border-2);
+    background:#fff;outline:none;width:150px;margin-left:auto}
+
+  /* 列表 */
+  .rows{max-height:520px;overflow:auto}
+  .row{display:grid;grid-template-columns:auto auto 1fr auto;align-items:center;gap:9px;
+    padding:9px 14px;border-bottom:1px solid #f0f1f2;cursor:pointer;text-align:left;
+    background:transparent;border-left:0;border-right:0;border-top:0;font:inherit;width:100%}
+  .row:hover{background:#f7faff}
+  .row.on{background:#eef3fb;box-shadow:inset 3px 0 0 var(--brand)}
+  .row .id{font-weight:700;font-size:11.5px;letter-spacing:.02em;flex:none}
+  .row .kind{font-size:10px;padding:1px 6px;border-radius:3px;flex:none}
+  .row .title{color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .row .dot{font-size:8px;flex:none}
+
+  /* ── 详情 ── */
+  .detail{background:var(--card);border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 1px 3px rgba(16,18,22,.06),0 8px 24px rgba(16,18,22,.05);
+    display:flex;flex-direction:column;max-height:calc(100vh - 120px);position:sticky;top:16px}
+  .d-head{padding:13px 15px 10px;border-bottom:1px solid var(--border);flex:none;position:relative}
+  .d-top{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+  .d-top .id{font-weight:700;font-size:12px}
+  .d-top .kind{font-size:10px;padding:1px 7px;border-radius:3px}
+  .d-top .tpl{font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--border-2);color:var(--text-3)}
+  .icon-btn{width:26px;height:26px;padding:0;border:0;border-radius:5px;background:transparent;
+    color:var(--text-2);cursor:pointer;font-size:13px;display:grid;place-items:center}
+  .icon-btn:hover{background:#f2f4f6}
+  .d-head h3{margin:0 0 7px;font-size:16px;font-weight:650;line-height:1.35}
+  .d-meta{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--text-2);flex-wrap:wrap}
+
+  .status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:10px;
+    font:inherit;font-size:11px;font-weight:600;border:1px solid transparent;background:transparent;cursor:pointer}
+  .status-pill:hover{border-color:currentColor}
+  .status-menu{position:absolute;left:15px;top:calc(100% + 6px);z-index:30;width:236px;padding:5px;
+    background:#fff;border:1px solid var(--border-2);border-radius:8px;
+    box-shadow:0 4px 10px rgba(16,18,22,.08),0 16px 40px rgba(16,18,22,.16)}
+  .status-menu[hidden]{display:none}
+  .menu-cap{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.06em;padding:6px 9px 4px}
+  .menu-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 9px;font:inherit;font-size:12.5px;
+    text-align:left;background:transparent;border:0;border-radius:5px;cursor:pointer;color:var(--text)}
+  .menu-item:hover{background:#f2f4f6}
+  .menu-item .ic{flex:none;width:14px;text-align:center;opacity:.7}
+  .menu-item.primary{color:var(--brand);font-weight:600}
+  .menu-item.bad{color:var(--danger)}
+  .menu-sep{height:1px;background:var(--border);margin:5px 4px}
+  .menu-note{font-size:10.5px;color:var(--text-3);padding:6px 9px;line-height:1.5;
+    border-top:1px solid var(--border);margin-top:4px}
+
+  /* 父任务栏 */
+  .parent-row{display:flex;align-items:center;gap:8px;padding:8px 15px;
+    border-bottom:1px solid var(--border);flex:none;background:#fcfcfd}
+  .rel-toggle{display:inline-flex;align-items:center;gap:5px;flex:none;padding:4px 9px;font:inherit;
+    font-size:11.5px;color:var(--text-2);background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;cursor:pointer}
+  .rel-toggle[aria-expanded="true"]{background:#eef0f2}
+  .rel-toggle .n{font-size:10px;font-weight:700;padding:0 5px;border-radius:8px;
+    background:#eceef0;color:var(--text-2);line-height:15px}
+  .rel-toggle .chev{font-size:8px;transition:transform .15s;display:inline-block}
+  .rel-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
+  .vsep{width:1px;height:16px;background:var(--border-2);flex:none}
+  .pcap{font-size:11px;font-weight:600;color:var(--text-3);flex:none}
+  .pbtn{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;font:inherit;font-size:11px;
+    background:#fff;border:1px solid var(--border-2);border-radius:8px;color:var(--brand);cursor:pointer}
+  .derive-btn{display:inline-flex;align-items:center;gap:5px;flex:none;padding:5px 11px;font:inherit;
+    font-size:12px;font-weight:550;background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;color:var(--text);cursor:pointer;margin-left:auto}
+  .derive-btn:hover{border-color:var(--black);background:#f7f8f9}
+
+  /* 关系网 */
+  .rel-body{padding:0 15px 10px;border-bottom:1px solid var(--border);background:#fbfbfc;flex:none}
+  .rel-body[hidden]{display:none}
+  .rel-headrow{display:grid;grid-template-columns:repeat(3,1fr);margin-top:10px;
+    background:#e4e7ea;border:1px solid var(--border-2);border-bottom:2px solid var(--border-2);
+    border-radius:5px 5px 0 0;overflow:hidden}
+  .rel-head{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;
+    padding:6px 9px;border-left:3px solid var(--border-2)}
+  .rel-head.active{border-left-color:var(--brand)}
+  .rel-head.held{border-left-color:var(--warn)}
+  .rel-head.done{border-left-color:var(--work)}
+  .rel-block{margin-top:8px}
+  .rel-banner{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;
+    color:var(--text-2);letter-spacing:.03em;padding:3px 9px;background:#eef0f2;
+    border-left:3px solid var(--border-2);border-radius:4px 4px 0 0}
+  .rel-cells{display:grid;grid-template-columns:repeat(3,1fr)}
+  .rel-cell{padding:5px 4px 3px;display:grid;gap:3px;align-content:start;border-radius:4px}
+  .rel-cell.void{background-image:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(0,0,0,.022) 3px,rgba(0,0,0,.022) 6px)}
+  .rel-item{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;font:inherit;font-size:11px;
+    line-height:20px;background:#fff;border:1px solid var(--border);border-radius:8px;
+    color:var(--brand);cursor:pointer;white-space:nowrap}
+  .rel-item:hover{border-color:var(--brand)}
+
+  /* 正文区 */
+  .d-body{overflow:auto;padding:4px 15px 14px;flex:1;min-height:0}
+  .sec{border-top:1px solid var(--border);padding:11px 0 2px}
+  .sec:first-child{border-top:0}
+  .sec-title{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
+    color:var(--text-3);letter-spacing:.04em;margin-bottom:8px}
+  .sec-title .n{font-size:10px;font-weight:700;padding:0 5px;border-radius:8px;
+    background:#eceef0;color:var(--text-2);line-height:15px}
+  .prose{font-size:12.5px;line-height:1.7;white-space:pre-wrap}
+  .prose code{font:11.5px ui-monospace,Menlo,Consolas,monospace;background:#f2f4f6;padding:1px 4px;border-radius:3px}
+  .prose p{margin:0 0 8px}
+  .prose h3{margin:12px 0 6px;font-size:14px;font-weight:650}
+  .prose h4{margin:10px 0 5px;font-size:13px;font-weight:650}
+  .prose h5,.prose h6{margin:9px 0 4px;font-size:12.5px;font-weight:650}
+  .prose ul,.prose ol{margin:0 0 8px;padding-left:20px}
+  .prose li{margin:2px 0}
+  .prose blockquote{margin:0 0 8px;padding:6px 10px;border-left:2px solid var(--border-2);
+    background:#f7f8f9;color:var(--text-2);font-size:12px}
+  .prose hr{margin:10px 0;border:0;border-top:1px solid var(--border)}
+  .prose strong{font-weight:650}
+
+  /* 交互控件 */
+  .inter{border:1px solid var(--border);border-radius:8px;padding:10px 11px 11px;margin-bottom:9px;background:#fcfcfd}
+  .inter-cap{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;font-size:11.5px;
+    font-weight:650;margin-bottom:8px}
+  .inter-cap .src{font-size:10px;font-weight:500;color:var(--text-3);padding:0 5px;
+    border-radius:3px;background:#eceef0}
+  .choice{display:flex;align-items:center;gap:8px;width:100%;padding:8px 11px;margin-bottom:6px;
+    font:inherit;font-size:12.5px;text-align:left;color:var(--text);background:#fff;
+    border:1px solid var(--border-2);border-radius:7px;cursor:pointer}
+  .choice:hover{border-color:var(--brand);background:#f7faff}
+  .choice.on{border-color:var(--brand);background:#f7faff;color:var(--brand);font-weight:600}
+  .choice .radio{flex:none;width:13px;height:13px;border-radius:50%;border:1.5px solid var(--border-2);
+    display:grid;place-items:center}
+  .choice.on .radio{border-color:var(--brand)}
+  .choice.on .radio::after{content:'';width:6px;height:6px;border-radius:50%;background:var(--brand)}
+  .rank-row{display:flex;align-items:center;gap:8px;padding:6px 9px;margin-bottom:4px;
+    background:#fff;border:1px solid var(--border-2);border-radius:6px;font-size:12.5px}
+  .rank-row .no{flex:none;width:16px;color:var(--text-3);font-size:10px}
+  .rank-row .txt{flex:1}
+  .quick-task{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;margin:0 6px 6px 0;
+    font:inherit;font-size:12px;background:#fff;border:1px dashed var(--border-2);
+    border-radius:6px;cursor:pointer}
+  .quick-task:hover{border-style:solid;border-color:var(--brand);color:var(--brand)}
+  .quick-task .code{font-size:10px;font-weight:700;color:var(--text-3);padding:0 4px;
+    border-radius:3px;background:#f0f2f4}
+  .unknown{border:1px dashed var(--border-2);border-radius:6px;background:#f7f8f9;
+    padding:9px 11px;font-size:11.5px;color:var(--text-2)}
+  .unknown pre{margin:5px 0 0;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+
+  /* 固定底部 */
+  .d-foot{padding:10px 15px 12px;border-top:1px solid var(--border);flex:none;background:#fcfcfd}
+  .ta{width:100%;min-height:48px;resize:vertical;padding:8px 10px;font:12.5px/1.55 inherit;
+    font-family:inherit;border:1px solid var(--border-2);border-radius:6px;outline:none;background:#fff}
+
+  /* ── 计划输入区 ── */
+  .writer{background:var(--card);border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 1px 3px rgba(16,18,22,.06);padding:14px 16px;margin-top:18px}
+  .writer h2{margin:0 0 6px;font-size:14px;font-weight:650}
+  .writer p{margin:0 0 10px;font-size:12px;color:var(--text-2)}
+  .writer p code{font:11px ui-monospace,Menlo,Consolas,monospace;background:#eceef0;padding:1px 5px;border-radius:3px}
+  .writer textarea{width:100%;min-height:220px;padding:11px 12px;font:12.5px/1.7 ui-monospace,Menlo,Consolas,monospace;
+    border:1px solid var(--border-2);border-radius:7px;outline:none;resize:vertical;background:#fcfcfd}
+  .writer-row{display:flex;align-items:center;gap:9px;margin-top:9px;font-size:11.5px;color:var(--text-3)}
+  .saved{color:var(--work);font-weight:600}
+</style>
+</head>
+<body>
+
+<a class="toplink" href="%E5%BD%A2%E6%80%81%E5%BF%AB%E7%85%A7-%E5%8F%AF%E4%BA%A4%E4%BA%92.html">切换到 可交互沙盘 →</a>
+<h1>任务板 · 形态快照</h1>
+<p class="sub">
+  这是当前 mod 的形态，<b>数据写死</b>（9 条真实样本），样式与真实插件一致。
+  数据只读，但下面有一个<b>可写的计划区</b> —— 你在那儿写，写进浏览器 localStorage，
+  我读 <code>研究/计划草稿.md</code> 就能拿到（你需要点一次「导出到文件」）。
+</p>
+
+<div class="layout">
+
+  <!-- ══════ 列表 ══════ -->
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">任务</span>
+      <span class="count" id="count">共 0 条</span>
+      <span class="grow"></span>
+      <button class="btn" type="button">列表</button>
+      <button class="btn" type="button">新建</button>
+      <button class="btn" type="button">刷新</button>
+    </div>
+
+    <div class="groups" id="groups"></div>
+
+    <div class="filters">
+      <button class="chip on" type="button">全部</button>
+      <button class="chip" type="button">进行</button>
+      <button class="chip" type="button">搁置</button>
+      <button class="chip" type="button">完成</button>
+      <button class="chip" type="button">草稿</button>
+      <input class="search" type="search" placeholder="搜编号或标题…" id="search">
+    </div>
+
+    <div class="rows" id="rows"></div>
+  </div>
+
+  <!-- ══════ 详情 ══════ -->
+  <div class="detail" id="detail"></div>
+</div>
+
+<!-- ══════ 计划输入区 ══════ -->
+<div class="writer">
+  <h2>计划区（可写）</h2>
+  <p>
+    随便写。存在浏览器 localStorage（<code>taskboard-draft</code>）。
+    点「导出到文件」会下载一份 <code>计划草稿.md</code>，你把它放到
+    <code>X:\temp\dsh\研究\</code> 下面，我就能读到。
+  </p>
+  <textarea id="draft" placeholder="例如：&#10;- 详情页要改成右分栏&#10;- 状态模型换成四类别&#10;- 抽屉位置再往左 4px"></textarea>
+  <div class="writer-row">
+    <button class="btn primary" type="button" id="exportBtn">导出到文件</button>
+    <button class="btn" type="button" id="clearBtn">清空</button>
+    <span class="grow"></span>
+    <span id="saveHint">—</span>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   写死的数据 —— 9 条真实样本
+   ══════════════════════════════════════════════════════════════ */
+const TASKS = [
+  {
+    id:'GU-01', title:'用户任务：剩下没做完的 5 条', type:'GU', kind:'goal', status:'提交',
+    parent:'', links:'', tags:[],
+    body:'## 这是什么\n\n这是 T-054 / T-056 的下一次重写。旧的都已取消，但**它们里面真正没做完的部分还在**，所以重新立一张。\n\n12 条要求里 7 条已做完，2 条半成品，3 条没动。这一张只装没做完的那些。\n\n## 没做完的 5 条\n\n① 失败必须有理由\n② dispatch 字段要有消费者\n③ 详情层派发按钮\n④ behavior 要影响界面\n⑤ 日志',
+    note:''
+  },
+  {
+    id:'GU-02', title:'用户任务5', type:'GU', kind:'goal', status:'提交',
+    parent:'', links:'', tags:[],
+    body:'1. GU01 仍然有领取、直接完成、取消、拒绝。说明「目标」大类现在还不是根据状态自动算的。\n\n2. 一个包里面可以有多个插件。以下内容放在一个包里，分插件：箭头面板、计划面板、「按计划」的权限状态、「子工作空间」、额外工作空间。\n\n3. 归档、分组。这个需要设计。否则之前用户任务提出来的任务，占据了太多竖向高度。\n\n4. 考虑给关联新增更多内容。例如一期、二期意味着他们是一件事情，那么是否除了兄弟节点的联系以外，还需要「相关」的关系？然后还要有「约束」「参考」之类的关系。',
+    note:''
+  },
+  {
+    id:'WI-01', title:'失败必须有理由', type:'WI', kind:'work', status:'完成',
+    parent:'GU-01', links:'', tags:[],
+    body:'## 要做什么\n\n转「失败」时强制填理由，不填不让改。\n\n## 用户原话\n\n> 进行失败状态一定要回报原因的。但是点击失败只是点击了，没有说明处。\n\n## 具体做什么\n\n1. `setState` 里加一条检查\n2. 报错文案要写出出路\n3. 允许理由里引用别的事项 id',
+    note:'已完成，按你的备注改成「失败 → 派一条阻碍」，不是「填一段 note」。'
+  },
+  {
+    id:'WI-02', title:'dispatch 字段要有消费者', type:'WI', kind:'work', status:'完成',
+    parent:'GU-01', links:'', tags:['dispatch','模板系统'],
+    body:'## 要做什么\n\n模板 YAML 里的 `dispatch` 字段现在没人读，等于装饰。要让界面真的按它收窄可派发范围。',
+    note:''
+  },
+  {
+    id:'WI-03', title:'详情层派发按钮', type:'WI', kind:'work', status:'完成',
+    parent:'GU-01', links:'', tags:[],
+    body:'## 要做什么\n\n详情页要有「派发」区，按钮列表来自宿主的 `task_dispatch`。\n\n判定三层（大类规则 / 父模板 dispatch / 子模板 default_kind）全在宿主做，面板只管显示。',
+    note:''
+  },
+  {
+    id:'DP-04', title:'归档与分组：老任务占了太多竖向高度', type:'DP', kind:'design', status:'完成',
+    parent:'GU-02', links:'', tags:[],
+    body:'## 问题\n\n老任务太多，列表一屏装不下。\n\n## 方案\n\n归档直接对分组归档。归档以后界面不显示，但索引还在，可以「显示已归档」。',
+    note:''
+  },
+  {
+    id:'DB-01', title:'record 的状态集要不要按 kind 收窄', type:'DB', kind:'design', status:'未指定',
+    parent:'', links:'', tags:[],
+    body:'## 说不清的地方\n\n九态是为拟合 A2A 硬套的。记录类说「搁置」不成立 —— 写出来就完了，没有搁置这回事。\n\n## 用户原话\n\n> 只有任务会派发出去。记录、决策、去问，是不是搁置了。这不成立。\n> 所以这 4 个类别应该有他们的状态。比如阻碍只有绕过、解决。成功和失败是什么含义呢？不知道。',
+    note:''
+  },
+  {
+    id:'DC-01', title:'【验证】不同前缀独立编号', type:'DC', kind:'design', status:'取消',
+    parent:'', links:'', tags:[],
+    body:'## 要定什么\n\n不同模板前缀是否各自独立流水。\n\n## 选项\n\n- WF-01 和 GU-01 各自从 01 开始\n- 全部共用一个流水号',
+    note:''
+  },
+  {
+    id:'WF-01', title:'【验证】编号应带模板前缀', type:'WF', kind:'work', status:'取消',
+    parent:'', links:'', tags:[],
+    body:'## 验证点\n\n编号形式应为 `前缀-流水`，例如 WF-01。',
+    note:''
+  }
+];
+
+/* ══════════════════════════════════════════════════════════════
+   状态模型
+   ══════════════════════════════════════════════════════════════ */
+const STATUS_GROUP = {
+  '未指定':[], '提交':['进行'], '处理中':['进行'],
+  '需要补充':['进行','搁置'], '需要授权':['进行','搁置'],
+  '完成':['完成'], '失败':['完成'], '取消':['完成'], '拒绝':['完成']
+};
+const groupOf = (s) => (STATUS_GROUP[s] || [])[0] || '草稿';
+const toneOf = (s) => {
+  const g = groupOf(s);
+  return g === '完成' ? 'var(--work)' : g === '搁置' ? 'var(--warn)' : g === '进行' ? 'var(--brand)' : 'var(--text-3)';
+};
+const KIND_COLOR = { goal:'var(--goal)', design:'var(--brand)', record:'var(--record)', work:'var(--work)' };
+const KIND_LABEL = { goal:'目标', design:'设计', record:'记录', work:'工作' };
+
+/* 状态转移表（和宿主 transitionBlocker 口径一致） */
+const TRANSITIONS = {
+  '未指定':[{to:'提交',label:'采纳',primary:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '提交':[{to:'处理中',label:'领取',primary:true},{to:'完成',label:'直接完成'},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '处理中':[{to:'完成',label:'完成',primary:true},{to:'失败',label:'失败',bad:true},{to:'取消',label:'取消',bad:true},{to:'需要补充',label:'搁置 · 需要补充'},{to:'需要授权',label:'搁置 · 需要授权'}],
+  '需要补充':[{to:'处理中',label:'继续',primary:true},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '需要授权':[{to:'处理中',label:'继续',primary:true},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '完成':[{to:'提交',label:'重开',primary:true}],
+  '失败':[{to:'提交',label:'重开',primary:true}],
+  '取消':[{to:'提交',label:'重开',primary:true}],
+  '拒绝':[{to:'提交',label:'重开',primary:true}]
+};
+
+/* ══════════════════════════════════════════════════════════════
+   正文渲染 —— 按 action 分发（演示渲染器机制）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 极简 Markdown → HTML。只处理快照里用得到的几种语法：
+   标题、无序/有序列表、粗体、行内代码、引用、分割线、表格。 */
+function md(source) {
+  const text = String(source || '');
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let inList = null;
+  const inline = (s) => s
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  const flushList = () => { if (inList) { out.push('</' + inList + '>'); inList = null; } };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (line.trim() === '') { flushList(); continue; }
+    const h = /^(#{1,4})\s+(.*)$/.exec(line);
+    if (h) { flushList(); const lv = h[1].length + 2; out.push('<h' + lv + '>' + inline(h[2]) + '</h' + lv + '>'); continue; }
+    if (/^---+$/.test(line.trim())) { flushList(); out.push('<hr>'); continue; }
+    const q = /^>\s?(.*)$/.exec(line);
+    if (q) { flushList(); out.push('<blockquote>' + inline(q[1]) + '</blockquote>'); continue; }
+    const ul = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (ul) { if (inList !== 'ul') { flushList(); out.push('<ul>'); inList = 'ul'; } out.push('<li>' + inline(ul[1]) + '</li>'); continue; }
+    const ol = /^\s*\d+\.\s+(.*)$/.exec(line);
+    if (ol) { if (inList !== 'ol') { flushList(); out.push('<ol>'); inList = 'ol'; } out.push('<li>' + inline(ol[1]) + '</li>'); continue; }
+    flushList();
+    out.push('<p>' + inline(line) + '</p>');
+  }
+  flushList();
+  return out.join('');
+}
+
+function renderBody(task) {
+  const body = task.body;
+  /* 旧格式字符串：整段按 Markdown 纯文本显示 */
+  if (typeof body === 'string') {
+    const d = el('div', {class:'prose'});
+    d.innerHTML = md(body);
+    return d;
+  }
+  /* 新格式 object：按章节渲染 */
+  const out = [];
+  for (const [key, section] of Object.entries(body || {})) {
+    const action = section.action;
+    if (action === 'markdown' || action === 'textarea') {
+      {
+        const d = el('div', {class:'prose'});
+        d.innerHTML = md(section.value || '');
+        out.push(el('div', {class:'sec'}, el('div', {class:'sec-title'}, key), d));
+      }
+    } else if (action === 'choose') {
+      out.push(renderChoose(key, section));
+    } else if (action === 'rank') {
+      out.push(renderRank(key, section));
+    } else if (action === 'derive') {
+      out.push(renderDerive(key, section));
+    } else {
+      out.push(el('div', {class:'sec'},
+        el('div', {class:'sec-title'}, key),
+        el('div', {class:'unknown'}, '未注册的交互类型「' + action + '」',
+          el('pre', null, JSON.stringify(section, null, 2)))));
+    }
+  }
+  return out.length ? el('div', null, out) : null;
+}
+
+function renderChoose(key, section) {
+  const options = Array.isArray(section.options) ? section.options : [];
+  const picked = section.picked || '';
+  return el('div', {class:'sec'},
+    el('div', {class:'sec-title'}, key),
+    el('div', {class:'inter'},
+      el('div', {class:'inter-cap'}, '需要你选', el('span', {class:'src'}, '来自正文')),
+      ...options.map((text) => el('button', {
+        class:'choice' + (text === picked ? ' on' : ''),
+        type:'button',
+        onclick() { this.classList.toggle('on'); }
+      }, el('span', {class:'radio'}), el('span', null, text)))));
+}
+
+function renderRank(key, section) {
+  const items = Array.isArray(section.items) ? section.items : [];
+  return el('div', {class:'sec'},
+    el('div', {class:'sec-title'}, key),
+    el('div', {class:'inter'},
+      el('div', {class:'inter-cap'}, '排一下顺序', el('span', {class:'src'}, '来自正文')),
+      ...items.map((text, i) => el('div', {class:'rank-row'},
+        el('span', {class:'no'}, String(i + 1)),
+        el('span', {class:'txt'}, text)))));
+}
+
+function renderDerive(key, section) {
+  const tpls = Array.isArray(section.templates) ? section.templates : [];
+  const mode = section.mode || 'ask';
+  const modeLabel = mode === 'auto' ? '直接建' : mode === 'manual' ? '只能你建' : '问你';
+  return el('div', {class:'sec'},
+    el('div', {class:'sec-title'}, key),
+    el('div', {class:'inter'},
+      el('div', {class:'inter-cap'}, '拆成子任务', el('span', {class:'src'}, '模板默认 · union 槽位 derive')),
+      ...tpls.map((t) => el('button', {class:'quick-task', type:'button'},
+        el('span', {class:'code'}, t), '派生任务',
+        el('span', {style:{fontSize:'9.5px',color:'var(--text-3)',marginLeft:'5px'}}, modeLabel)))));
+}
+
+/* ══════════════════════════════════════════════════════════════
+   工具
+   ══════════════════════════════════════════════════════════════ */
+function el(tag, props, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === 'class') node.className = v;
+    else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
+    else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child === null || child === undefined || child === false) continue;
+    node.appendChild(typeof child === 'object' ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   状态
+   ══════════════════════════════════════════════════════════════ */
+const state = {
+  group: 'g-2',
+  filter: '全部',
+  search: '',
+  selected: TASKS[0].id,
+  menuOpen: false,
+  relOpen: false,
+  /* 本地改的状态（不写盘，只是让界面能点） */
+  overrides: {}
+};
+const taskOf = (id) => {
+  const t = TASKS.find((x) => x.id === id);
+  if (!t) return undefined;
+  const o = state.overrides[id];
+  return o ? Object.assign({}, t, o) : t;
+};
+const statusOf = (t) => t.status;
+
+/* ══════════════════════════════════════════════════════════════
+   渲染列表
+   ══════════════════════════════════════════════════════════════ */
+function renderGroups() {
+  const box = document.getElementById('groups');
+  box.innerHTML = '';
+  const groups = [
+    { id:'g-2', name:'开发任务板', members:TASKS.map((t) => t.id) },
+    { id:'g-3', name:'测试任务板', members:[] }
+  ];
+  for (const g of groups) {
+    const live = g.members.filter((id) => taskOf(id));
+    box.appendChild(el('button', {
+      class:'group' + (g.id === state.group ? ' on' : ''),
+      type:'button',
+      onclick() { state.group = g.id; renderAll(); }
+    }, g.name, el('span', {class:'n'}, String(live.length))));
+  }
+  box.appendChild(el('button', {class:'group', type:'button', title:'新建分组'}, '＋'));
+  box.appendChild(el('span', {class:'grow'}));
+  box.appendChild(el('button', {class:'btn', type:'button', style:{fontSize:'11.5px',padding:'3px 9px'}}, '设为当前'));
+  box.appendChild(el('button', {class:'btn', type:'button', style:{fontSize:'11.5px',padding:'3px 9px'}}, '显示已归档'));
+}
+
+function visibleTasks() {
+  let list = TASKS.map((t) => taskOf(t.id)).filter(Boolean);
+  if (state.filter !== '全部') {
+    if (state.filter === '草稿') list = list.filter((t) => t.status === '未指定');
+    else list = list.filter((t) => groupOf(t.status) === state.filter);
+  }
+  if (state.search.trim() !== '') {
+    const q = state.search.trim().toLowerCase();
+    list = list.filter((t) => (t.id + ' ' + t.title).toLowerCase().includes(q));
+  }
+  return list;
+}
+
+function renderRows() {
+  const box = document.getElementById('rows');
+  const list = visibleTasks();
+  box.innerHTML = '';
+  document.getElementById('count').textContent = '共 ' + list.length + ' 条';
+
+  if (list.length === 0) {
+    box.appendChild(el('div', {style:{padding:'30px 14px',textAlign:'center',color:'var(--text-3)',fontSize:'12px'}},
+      '这一个筛选下没有事项。'));
+    return;
+  }
+  for (const t of list) {
+    const color = KIND_COLOR[t.kind] || 'var(--text-3)';
+    box.appendChild(el('button', {
+      class:'row' + (t.id === state.selected ? ' on' : ''),
+      type:'button',
+      onclick() { state.selected = t.id; state.menuOpen = false; state.relOpen = false; renderAll(); }
+    },
+      el('span', {class:'id', style:{color}}, t.id),
+      el('span', {class:'kind', style:{color, background:KIND_COLOR[t.kind] ? 'rgba(0,0,0,.05)' : 'transparent'}}, KIND_LABEL[t.kind] || t.kind),
+      el('span', {class:'title'}, t.title),
+      el('span', {class:'dot', style:{color:toneOf(t.status)}}, '●')
+    ));
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   渲染详情
+   ══════════════════════════════════════════════════════════════ */
+function renderDetail() {
+  const box = document.getElementById('detail');
+  box.innerHTML = '';
+  const t = taskOf(state.selected);
+  if (!t) { box.appendChild(el('div', {style:{padding:'40px',color:'var(--text-3)',textAlign:'center'}}, '选一条看详情')); return; }
+
+  const color = KIND_COLOR[t.kind] || 'var(--text-3)';
+
+  /* ── 头部 ── */
+  const head = el('div', {class:'d-head'},
+    el('div', {class:'d-top'},
+      el('span', {class:'id', style:{color}}, t.id),
+      el('span', {class:'kind', style:{color, background:'rgba(0,0,0,.05)'}}, KIND_LABEL[t.kind] || t.kind),
+      el('span', {class:'tpl'}, t.type),
+      el('span', {class:'grow', style:{flex:'1'}}),
+      el('button', {class:'icon-btn', type:'button', title:'分支'}, '⑂'),
+      el('button', {class:'icon-btn', type:'button', title:'归档'}, '▣'),
+      el('button', {class:'icon-btn', type:'button', title:'关闭',
+        onclick(){ state.selected = ''; renderAll(); }}, '✕')
+    ),
+    el('h3', null, t.title)
+  );
+
+  /* 状态标签 + 二级菜单 */
+  const meta = el('div', {class:'d-meta'});
+  const pill = el('button', {
+    class:'status-pill', type:'button',
+    style:{color:toneOf(t.status), borderColor: state.menuOpen ? toneOf(t.status) : 'transparent'},
+    onclick(){ state.menuOpen = !state.menuOpen; renderAll(); }
+  },
+    el('span', {style:{fontSize:'8px'}}, '●'),
+    t.status + ' · ' + groupOf(t.status),
+    el('span', {style:{fontSize:'8px',opacity:'.7'}}, '▾'));
+  meta.appendChild(pill);
+  if (t.kind === 'goal') {
+    meta.appendChild(el('span', {style:{padding:'1px 7px',borderRadius:'6px',
+      border:'1px dashed var(--border-2)'}}, '推导：' + deriveGoalStatus(t)));
+  }
+  meta.appendChild(el('span', {style:{opacity:'.85'}}, '状态由用户或 AI 显式设置'));
+  head.appendChild(meta);
+
+  /* 菜单 */
+  if (state.menuOpen) {
+    const menu = el('div', {class:'status-menu'},
+      el('div', {class:'menu-cap'}, '变更状态'));
+    const actions = t.kind === 'goal' && t.status !== '未指定'
+      ? [{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'放弃目标',bad:true}]
+      : (TRANSITIONS[t.status] || []);
+    for (const a of actions) {
+      menu.appendChild(el('button', {
+        class:'menu-item' + (a.primary ? ' primary' : '') + (a.bad ? ' bad' : ''),
+        type:'button',
+        onclick(){
+          state.overrides[t.id] = Object.assign({}, state.overrides[t.id], { status: a.to });
+          state.menuOpen = false;
+          renderAll();
+        }
+      }, el('span', {class:'ic'}, a.primary ? '▶' : a.bad ? '✕' : '·'), a.label));
+    }
+    menu.appendChild(el('div', {class:'menu-note'},
+      '状态变更会影响 AI 能否继续这张单，所以都收在这里。'));
+    head.appendChild(menu);
+  }
+  box.appendChild(head);
+
+  /* ── 父任务栏 ── */
+  const children = TASKS.filter((x) => x.parent === t.id).map((x) => x.id);
+  const outLinks = [];
+  const inLinks = TASKS.filter((x) => x.links && x.links.includes(t.id)).map((x) => x.id);
+  const relCount = children.length + outLinks.length + inLinks.length + (t.parent ? 1 : 0);
+
+  const parentRow = el('div', {class:'parent-row'},
+    el('button', {
+      class:'rel-toggle', type:'button', 'aria-expanded': state.relOpen ? 'true' : 'false',
+      onclick(){ state.relOpen = !state.relOpen; renderAll(); }
+    },
+      el('span', {class:'chev'}, '▶'), '展开关系', el('span', {class:'n'}, String(relCount))));
+
+  if (t.parent) {
+    parentRow.appendChild(el('span', {class:'vsep'}));
+    parentRow.appendChild(el('span', {class:'pcap'}, '父任务'));
+    parentRow.appendChild(el('button', {
+      class:'pbtn', type:'button',
+      onclick(){ state.selected = t.parent; renderAll(); }
+    }, t.parent));
+  }
+  parentRow.appendChild(el('button', {
+    class:'derive-btn', type:'button',
+    onclick(){ alert('真实插件里：打开新建，父任务自动填 ' + t.id); }
+  }, el('span', {style:{color:'var(--text-3)'}}, '＋'), '派生子任务'));
+  box.appendChild(parentRow);
+
+  /* ── 关系网 ── */
+  if (state.relOpen) {
+    const relBody = el('div', {class:'rel-body'});
+    if (relCount === 0) {
+      relBody.appendChild(el('div', {style:{fontSize:'11.5px',color:'var(--text-3)',padding:'10px 0'}},
+        '这一条还没有任何关系。'));
+    } else {
+      relBody.appendChild(el('div', {class:'rel-headrow'},
+        el('div', {class:'rel-head active'}, '进行'),
+        el('div', {class:'rel-head held'}, '搁置'),
+        el('div', {class:'rel-head done'}, '完成')));
+
+      const blockOf = (title, ids, color) => {
+        const entries = ids.map((id) => taskOf(id)).filter(Boolean);
+        if (entries.length === 0) return null;
+        const cols = [[], [], []];
+        for (const e of entries) {
+          const g = groupOf(e.status);
+          cols[g === '搁置' ? 1 : g === '完成' ? 2 : 0].push(e);
+        }
+        return el('div', {class:'rel-block'},
+          el('div', {class:'rel-banner', style:{borderLeftColor:color}}, title,
+            el('span', {style:{opacity:'.75'}}, String(entries.length))),
+          el('div', {class:'rel-cells'},
+            ...cols.map((bucket) => el('div', {class:'rel-cell' + (bucket.length === 0 ? ' void' : '')},
+              ...bucket.map((e) => el('button', {
+                class:'rel-item', type:'button',
+                onclick(){ state.selected = e.id; renderAll(); }
+              }, el('span', {style:{color:toneOf(e.status),fontSize:'8px'}}, '●'), e.id))))) );
+      };
+
+      const b1 = blockOf('子任务', children, 'var(--brand)');
+      const b2 = blockOf('被依赖', inLinks, 'var(--warn)');
+      if (b1) relBody.appendChild(b1);
+      if (b2) relBody.appendChild(b2);
+    }
+    box.appendChild(relBody);
+  }
+
+  /* ── 正文（滚动区）── */
+  const body = el('div', {class:'d-body'});
+  body.appendChild(el('div', {class:'sec'},
+    el('div', {class:'sec-title'}, '正文'),
+    renderBody(t) || el('div', {class:'prose', style:{color:'var(--text-3)'}}, '（没有正文）')));
+  if (t.note) {
+    body.appendChild(el('div', {class:'sec'},
+      el('div', {class:'sec-title'}, '备注'),
+      el('div', {class:'prose', style:{color:'var(--text-2)'}}, t.note)));
+  }
+  /* 演示：一章 object 形态的交互 */
+  if (t.id === 'GU-01') {
+    body.appendChild(el('div', {class:'sec'},
+      el('div', {class:'sec-title'}, '交互演示', el('span', {class:'n'}, 'action 分发')),
+      el('div', {class:'inter'},
+        el('div', {class:'inter-cap'}, '需要你选', el('span', {class:'src'}, 'choice · 三个互斥方案')),
+        ...['先做分组，因为它是其它四项的容器','先做详情页，因为用户最常看','五个一起做，反正都不大']
+          .map((text) => el('button', {class:'choice', type:'button', onclick(){ this.classList.toggle('on'); }},
+            el('span', {class:'radio'}), el('span', null, text)))),
+      el('div', {class:'inter'},
+        el('div', {class:'inter-cap'}, '拆成子任务', el('span', {class:'src'}, 'derive · union 槽位')),
+        el('button', {class:'quick-task', type:'button'},
+          el('span', {class:'code'}, 'WR'), '派生调研任务'),
+        el('button', {class:'quick-task', type:'button'},
+          el('span', {class:'code'}, 'DP'), '派生设计任务'))));
+  }
+  box.appendChild(body);
+
+  /* ── 固定底部备注 ── */
+  box.appendChild(el('div', {class:'d-foot'},
+    el('textarea', {class:'ta', placeholder:'备注 / 搁置理由（随时写，不跟着内容滚）'})));
+}
+
+function deriveGoalStatus(t) {
+  const kids = TASKS.filter((x) => x.parent === t.id).map((x) => taskOf(x.id));
+  if (kids.length === 0) return '未开始';
+  const groups = kids.map((k) => groupOf(k.status));
+  /* 全部完成态 → 收尾；有进行 → 进行中；有搁置 → 停滞；否则未开始 */
+  if (groups.every((g) => g === '完成')) return '收尾';
+  if (groups.some((g) => g === '进行')) return '进行中';
+  if (groups.some((g) => g === '搁置')) return '停滞';
+  return '未开始';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   计划区
+   ══════════════════════════════════════════════════════════════ */
+const DRAFT_KEY = 'taskboard-draft';
+function loadDraft() {
+  const ta = document.getElementById('draft');
+  ta.value = localStorage.getItem(DRAFT_KEY) || '';
+  updateHint();
+  ta.addEventListener('input', () => {
+    localStorage.setItem(DRAFT_KEY, ta.value);
+    updateHint();
+  });
+}
+function updateHint() {
+  const v = localStorage.getItem(DRAFT_KEY) || '';
+  const box = document.getElementById('saveHint');
+  box.textContent = v.trim() === '' ? '空' : ('已存 ' + v.length + ' 字 · ' + new Date().toLocaleTimeString('zh-CN'));
+  box.className = v.trim() === '' ? '' : 'saved';
+}
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const v = localStorage.getItem(DRAFT_KEY) || '';
+  const blob = new Blob([v], {type:'text/markdown;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '计划草稿.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (!confirm('清空计划区？')) return;
+  localStorage.removeItem(DRAFT_KEY);
+  document.getElementById('draft').value = '';
+  updateHint();
+});
+
+/* ══════════════════════════════════════════════════════════════
+   启动
+   ══════════════════════════════════════════════════════════════ */
+document.getElementById('search').addEventListener('input', (e) => {
+  state.search = e.target.value;
+  renderRows();
+});
+document.querySelectorAll('.filters .chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.filters .chip').forEach((c) => c.classList.remove('on'));
+    chip.classList.add('on');
+    state.filter = chip.textContent.trim();
+    renderRows();
+  });
+});
+
+function renderAll() {
+  renderGroups();
+  renderRows();
+  renderDetail();
+}
+renderAll();
+loadDraft();
+</script>
+</body>
+</html>
