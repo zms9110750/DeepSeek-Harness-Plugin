@@ -24,3 +24,6 @@ sandbox-write-probe.txt
 *.db-shm
 *.db-wal
 *.zstd
+
+# 子 AI 拆包出来的第三方源码副本（可重新生成）
+.review-extract/
