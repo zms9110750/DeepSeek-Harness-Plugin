@@ -27,7 +27,7 @@ body:
         如果会用"不是这个意思"回你，说明还没问清。
     validations:
       required: true
-  - type: textarea
+  - type: [textarea, derive]
     id: plan
     attributes:
       label: 打算怎么做

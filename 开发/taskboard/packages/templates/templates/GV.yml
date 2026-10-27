@@ -68,7 +68,7 @@ body:
         没写清的地方要写"未指定"，不要自己填——填了就是替作者做决定。
     validations:
       required: true
-  - type: textarea
+  - type: [textarea, derive]
     id: split
     attributes:
       label: 怎么拆

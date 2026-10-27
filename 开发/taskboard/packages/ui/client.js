@@ -1897,6 +1897,560 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
   var kr = { graphlib: ie, version: ue, layout: Oe, debug: Ce, util: { time: le, notime: q } };
   var $o = kr;
 
+  // renderers.js
+  var RENDERERS = /* @__PURE__ */ new Map();
+  function registerRenderer(name, render) {
+    const key = String(name ?? "").trim();
+    if (key === "") throw new TypeError("registerRenderer: name \u4E0D\u80FD\u4E3A\u7A7A");
+    if (typeof render !== "function") throw new TypeError(`registerRenderer(${key}): \u9700\u8981\u4E00\u4E2A\u51FD\u6570`);
+    RENDERERS.set(key, render);
+  }
+  function getRenderer(name) {
+    return RENDERERS.get(String(name ?? "").trim());
+  }
+
+  // builtin-renderers.js
+  function registerBuiltinRenderers(deps) {
+    const h = deps.h;
+    const md = deps.renderMarkdown;
+    const theme = deps.theme ?? {};
+    const label = theme.label ?? "var(--dsw-alias-label-primary)";
+    const muted = theme.muted ?? "var(--dsw-alias-label-secondary)";
+    const border = theme.border ?? "var(--dsw-alias-border-l1)";
+    const brand = theme.brand ?? "var(--dsw-alias-brand-primary)";
+    registerRenderer("Markdown", function({ value }) {
+      const text = String(value?.value ?? "");
+      if (text.trim() === "") return null;
+      return h("div", { style: { fontSize: 13, lineHeight: 1.7, color: label } }, md(text));
+    });
+    registerRenderer("Textarea", function({ value, onChange, readOnly }) {
+      const text = String(value?.value ?? "");
+      if (readOnly === true) {
+        return h(
+          "div",
+          { style: { fontSize: 13, lineHeight: 1.7, color: label, whiteSpace: "pre-wrap" } },
+          text === "" ? h("span", { style: { color: muted, fontStyle: "italic" } }, "\uFF08\u7A7A\uFF09") : text
+        );
+      }
+      return h("textarea", {
+        value: text,
+        rows: Number(value?.rows ?? 3),
+        placeholder: String(value?.placeholder ?? ""),
+        onChange: (event) => onChange({ ...value, value: event.target.value }),
+        style: {
+          width: "100%",
+          padding: "8px 10px",
+          font: "inherit",
+          fontSize: 13,
+          lineHeight: 1.6,
+          color: label,
+          background: "var(--dsw-alias-bg-layer-1)",
+          border: `1px solid ${border}`,
+          borderRadius: 6,
+          outline: "none",
+          resize: "vertical",
+          boxSizing: "border-box"
+        }
+      });
+    });
+    registerRenderer("Input", function({ value, onChange, readOnly }) {
+      const text = String(value?.value ?? "");
+      if (readOnly === true) {
+        return h("div", { style: { fontSize: 13, color: label } }, text === "" ? "\uFF08\u7A7A\uFF09" : text);
+      }
+      return h("input", {
+        value: text,
+        placeholder: String(value?.placeholder ?? ""),
+        onChange: (event) => onChange({ ...value, value: event.target.value }),
+        style: {
+          width: "100%",
+          padding: "7px 10px",
+          font: "inherit",
+          fontSize: 13,
+          color: label,
+          background: "var(--dsw-alias-bg-layer-1)",
+          border: `1px solid ${border}`,
+          borderRadius: 6,
+          outline: "none",
+          boxSizing: "border-box"
+        }
+      });
+    });
+    registerRenderer("Choose", function({ value, onChange, readOnly }) {
+      const options = Array.isArray(value?.options) ? value.options.map(String) : [];
+      const picked = String(value?.picked ?? "");
+      const row = (text, active, onClick) => h(
+        "button",
+        {
+          type: "button",
+          onClick: readOnly === true ? void 0 : onClick,
+          disabled: readOnly === true,
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            width: "100%",
+            padding: "8px 11px",
+            marginBottom: 6,
+            font: "inherit",
+            fontSize: 12.5,
+            textAlign: "left",
+            color: active ? brand : label,
+            background: active ? "rgba(59,125,216,.08)" : "var(--dsw-alias-bg-layer-1)",
+            border: `1px solid ${active ? brand : border}`,
+            borderRadius: 7,
+            cursor: readOnly === true ? "default" : "pointer"
+          }
+        },
+        h("span", {
+          style: {
+            flex: "none",
+            width: 13,
+            height: 13,
+            borderRadius: "50%",
+            border: `1.5px solid ${active ? brand : border}`,
+            display: "grid",
+            placeItems: "center"
+          }
+        }, active ? h("span", { style: { width: 6, height: 6, borderRadius: "50%", background: brand } }) : null),
+        h("span", { style: { flex: 1 } }, text)
+      );
+      const nodes = options.map((text) => row(text, text === picked, () => onChange({ ...value, picked: text })));
+      if (value?.allow_custom === true && readOnly !== true) {
+        nodes.push(
+          h("input", {
+            key: "custom",
+            value: options.includes(picked) ? "" : picked,
+            placeholder: "\u90FD\u4E0D\u662F\uFF0C\u6211\u81EA\u5DF1\u5199\u4E00\u53E5",
+            onChange: (event) => onChange({ ...value, picked: event.target.value }),
+            style: {
+              width: "100%",
+              padding: "7px 10px",
+              font: "inherit",
+              fontSize: 12.5,
+              color: label,
+              background: "var(--dsw-alias-bg-layer-1)",
+              border: `1px dashed ${border}`,
+              borderRadius: 6,
+              outline: "none",
+              boxSizing: "border-box"
+            }
+          })
+        );
+      }
+      if (value?.allow_defer === true && readOnly !== true && picked !== "") {
+        nodes.push(
+          h(
+            "button",
+            {
+              key: "defer",
+              type: "button",
+              onClick: () => onChange({ ...value, picked: "" }),
+              style: {
+                marginTop: 4,
+                padding: "4px 10px",
+                font: "inherit",
+                fontSize: 11.5,
+                color: muted,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer"
+              }
+            },
+            "\u5148\u4E0D\u9009\uFF0C\u8981\u66F4\u591A\u4FE1\u606F"
+          )
+        );
+      }
+      return h("div", null, nodes);
+    });
+    registerRenderer("Rank", function({ value, onChange, readOnly }) {
+      const items = Array.isArray(value?.items) ? value.items.map(String) : [];
+      const keep = Array.isArray(value?.keep) ? value.keep.map(String) : items;
+      const move = (index, delta) => {
+        const next = items.slice();
+        const target = index + delta;
+        if (target < 0 || target >= next.length) return;
+        const [moved] = next.splice(index, 1);
+        next.splice(target, 0, moved);
+        onChange({ ...value, items: next });
+      };
+      return h(
+        "div",
+        null,
+        items.map(
+          (text, index) => h(
+            "div",
+            {
+              key: "rank-" + index,
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 9px",
+                marginBottom: 4,
+                background: "var(--dsw-alias-bg-layer-1)",
+                border: `1px solid ${border}`,
+                borderRadius: 6,
+                fontSize: 12.5
+              }
+            },
+            h("span", { style: { flex: "none", width: 16, color: muted, fontSize: 10 } }, String(index + 1)),
+            h("span", { style: { flex: 1, color: label } }, text),
+            readOnly === true ? null : h(
+              "span",
+              { style: { display: "flex", gap: 2, flex: "none" } },
+              h(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => move(index, -1),
+                  disabled: index === 0,
+                  style: { border: "none", background: "transparent", cursor: "pointer", color: muted, padding: "0 4px" }
+                },
+                "\u2191"
+              ),
+              h(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => move(index, 1),
+                  disabled: index === items.length - 1,
+                  style: { border: "none", background: "transparent", cursor: "pointer", color: muted, padding: "0 4px" }
+                },
+                "\u2193"
+              )
+            )
+          )
+        )
+      );
+    });
+    registerRenderer("Derive", function({ value, onDerive, readOnly }) {
+      const templates = Array.isArray(value?.templates) ? value.templates.map(String) : [];
+      const mode = String(value?.mode ?? "ask");
+      if (templates.length === 0) return null;
+      const modeLabel = mode === "auto" ? "\u76F4\u63A5\u5EFA" : mode === "manual" ? "\u53EA\u80FD\u4F60\u5EFA" : "\u95EE\u4F60";
+      return h(
+        "div",
+        { style: { display: "flex", flexWrap: "wrap", gap: 7 } },
+        templates.map(
+          (type) => h(
+            "button",
+            {
+              key: "derive-" + type,
+              type: "button",
+              onClick: () => onDerive?.(type),
+              style: {
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 11px",
+                font: "inherit",
+                fontSize: 12,
+                color: label,
+                background: "var(--dsw-alias-bg-layer-1)",
+                border: `1px dashed ${border}`,
+                borderRadius: 6,
+                cursor: "pointer"
+              }
+            },
+            h("span", { style: { fontSize: 10, color: muted, fontWeight: 700 } }, type),
+            h("span", null, "\u6D3E\u751F\u4EFB\u52A1"),
+            mode === "manual" ? h("span", { style: { fontSize: 9.5, color: "#a9701a" } }, modeLabel) : null
+          )
+        )
+      );
+    });
+  }
+
+  // ../taskboard/packages/actions/index.js
+  var ACTIONS = /* @__PURE__ */ new Map();
+  function defineAction(action) {
+    if (action === null || typeof action !== "object") throw new TypeError("defineAction: \u9700\u8981\u5BF9\u8C61");
+    const name = String(action.name ?? "").trim();
+    if (name === "") throw new TypeError("defineAction: name \u4E0D\u80FD\u4E3A\u7A7A");
+    if (!/^[a-z][a-z0-9_]*$/u.test(name)) {
+      throw new TypeError(`defineAction: name \u53EA\u80FD\u662F\u5C0F\u5199\u5B57\u6BCD\u5F00\u5934\u3001\u5B57\u6BCD\u6570\u5B57\u4E0B\u5212\u7EBF\uFF0C\u6536\u5230\u300C${name}\u300D`);
+    }
+    const schema = action.schema;
+    if (schema === null || typeof schema !== "object") throw new TypeError(`defineAction(${name}): schema \u5FC5\u987B\u662F\u5BF9\u8C61`);
+    const properties = schema.properties;
+    if (properties === null || typeof properties !== "object") {
+      throw new TypeError(`defineAction(${name}): schema.properties \u5FC5\u987B\u662F\u5BF9\u8C61`);
+    }
+    for (const key of Array.isArray(schema.required) ? schema.required : []) {
+      if (!(key in properties)) {
+        throw new TypeError(`defineAction(${name}): required \u91CC\u7684\u300C${key}\u300D\u4E0D\u5728 properties \u4E2D`);
+      }
+    }
+    ACTIONS.set(name, {
+      name,
+      summary: String(action.summary ?? "").trim(),
+      render: String(action.render ?? name),
+      schema: {
+        type: "object",
+        /*
+         * 只有**明确写 `false`** 才拦多余字段。
+         *
+         * 原来写的是 `schema.additionalProperties === true`，
+         * 于是没声明的行动会变成 `false`，等于默认不许带额外字段 ——
+         * 这和 JSON Schema 的默认行为相反（默认是允许）。
+         *
+         * 保留 `undefined` 而不是归一成布尔，是为了让"没声明"和
+         * "声明了允许"可区分：前者以后加字段不用改所有行动的定义。
+         */
+        ...schema.additionalProperties === void 0 ? {} : { additionalProperties: schema.additionalProperties },
+        required: Array.isArray(schema.required) ? schema.required.slice() : [],
+        properties
+      }
+    });
+  }
+  function getAction(name) {
+    return ACTIONS.get(String(name ?? "").trim());
+  }
+  defineAction({
+    name: "markdown",
+    summary: "\u53EA\u8BFB\u7684\u4E00\u6BB5\u8BF4\u660E\uFF0C\u4E0D\u6536\u96C6\u6570\u636E",
+    render: "Markdown",
+    schema: {
+      required: ["value"],
+      properties: {
+        value: { type: "string", description: "Markdown \u6587\u672C" }
+      }
+    }
+  });
+  defineAction({
+    name: "textarea",
+    summary: "\u591A\u884C\u6587\u672C\u8F93\u5165",
+    render: "Textarea",
+    schema: {
+      required: ["value"],
+      properties: {
+        value: { type: "string", description: "\u586B\u8FDB\u53BB\u7684\u6587\u5B57" },
+        placeholder: { type: "string", description: "\u8F93\u5165\u6846\u7684\u7070\u5B57\u63D0\u793A" },
+        rows: { type: "integer", minimum: 1, maximum: 20, description: "\u521D\u59CB\u884C\u6570" }
+      }
+    }
+  });
+  defineAction({
+    name: "input",
+    summary: "\u5355\u884C\u6587\u672C\u8F93\u5165",
+    render: "Input",
+    schema: {
+      required: ["value"],
+      properties: {
+        value: { type: "string", description: "\u586B\u8FDB\u53BB\u7684\u6587\u5B57" },
+        placeholder: { type: "string", description: "\u8F93\u5165\u6846\u7684\u7070\u5B57\u63D0\u793A" }
+      }
+    }
+  });
+  defineAction({
+    name: "choose",
+    summary: "\u4ECE\u51E0\u4E2A\u4E92\u65A5\u9009\u9879\u91CC\u6311\u4E00\u4E2A",
+    render: "Choose",
+    schema: {
+      required: ["options"],
+      properties: {
+        options: {
+          type: "array",
+          minItems: 2,
+          items: { type: "string" },
+          description: "\u5019\u9009\u9879\uFF0C\u81F3\u5C11\u4E24\u4E2A"
+        },
+        picked: {
+          type: "string",
+          description: "\u5DF2\u9009\u4E2D\u7684\u90A3\u4E00\u9879\uFF1B\u6CA1\u9009\u5C31\u662F\u7A7A"
+        },
+        allow_custom: {
+          type: "boolean",
+          description: "\u5141\u8BB8\u300C\u90FD\u4E0D\u662F\uFF0C\u6211\u81EA\u5DF1\u5199\u4E00\u53E5\u300D"
+        },
+        allow_defer: {
+          type: "boolean",
+          description: "\u5141\u8BB8\u300C\u5148\u4E0D\u9009\uFF0C\u8981\u66F4\u591A\u4FE1\u606F\u300D"
+        }
+      }
+    }
+  });
+  defineAction({
+    name: "rank",
+    summary: "\u7ED9\u4E00\u7EC4\u4E1C\u897F\u6392\u5148\u540E\u987A\u5E8F",
+    render: "Rank",
+    schema: {
+      required: ["items"],
+      properties: {
+        items: {
+          type: "array",
+          minItems: 1,
+          items: { type: "string" },
+          description: "\u6761\u76EE\uFF0C\u987A\u5E8F\u5C31\u662F\u5F53\u524D\u6392\u51FA\u7684\u5148\u540E"
+        },
+        keep: {
+          type: "array",
+          items: { type: "string" },
+          description: "\u672C\u8F6E\u8981\u505A\u7684\u90A3\u4E9B\uFF1B\u4E0D\u5728\u5176\u4E2D\u7684\u8FDB\u300C\u6401\u7F6E\u300D"
+        }
+      }
+    }
+  });
+  defineAction({
+    name: "derive",
+    summary: "\u4ECE\u8FD9\u4E00\u6761\u6D3E\u751F\u5B50\u4EFB\u52A1",
+    render: "Derive",
+    schema: {
+      required: ["templates"],
+      properties: {
+        templates: {
+          type: "array",
+          minItems: 1,
+          items: { type: "string" },
+          description: '\u53EF\u4EE5\u6D3E\u751F\u7684\u6A21\u677F\u7F16\u53F7\uFF0C\u5982 ["WR","DP"]'
+        },
+        mode: {
+          type: "string",
+          enum: ["ask", "auto", "manual"],
+          description: "\u6388\u6743\u6863\uFF1Aask=\u95EE\u4F60\uFF08\u9ED8\u8BA4\uFF09/ auto=\u76F4\u63A5\u5EFA / manual=\u53EA\u80FD\u4F60\u5EFA"
+        }
+      }
+    }
+  });
+
+  // parse-body.js
+  function parseBody(body, sections) {
+    if (typeof body === "string") {
+      if (body.trim() === "") return [];
+      return [
+        {
+          id: "__legacy__",
+          label: "",
+          action: "markdown",
+          value: { value: body },
+          required: false,
+          render: getRenderer("Markdown") ?? null,
+          schema: getAction("markdown")?.schema ?? null
+        }
+      ];
+    }
+    if (body === null || typeof body !== "object" || Array.isArray(body)) return [];
+    const entries = [];
+    const used = /* @__PURE__ */ new Set();
+    for (const section of Array.isArray(sections) ? sections : []) {
+      const id = String(section?.id ?? "");
+      const label = String(section?.label ?? id);
+      if (id === "") continue;
+      let raw = body[id];
+      let key = id;
+      if (raw === void 0) {
+        raw = body[label];
+        key = label;
+      }
+      used.add(key);
+      if (raw === void 0 || raw === null) continue;
+      const entry = toEntry(id, label, raw, section.required === true);
+      if (entry !== null) entries.push(entry);
+    }
+    for (const [key, raw] of Object.entries(body)) {
+      if (used.has(key)) continue;
+      const entry = toEntry(key, key, raw, false);
+      if (entry !== null) entries.push(entry);
+    }
+    return entries;
+  }
+  function toEntry(id, label, raw, required) {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      return {
+        id,
+        label,
+        action: "markdown",
+        value: { value: String(raw ?? "") },
+        required,
+        render: getRenderer("Markdown") ?? null,
+        schema: getAction("markdown")?.schema ?? null
+      };
+    }
+    const action = String(raw.action ?? "").trim();
+    if (action === "") return null;
+    const { action: _ignored, ...value } = raw;
+    const spec = getAction(action);
+    return {
+      id,
+      label,
+      action,
+      value,
+      required,
+      /* 渲染器按**行动自己的 render 名字**查，不是按 action 名 ——
+       * 两者可以不同（比如 action 叫 creat_link，render 叫 Derive）。 */
+      render: getRenderer(spec?.render ?? action) ?? null,
+      schema: spec?.schema ?? null
+    };
+  }
+
+  // ../taskboard/packages/actions/parse-template.js
+  function parseTemplateSections(source) {
+    const lines = String(source ?? "").split(/\r?\n/u);
+    const sections = [];
+    let start = -1;
+    for (let index = 0; index < lines.length; index += 1) {
+      if (/^body:\s*$/u.test(lines[index])) {
+        start = index + 1;
+        break;
+      }
+    }
+    if (start === -1) return sections;
+    let current = null;
+    const flush = () => {
+      if (current !== null && current.label !== "") sections.push(current);
+      current = null;
+    };
+    for (let index = start; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (line.trim() === "" || line.trim().startsWith("#")) continue;
+      if (!/^\s/u.test(line)) break;
+      const itemMatch = /^\s+-\s+type:\s*(.+)$/u.exec(line);
+      if (itemMatch !== null) {
+        flush();
+        current = { label: "", id: "", type: parseTypeValue(itemMatch[1]), required: false };
+        continue;
+      }
+      if (current === null) continue;
+      const fieldMatch = /^ {4}([a-z_]+):\s*(.*)$/u.exec(line);
+      if (fieldMatch !== null) {
+        const key = fieldMatch[1];
+        const value = unquote(fieldMatch[2].trim());
+        if (key === "id") current.id = value;
+        else if (key === "type") current.type = parseTypeValue(value);
+        continue;
+      }
+      const deepMatch = /^ {6}([a-z_]+):\s*(.*)$/u.exec(line);
+      if (deepMatch !== null) {
+        const key = deepMatch[1];
+        const value = unquote(deepMatch[2].trim());
+        if (key === "label" && current.label === "") current.label = value;
+        else if (key === "required") current.required = value === "true";
+      }
+    }
+    flush();
+    for (const section of sections) {
+      if (section.id === "") section.id = section.label;
+    }
+    return sections;
+  }
+  function parseTypeValue(raw) {
+    const text = String(raw ?? "").trim();
+    const inner = /^\[(.*)\]$/u.exec(text);
+    if (inner === null) {
+      const single = unquote(text);
+      return single === "" ? [] : [single];
+    }
+    return inner[1].split(",").map((part) => unquote(part.trim())).filter((part) => part !== "");
+  }
+  function unquote(text) {
+    const trimmed = String(text ?? "").trim();
+    if (trimmed.length >= 2 && (trimmed[0] === '"' || trimmed[0] === "'") && trimmed[trimmed.length - 1] === trimmed[0]) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
+  }
+
   // client.src.js
   window.__ModuleLoader__.load({
     id: "@local/taskboard-ui",
@@ -2454,6 +3008,22 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         lineHeight: "16px",
         whiteSpace: "nowrap"
       };
+      const iconButtonStyle = {
+        flex: "none",
+        width: 26,
+        height: 26,
+        padding: 0,
+        display: "grid",
+        placeItems: "center",
+        font: "inherit",
+        fontSize: 13,
+        lineHeight: 1,
+        color: "var(--dsw-alias-label-secondary)",
+        background: "transparent",
+        border: 0,
+        borderRadius: 5,
+        cursor: "pointer"
+      };
       const kindChipStyle = clickableStyle({
         flex: "none",
         padding: "0 6px",
@@ -2807,6 +3377,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       function DetailPane(props) {
         const node = props.node;
         const state = statusA2A(node.status);
+        const [menuOpen, setMenuOpen] = React.useState(false);
+        const [relOpen, setRelOpen] = React.useState(false);
         const decidable = props.behavior === "decide" && ["\u672A\u6307\u5B9A", "\u63D0\u4EA4", "\u9700\u8981\u8865\u5145", "\u9700\u8981\u6388\u6743"].includes(node.status);
         const choices = decidable ? optionsOf(props.body) : [];
         const children = props.tasks.filter(function(item) {
@@ -2940,51 +3512,43 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               zIndex: 3
             })
           },
+          /*
+           * 头部三行：
+           *   ① 编号 / 类型 / 模板 + 右上角图标
+           *   ② 标题
+           *   ③ 状态标签（可点，二级菜单）+ 说明
+           *
+           * 三种信息压成一行会分不出主次（之前标题和编号只差 2px 字号）。
+           */
           h(
             "div",
             { style: { display: "flex", alignItems: "center", gap: 8 } },
             h("span", { style: idChipStyle }, node.id),
             h("span", { style: kindChipStyle }, node.kind),
-            h(
-              "span",
-              { style: { fontSize: 11, color: statusTone(node.status) } },
-              "\u25CF " + node.status + " \xB7 " + state.code + " \xB7 " + groupLabel(node.status)
-            ),
-            /* 目标：把**推导出来的样子**显示出来。
-             *
-             * 用户要求：「目标基于他的子任务决定状态」。
-             * 目标自己存的 `status` 只是"用户有没有采纳/放弃"，真正在推进到哪一步
-             * 要看下面那堆事。所以这里单独显示一个「推导：进行中」。
-             *
-             * 推导值不落盘（用户明确要求），由宿主 /tasks 的 `derived` 字段算好送过来。 */
-            node.kind === "goal" && node.derived ? h(
+            node.typeCode ? h(
               "span",
               {
-                title: "\u76EE\u6807\u7684\u72B6\u6001\u7531\u5B50\u4E8B\u9879\u63A8\u5BFC\uFF0C\u4E0D\u80FD\u624B\u52A8\u8BBE\u3002\u8981\u63A8\u8FDB\u5B83\uFF0C\u53BB\u63A8\u8FDB\u5B50\u4E8B\u9879\u3002",
                 style: {
-                  fontSize: 11,
-                  padding: "1px 7px",
-                  borderRadius: 6,
-                  border: "1px dashed var(--dsw-alias-border-l1)",
+                  fontSize: 10,
+                  padding: "1px 6px",
+                  borderRadius: 3,
+                  border: "1px solid var(--dsw-alias-border-l1)",
                   color: "var(--dsw-alias-label-secondary)"
                 }
               },
-              "\u63A8\u5BFC\uFF1A" + node.derived
+              node.typeCode
             ) : null,
             h("span", { style: { flex: 1 } }),
             h(
               "button",
               {
                 type: "button",
+                title: props.canEdit === true ? "\u7F16\u8F91" : "\u5206\u652F",
                 onClick: props.onEdit,
-                style: Object.assign({}, buttonBase(false), { padding: "2px 12px", marginRight: 8 })
+                style: iconButtonStyle
               },
-              props.canEdit === true ? "\u7F16\u8F91" : "\u5206\u652F"
+              "\u2442"
             ),
-            /* 归档（DP-04）：连整棵子树一起归档。
-             *
-             * 用户原话：「归档直接对分组归档。归档以后界面不显示。
-             * 但索引还在。可以显示已归档。」 */
             h(
               "button",
               {
@@ -2993,76 +3557,156 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 onClick: function() {
                   if (typeof props.onArchive === "function") props.onArchive(node.archived !== true);
                 },
-                style: Object.assign({}, buttonBase(false), { padding: "2px 12px", marginRight: 8 })
+                style: iconButtonStyle
               },
-              node.archived ? "\u53D6\u6D88\u5F52\u6863" : "\u5F52\u6863"
+              "\u25A3"
             ),
-            h(
-              "button",
-              {
-                type: "button",
-                onClick: props.onClose,
-                style: Object.assign({}, buttonBase(false), { padding: "2px 12px" })
-              },
-              "\u5173\u95ED"
-            )
+            h("button", { type: "button", title: "\u5173\u95ED", onClick: props.onClose, style: iconButtonStyle }, "\u2715")
           ),
           h(
             "div",
             { style: { fontSize: 17, fontWeight: 600, lineHeight: 1.35, color: "var(--dsw-alias-label-primary)" } },
             node.title
           ),
+          /*
+           * 状态标签 = 菜单入口。带 ▾、点开变实底边框。
+           * 菜单从标签**下方**展开（父级 position:relative），不盖住标签本身。
+           */
           h(
             "div",
-            {
-              style: {
-                fontSize: 12,
-                lineHeight: 1.6,
-                color: "var(--dsw-alias-label-secondary)",
-                background: "var(--dsw-alias-bg-layer-2)",
-                borderRadius: 8,
-                padding: "6px 10px"
-              }
-            },
+            { style: { display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--dsw-alias-label-secondary)" } },
             h(
               "span",
-              { style: { color: statusTone(node.status), fontWeight: 600 } },
-              node.status + "\uFF08" + state.code + " \xB7 " + groupLabel(node.status) + "\uFF09"
-            ),
-            "\u3000" + state.desc
-          ),
-          actions.length > 0 || props.error ? h(
-            "div",
-            { style: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 } },
-            actions.map(function(item) {
-              return h(
+              { style: { position: "relative", display: "inline-flex" } },
+              h(
                 "button",
                 {
-                  key: "action-" + item.to,
                   type: "button",
-                  disabled: props.busy === true,
+                  "aria-expanded": menuOpen,
                   onClick: function() {
-                    props.onState(item.to);
+                    setMenuOpen(!menuOpen);
                   },
-                  style: buttonBase(item.primary, props.busy)
+                  style: {
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "3px 9px",
+                    font: "inherit",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: statusTone(node.status),
+                    background: menuOpen ? "var(--dsw-alias-bg-layer-2)" : "transparent",
+                    border: "1px solid " + (menuOpen ? statusTone(node.status) : "transparent"),
+                    borderRadius: 10,
+                    cursor: "pointer"
+                  }
                 },
-                item.label
-              );
-            }),
-            props.error ? h(
+                h("span", { style: { fontSize: 8 } }, "\u25CF"),
+                node.status + " \xB7 " + groupLabel(node.status),
+                h("span", { style: { fontSize: 8, opacity: 0.7 } }, "\u25BE")
+              ),
+              menuOpen ? h(
+                "div",
+                {
+                  style: surfaceStyle({
+                    position: "absolute",
+                    left: 0,
+                    top: "calc(100% + 6px)",
+                    zIndex: 30,
+                    width: 232,
+                    padding: 5,
+                    border: "1px solid var(--dsw-alias-border-l1)",
+                    borderRadius: 8,
+                    background: "var(--dsw-alias-bg-layer-1)",
+                    boxShadow: "0 4px 10px rgba(16,18,22,.08), 0 16px 40px rgba(16,18,22,.16)"
+                  })
+                },
+                h(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--dsw-alias-label-secondary)",
+                      letterSpacing: ".06em",
+                      padding: "6px 9px 4px"
+                    }
+                  },
+                  "\u53D8\u66F4\u72B6\u6001"
+                ),
+                actions.map(function(item) {
+                  const bad = item.to === "\u62D2\u7EDD" || item.to === "\u53D6\u6D88";
+                  return h(
+                    "button",
+                    {
+                      key: "menu-" + item.to,
+                      type: "button",
+                      disabled: props.busy === true,
+                      onClick: function() {
+                        setMenuOpen(false);
+                        props.onState(item.to);
+                      },
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        width: "100%",
+                        padding: "6px 9px",
+                        font: "inherit",
+                        fontSize: 12.5,
+                        textAlign: "left",
+                        color: bad ? "var(--dsw-alias-state-error-primary)" : item.primary ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-label-primary)",
+                        fontWeight: item.primary ? 600 : 400,
+                        background: "transparent",
+                        border: 0,
+                        borderRadius: 5,
+                        cursor: props.busy === true ? "default" : "pointer"
+                      }
+                    },
+                    h("span", { style: { flex: "none", width: 14, textAlign: "center", opacity: 0.7 } }, item.primary ? "\u25B6" : bad ? "\u2715" : "\xB7"),
+                    h("span", { style: { flex: 1 } }, item.label)
+                  );
+                }),
+                props.error ? h(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 10.5,
+                      lineHeight: 1.5,
+                      color: "var(--dsw-alias-state-error-primary)",
+                      padding: "6px 9px",
+                      borderTop: "1px solid var(--dsw-alias-border-l1)",
+                      marginTop: 4
+                    }
+                  },
+                  props.error
+                ) : null,
+                h(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 10.5,
+                      lineHeight: 1.5,
+                      color: "var(--dsw-alias-label-secondary)",
+                      padding: "6px 9px",
+                      borderTop: "1px solid var(--dsw-alias-border-l1)",
+                      marginTop: 4
+                    }
+                  },
+                  "\u72B6\u6001\u53D8\u66F4\u4F1A\u5F71\u54CD AI \u80FD\u5426\u7EE7\u7EED\u8FD9\u5F20\u5355\uFF0C\u6240\u4EE5\u90FD\u6536\u5728\u8FD9\u91CC\u3002"
+                )
+              ) : null
+            ),
+            node.kind === "goal" && node.derived ? h(
               "span",
               {
-                style: {
-                  fontSize: 11,
-                  color: "var(--dsw-alias-state-error-primary)",
-                  maxWidth: 320,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis"
-                }
+                title: "\u76EE\u6807\u7684\u72B6\u6001\u7531\u5B50\u4E8B\u9879\u63A8\u5BFC\uFF0C\u4E0D\u80FD\u624B\u52A8\u8BBE\u3002\u8981\u63A8\u8FDB\u5B83\uFF0C\u53BB\u63A8\u8FDB\u5B50\u4E8B\u9879\u3002",
+                style: { padding: "1px 7px", borderRadius: 6, border: "1px dashed var(--dsw-alias-border-l1)" }
               },
-              props.error
-            ) : null
-          ) : null,
+              "\u63A8\u5BFC\uFF1A" + node.derived
+            ) : null,
+            state.desc ? h("span", { style: { opacity: 0.85 } }, state.desc) : null
+          ),
           h(
             "div",
             { style: { display: "flex", flexDirection: "column", gap: 3, fontSize: 12, lineHeight: "20px" } },
@@ -3091,29 +3735,311 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               node.permission || "\uFF08\u672A\u6307\u5B9A\uFF09"
             )
           ),
-          section(
-            "\u5173\u7CFB",
+          /*
+           * ── 父任务栏（一行）──────────────────────────────────────────
+           *
+           * 用户看原型时定的排版：
+           *
+           *   [▼ 展开关系 4] │ 父任务 [DP-04 归档与分组]      [+ 派生子任务]
+           *
+           * 「展开关系」原来单独一行，白占 30px；它和父任务都是"结构位置"，
+           * 并到一行更省空间。竖线分隔：左边是"我指向谁"，右边是"谁指向我"。
+           *
+           * 没有父任务时，`│ 父任务 [xxx]` 整段不渲染（label 一起消失），
+           * 「派生子任务」保留 —— 它和有没有父任务无关。
+           */
+          h(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                paddingTop: 8,
+                borderTop: "1px solid var(--dsw-alias-border-l1)",
+                paddingBottom: 8,
+                borderBottom: "1px solid var(--dsw-alias-border-l1)"
+              }
+            },
             h(
-              "div",
-              { style: { display: "flex", flexDirection: "column", gap: 6 } },
-              relationRows.map(function(row) {
+              "button",
+              {
+                type: "button",
+                "aria-expanded": relOpen,
+                onClick: function() {
+                  setRelOpen(!relOpen);
+                },
+                style: {
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  flex: "none",
+                  padding: "4px 9px",
+                  font: "inherit",
+                  fontSize: 11.5,
+                  color: "var(--dsw-alias-label-secondary)",
+                  background: relOpen ? "var(--dsw-alias-bg-layer-2)" : "var(--dsw-alias-bg-layer-1)",
+                  border: "1px solid var(--dsw-alias-border-l1)",
+                  borderRadius: 6,
+                  cursor: "pointer"
+                }
+              },
+              h("span", { style: { fontSize: 8, display: "inline-block", transform: relOpen ? "rotate(90deg)" : "none" } }, "\u25B6"),
+              "\u5C55\u5F00\u5173\u7CFB",
+              h(
+                "span",
+                {
+                  style: {
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "0 5px",
+                    borderRadius: 8,
+                    lineHeight: "15px",
+                    background: "var(--dsw-alias-bg-layer-2)",
+                    color: "var(--dsw-alias-label-secondary)"
+                  }
+                },
+                String(children.length + outLinks.length + inLinks.length + (node.parent ? 1 : 0))
+              )
+            ),
+            node.parent ? h(
+              "span",
+              { style: { display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 } },
+              h("span", { style: { width: 1, height: 16, background: "var(--dsw-alias-border-l2)", flex: "none" } }),
+              h("span", { style: { fontSize: 11, fontWeight: 600, color: "var(--dsw-alias-label-secondary)", flex: "none" } }, "\u7236\u4EFB\u52A1"),
+              h(
+                "button",
+                {
+                  type: "button",
+                  onClick: function() {
+                    props.onJump(node.parent);
+                  },
+                  style: clickableStyle({
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "2px 8px",
+                    borderRadius: 8,
+                    font: "inherit",
+                    fontSize: 11,
+                    lineHeight: "20px",
+                    cursor: "pointer",
+                    background: "var(--dsw-alias-bg-layer-1)",
+                    color: "var(--dsw-alias-brand-primary)"
+                  })
+                },
+                node.parent
+              )
+            ) : null,
+            h("span", { style: { flex: 1 } }),
+            h(
+              "button",
+              {
+                type: "button",
+                title: "\u4ECE\u8FD9\u4E00\u6761\u5F80\u4E0B\u5EFA\u4E00\u6761\u65B0\u7684\uFF0C\u7236\u4EFB\u52A1\u81EA\u52A8\u586B\u6210\u5B83",
+                onClick: function() {
+                  if (typeof props.onDeriveChild === "function") props.onDeriveChild(node.id);
+                },
+                style: {
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  flex: "none",
+                  padding: "5px 11px",
+                  font: "inherit",
+                  fontSize: 12,
+                  fontWeight: 550,
+                  color: "var(--dsw-alias-label-primary)",
+                  background: "var(--dsw-alias-bg-layer-1)",
+                  border: "1px solid var(--dsw-alias-border-l1)",
+                  borderRadius: 6,
+                  cursor: "pointer"
+                }
+              },
+              h("span", { style: { color: "var(--dsw-alias-label-secondary)", fontSize: 13 } }, "\uFF0B"),
+              "\u6D3E\u751F\u5B50\u4EFB\u52A1"
+            )
+          ),
+          /*
+           * ── 展开的关系：网状 ─────────────────────────────────────────
+           *
+           * 用户原话：
+           *   > 那个横幅还是显示的。在横幅之上显示页头。
+           *   > 也就是说，他们是在横幅下面，分组的情况下，
+           *   > 然后一个一个按钮，摆在对应的位置的。
+           *   > 一个分组的高度就是这三列里面最高的。
+           *
+           * 页头（进行|搁置|完成）只出现一次，然后每个关系类型一条横幅
+           * + 一个三列网格，条目按状态落进对应格子。行高由该行最高的格子决定。
+           */
+          relOpen ? h(
+            "div",
+            {
+              style: {
+                paddingBottom: 10,
+                borderBottom: "1px solid var(--dsw-alias-border-l1)",
+                background: "var(--dsw-alias-bg-layer-2)"
+              }
+            },
+            (function() {
+              const heads = [
+                { key: "active", label: "\u8FDB\u884C", color: "var(--dsw-alias-brand-primary)" },
+                { key: "held", label: "\u6401\u7F6E", color: "#c98a20" },
+                { key: "done", label: "\u5B8C\u6210", color: "#2e9e6b" }
+              ];
+              const groupOf = function(title, color, entries) {
+                if (entries.length === 0) return null;
+                const cols = [[], [], []];
+                for (const entry of entries) {
+                  const group = groupLabel(entry.status);
+                  cols[group === "\u6401\u7F6E" ? 1 : group === "\u5B8C\u6210" ? 2 : 0].push(entry);
+                }
                 return h(
                   "div",
-                  { key: "relrow-" + row[0], style: { display: "flex", gap: 8, alignItems: "flex-start" } },
+                  { key: "grp-" + title, style: { marginTop: 8 } },
                   h(
-                    "span",
-                    { style: { width: 56, flex: "none", fontSize: 11, lineHeight: "24px", color: "var(--dsw-alias-label-secondary)" } },
-                    row[0]
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        color: "var(--dsw-alias-label-secondary)",
+                        letterSpacing: ".03em",
+                        padding: "3px 9px",
+                        background: "var(--dsw-alias-bg-layer-1)",
+                        borderLeft: "3px solid " + color,
+                        borderRadius: "4px 4px 0 0"
+                      }
+                    },
+                    title,
+                    h("span", { style: { fontWeight: 600, opacity: 0.75 } }, String(entries.length))
                   ),
                   h(
                     "div",
-                    { style: { display: "flex", flexWrap: "wrap", gap: 6, flex: 1 } },
-                    row[1].length ? row[1] : h("span", { style: { fontSize: 11, lineHeight: "24px", color: "var(--dsw-alias-label-secondary)" } }, "\u2014")
+                    { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)" } },
+                    cols.map(function(bucket, index) {
+                      return h(
+                        "div",
+                        {
+                          key: "col-" + index,
+                          style: {
+                            padding: "5px 4px 3px",
+                            display: "grid",
+                            gap: 3,
+                            alignContent: "start",
+                            backgroundImage: bucket.length === 0 ? "repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(0,0,0,.022) 3px, rgba(0,0,0,.022) 6px)" : "none",
+                            borderRadius: 4
+                          }
+                        },
+                        bucket.map(function(entry) {
+                          return h(
+                            "button",
+                            {
+                              key: "rel-" + entry.id,
+                              type: "button",
+                              onClick: function() {
+                                props.onJump(entry.id);
+                              },
+                              style: clickableStyle({
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                                padding: "2px 8px",
+                                borderRadius: 8,
+                                font: "inherit",
+                                fontSize: 11,
+                                lineHeight: "20px",
+                                whiteSpace: "nowrap",
+                                cursor: "pointer",
+                                background: "var(--dsw-alias-bg-layer-1)",
+                                color: "var(--dsw-alias-brand-primary)"
+                              })
+                            },
+                            h("span", { style: { color: statusTone(entry.status), fontSize: 8 } }, "\u25CF"),
+                            entry.id
+                          );
+                        })
+                      );
+                    })
                   )
                 );
-              })
-            )
-          ),
+              };
+              const childEntries = children.map(function(id) {
+                const found = props.tasks.find(function(item) {
+                  return item.id === id;
+                });
+                return { id, status: found === void 0 ? "\u672A\u6307\u5B9A" : found.status };
+              });
+              const outEntries = (node.links || []).map(function(link) {
+                const found = props.tasks.find(function(item) {
+                  return item.id === link.to;
+                });
+                return { id: link.to, status: found === void 0 ? "\u672A\u6307\u5B9A" : found.status };
+              });
+              const inEntries = [];
+              props.tasks.forEach(function(item) {
+                (item.links || []).forEach(function(link) {
+                  if (link.to === node.id) inEntries.push({ id: item.id, status: item.status });
+                });
+              });
+              const blocks = [
+                groupOf("\u5B50\u4EFB\u52A1", "var(--dsw-alias-brand-primary)", childEntries),
+                groupOf("\u672C\u9879\u4F9D\u8D56", "#c98a20", outEntries),
+                groupOf("\u88AB\u4F9D\u8D56", "#c98a20", inEntries)
+              ].filter(function(item) {
+                return item !== null;
+              });
+              if (blocks.length === 0) {
+                return h(
+                  "div",
+                  { style: { fontSize: 11.5, color: "var(--dsw-alias-label-secondary)", padding: "10px 0" } },
+                  "\u8FD9\u4E00\u6761\u8FD8\u6CA1\u6709\u4EFB\u4F55\u5173\u7CFB\u3002"
+                );
+              }
+              return h(
+                "div",
+                null,
+                h(
+                  "div",
+                  {
+                    style: {
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, 1fr)",
+                      marginTop: 10,
+                      background: "var(--dsw-alias-bg-layer-2)",
+                      border: "1px solid var(--dsw-alias-border-l2)",
+                      borderBottom: "2px solid var(--dsw-alias-border-l2)",
+                      borderRadius: "5px 5px 0 0",
+                      overflow: "hidden"
+                    }
+                  },
+                  heads.map(function(head) {
+                    return h(
+                      "div",
+                      {
+                        key: "head-" + head.key,
+                        style: {
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          color: "var(--dsw-alias-label-primary)",
+                          padding: "6px 9px",
+                          borderLeft: "3px solid " + head.color
+                        }
+                      },
+                      head.label
+                    );
+                  })
+                ),
+                blocks
+              );
+            })()
+          ) : null,
           /* 开放问题：设计类事项正文里「要定的点 / 待定」小标题下编号的那些。
            *
            * 用户原话：「你的设计，里面有几个开放问题。而现在完全在备注里面打字。
@@ -3342,7 +4268,13 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               props.body ? h(
                 "div",
                 { style: { marginTop: 10, color: "var(--dsw-alias-label-primary)" } },
-                renderMarkdown(props.body)
+                /*
+                 * **不再直接 renderMarkdown(props.body)**。
+                 * 正文现在是按章节 id 索引的 object，里面有选择/排序/派生
+                 * 这些不是文字的东西，塞进 Markdown 只会显示 [object Object]。
+                 * 改成按条目分发，每条查自己的渲染器。
+                 */
+                renderBodyEntries(props.body, props.sections)
               ) : null
             )
           ),
@@ -3434,6 +4366,16 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         }
         return items;
       }
+      function parseTypeList(raw) {
+        const text = String(raw || "").trim().replace(/^["']|["']$/gu, "");
+        const inner = /^\[(.*)\]$/u.exec(text);
+        if (inner === null) return text === "" ? [] : [text];
+        return inner[1].split(",").map(function(part) {
+          return part.trim().replace(/^["']|["']$/gu, "");
+        }).filter(function(part) {
+          return part !== "";
+        });
+      }
       function parseTemplateYaml(saw) {
         const lines = String(saw || "").split(/\r?\n/u);
         const out = { name: "", description: "", items: [] };
@@ -3468,7 +4410,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           }
           match = /^-\s+type:\s*(.+)$/u.exec(trimmed);
           if (match) {
-            item = { type: match[1].trim(), required: false };
+            item = { type: parseTypeList(match[1]), required: false };
             out.items.push(item);
             section = "";
             return;
@@ -3578,6 +4520,66 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         }
         if (last < text.length) out.push(text.slice(last));
         return out;
+      }
+      function renderBodyEntries(body, sections) {
+        const entries = parseBody(body, sections);
+        if (entries.length === 0) return null;
+        return h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: 14 } },
+          entries.map(function(entry, index) {
+            const child = entry.render === null ? renderUnknownAction(entry) : entry.render({ value: entry.value, readOnly: true, h, renderMarkdown });
+            if (child === null || child === void 0) return null;
+            return h(
+              "div",
+              { key: "sec-" + entry.id + "-" + index },
+              entry.label === "" ? null : h(
+                "div",
+                {
+                  style: {
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "var(--dsw-alias-label-secondary)",
+                    letterSpacing: ".04em",
+                    marginBottom: 6
+                  }
+                },
+                entry.label + (entry.required ? " *" : "")
+              ),
+              child
+            );
+          })
+        );
+      }
+      function renderUnknownAction(entry) {
+        return h(
+          "div",
+          {
+            style: {
+              padding: "9px 11px",
+              border: "1px dashed var(--dsw-alias-border-l1)",
+              borderRadius: 6,
+              background: "var(--dsw-alias-bg-layer-2)",
+              fontSize: 11.5,
+              color: "var(--dsw-alias-label-secondary)"
+            }
+          },
+          h("div", { style: { fontWeight: 600, marginBottom: 5 } }, "\u672A\u6CE8\u518C\u7684\u4EA4\u4E92\u7C7B\u578B\u300C" + entry.action + "\u300D"),
+          h(
+            "pre",
+            {
+              style: {
+                margin: 0,
+                fontFamily: "ui-monospace, Menlo, Consolas, monospace",
+                fontSize: 11,
+                lineHeight: 1.5,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all"
+              }
+            },
+            JSON.stringify(entry.value, null, 2)
+          )
+        );
       }
       function renderMarkdown(source) {
         const lines = String(source || "").split(/\r?\n/u);
@@ -3834,7 +4836,9 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         if (!parsed || !Array.isArray(parsed.items)) return "";
         const blocks = [];
         parsed.items.forEach(function(item) {
-          if (item.type === "markdown") return;
+          if (Array.isArray(item.type) ? item.type.every(function(t2) {
+            return t2 === "markdown";
+          }) : item.type === "markdown") return;
           const label = item.label || item.id || "";
           if (label === "") return;
           const hint = String(item.description || "").split(/\r?\n/u).map(function(line) {
@@ -3922,7 +4926,9 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const setError = errorState[1];
         const template = type !== "" && templates[type] ? parseTemplateYaml(templates[type]) : null;
         const fields = template ? template.items.filter(function(item) {
-          return item.type !== "markdown";
+          return Array.isArray(item.type) ? !item.type.every(function(t2) {
+            return t2 === "markdown";
+          }) : item.type !== "markdown";
         }) : [];
         const templateMissing = type !== "" && template === null;
         const fallbackToPlainText = templateMissing && String(init.body || "").trim() !== "";
@@ -4278,7 +5284,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                       { style: { fontSize: 12, color: "var(--dsw-alias-label-primary)" } },
                       (item.label || item.id) + (item.required ? " *" : "")
                     ),
-                    item.type === "input" ? h("input", {
+                    (Array.isArray(item.type) ? item.type : [item.type]).includes("input") ? h("input", {
                       value: values[key] || "",
                       placeholder: hint,
                       onChange: function(event) {
@@ -5266,6 +6272,24 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             node: activeNode,
             tasks,
             body: data.bodies[activeId] || "",
+            /*
+             * 模板章节：决定正文条目的**顺序和标题**。
+             * 正文 object 的键顺序不可控（模型生成），模板里 body 的顺序
+             * 才是作者排好的。拿不到模板就传 null，parseBody 退化成按键序显示。
+             */
+            sections: parseTemplateSections(templates[activeNode.typeCode] || ""),
+            /*
+             * 派生子任务：从这条往下建一条新的，父任务自动填成它。
+             *
+             * 用户原话：
+             *   > 新建任务去选择父任务太蠢了。标准应该从任务创建任务。
+             */
+            onDeriveChild: function(parentId) {
+              setSelected("");
+              setEditId("");
+              setEditMode("create");
+              setCreate({ open: true, busy: false, error: "", key: String(Date.now()), parent: parentId });
+            },
             busy: action.busy,
             error: action.error,
             dispatch: dispatchInfo.id === activeNode.id ? dispatchInfo.items : [],
@@ -5806,6 +6830,14 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           const wantDrawer = settings.drawer !== false;
           const wantSidebar = settings.sidebar !== false;
           const wantExtras = true;
+          try {
+            registerBuiltinRenderers({
+              h: React.createElement,
+              renderMarkdown: (source) => renderMarkdown(source)
+            });
+          } catch (failure) {
+            console.warn("[taskboard] \u6CE8\u518C\u5185\u7F6E\u6E32\u67D3\u5668\u5931\u8D25\uFF1A", String(failure && failure.message || failure));
+          }
           pluginRuntime = ctx;
           try {
             localeFace = typeof ctx.get === "function" ? ctx.get("locale") : null;

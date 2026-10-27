@@ -51,7 +51,7 @@ body:
         那就先派一个调研。
     validations:
       required: true
-  - type: textarea
+  - type: [textarea, derive]
     id: next
     attributes:
       label: 下一步最该试的一件事

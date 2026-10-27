@@ -45,7 +45,7 @@ body:
       description: |
         明确不做什么、不能动什么、什么时候必须停下来问。
         用户没说的，这里要写"未指定"而不是自己填。
-  - type: textarea
+  - type: [textarea, derive]
     id: split
     attributes:
       label: 怎么拆

@@ -1,0 +1,15 @@
+{
+  "name": "@local/taskboard-actions",
+  "version": "0.0.1-a.0",
+  "private": true,
+  "type": "module",
+  "description": "行动库：每种行动一份 JSON Schema + 渲染器名。纯数据，不依赖宿主。",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js"
+  ]
+}

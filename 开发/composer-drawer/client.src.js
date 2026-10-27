@@ -2337,6 +2337,25 @@ window.__ModuleLoader__.load({
     }
 
     /** GitHub issue forms 的 YAML 子集：name / description / body[].type,id,attributes.*,validations.required */
+    /**
+     * 解析模板里的 `type:` 值，统一成数组。
+     *
+     *   type: textarea              → ['textarea']
+     *   type: [textarea, derive]    → ['textarea', 'derive']
+     *
+     * 为什么统一成数组：章节现在可以接受多种行动（"这一章可以用其中任意一种"），
+     * 下游判断"这个 action 允不允许"时只需要 includes，不用分支处理两种形态。
+     */
+    function parseTypeList(raw) {
+      const text = String(raw || '').trim().replace(/^["']|["']$/gu, '');
+      const inner = /^\[(.*)\]$/u.exec(text);
+      if (inner === null) return text === '' ? [] : [text];
+      return inner[1]
+        .split(',')
+        .map(function (part) { return part.trim().replace(/^["']|["']$/gu, ''); })
+        .filter(function (part) { return part !== ''; });
+    }
+
     function parseTemplateYaml(saw) {
       const lines = String(saw || '').split(/\r?\n/u);
       const out = { name: '', description: '', items: [] };
@@ -2371,7 +2390,17 @@ window.__ModuleLoader__.load({
         }
         match = /^-\s+type:\s*(.+)$/u.exec(trimmed);
         if (match) {
-          item = { type: match[1].trim(), required: false };
+          /*
+           * `type` 有两种写法，都要认：
+           *
+           *   type: textarea             单个
+           *   type: [textarea, derive]   多个，这一章可以用其中任意一种
+           *
+           * 以前直接 `type: match[1].trim()`，遇到数组就整条存成
+           * 一个字符串 "[textarea, derive]"，后面判断行动时永远对不上。
+           * 所以这里统一归一成数组。
+           */
+          item = { type: parseTypeList(match[1]), required: false };
           out.items.push(item);
           section = '';
           return;
@@ -2916,7 +2945,8 @@ window.__ModuleLoader__.load({
       if (!parsed || !Array.isArray(parsed.items)) return '';
       const blocks = [];
       parsed.items.forEach(function (item) {
-        if (item.type === 'markdown') return;
+        /* type 是数组（章节可以接受多种行动）；只有纯 markdown 的才跳过。 */
+        if (Array.isArray(item.type) ? item.type.every(function (t) { return t === 'markdown'; }) : item.type === 'markdown') return;
         const label = item.label || item.id || '';
         if (label === '') return;
         const hint = String(item.description || '')
@@ -3031,7 +3061,7 @@ window.__ModuleLoader__.load({
       const template = type !== '' && templates[type] ? parseTemplateYaml(templates[type]) : null;
       const fields = template
         ? template.items.filter(function (item) {
-            return item.type !== 'markdown';
+            return Array.isArray(item.type) ? !item.type.every(function (t) { return t === 'markdown'; }) : item.type !== 'markdown';
           })
         : [];
       /* T-035 兜底：选了类型但模板没加载出来（例如只读档下读不到模板文件），
@@ -3434,7 +3464,7 @@ window.__ModuleLoader__.load({
                         { style: { fontSize: 12, color: 'var(--dsw-alias-label-primary)' } },
                         (item.label || item.id) + (item.required ? ' *' : ''),
                       ),
-                      item.type === 'input'
+                      (Array.isArray(item.type) ? item.type : [item.type]).includes('input')
                         ? h('input', {
                             value: values[key] || '',
                             placeholder: hint,

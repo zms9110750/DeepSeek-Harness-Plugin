@@ -580,6 +580,92 @@ test('搁置后能重新领取（「需要补充」不是死路）', async () =>
 	assert.equal(taskOf(id).status, '处理中', '重新领取后应该回到处理中');
 });
 
+test('正文校验：对象形态按模板章节校验，不合法就拒绝提案', async () => {
+	/*
+	 * 用户原话：
+	 *   > 架构校验不能过，直接拒绝这个计划提案。工具返回就是报错的。
+	 *   > 校验过了，才上任务板。然后解析器工作。
+	 *
+	 * 所以这里验的是：**不合法的正文根本不该进任务板**，
+	 * 而不是"存下来再显示成灰色卡片"。
+	 */
+	const group = await ensureGroup();
+
+	/* ① 合法的对象形态：章节 id 对得上、action 在 type 允许范围内。 */
+	const ok = await tool('task_submit').execute({
+		title: '对象正文',
+		type: 'GU',
+		body: {
+			want: { action: 'textarea', value: '把任务板修好' },
+			done: { action: 'textarea', value: '抽屉能开' },
+		},
+		group,
+	});
+	assert.match(ok.text, /已提交/u);
+
+	/* ② 缺必填章节：GU 的「要什么」「什么算做到了」都是 required。 */
+	await assert.rejects(
+		() =>
+			tool('task_submit').execute({
+				title: '缺章节',
+				type: 'GU',
+				body: { want: { action: 'textarea', value: '只给一半' } },
+				group,
+			}),
+		/正文不合法/u,
+		'缺必填章节应该被拒',
+	);
+
+	/* ③ 用了这一章不接受的 action：GU 的每一章都只允许 textarea。 */
+	await assert.rejects(
+		() =>
+			tool('task_submit').execute({
+				title: '用错行动',
+				type: 'GU',
+				body: {
+					want: { action: 'choose', options: ['A', 'B'] },
+					done: { action: 'textarea', value: 'x' },
+				},
+				group,
+			}),
+		/不接受 action「choose」/u,
+		'章节不接受的 action 应该被拒',
+	);
+
+	/* ④ 章节不是对象。 */
+	await assert.rejects(
+		() =>
+			tool('task_submit').execute({
+				title: '章节不是对象',
+				type: 'GU',
+				body: { want: '裸字符串', done: { action: 'textarea', value: 'x' } },
+				group,
+			}),
+		/必须是对象/u,
+	);
+
+	/* ⑤ 缺 action 字段。 */
+	await assert.rejects(
+		() =>
+			tool('task_submit').execute({
+				title: '缺 action',
+				type: 'GU',
+				body: { want: { value: 'x' }, done: { action: 'textarea', value: 'y' } },
+				group,
+			}),
+		/缺少 action 字段/u,
+	);
+
+	/* ⑥ 旧的字符串形态照常放行（用户明确说不迁移）。 */
+	const legacy = await tool('task_submit').execute({
+		title: '旧格式',
+		type: 'GU',
+		body: '## 要什么\n\n随便写\n\n## 什么算做到了\n\n能跑',
+		group,
+	});
+	assert.match(legacy.text, /已提交/u, '旧的字符串正文不该被拦');
+});
+
 test('关系类型：相关无向无行为，约束软提示不阻断，参考只是提示', async () => {
 	/* 用户原话：「例如一期，二期。意味着他们是一件事情。……
 	   还需要有"约束"，"参考"之类的关系。」

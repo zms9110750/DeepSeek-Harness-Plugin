@@ -58,7 +58,7 @@ body:
       description: |
         模糊也行，但要能判断。
         "快一点"不行；"打开不超过 200ms"或"明显感觉到不卡"都行。
-  - type: textarea
+  - type: [textarea, derive]
     id: split
     attributes:
       label: 怎么拆

@@ -75,7 +75,7 @@ body:
         一个都挑不出来，就写"还没看出风险"——这本身就是最大的风险。
     validations:
       required: true
-  - type: textarea
+  - type: [textarea, derive]
     id: split
     attributes:
       label: 怎么拆

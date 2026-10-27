@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>事项详情 · 改版原型 v2</title>
+<style>
+  :root {
+    --bg: #f4f5f6;
+    --card: #ffffff;
+    --border: #e4e6e8;
+    --border-strong: #d3d6da;
+    --text: #23262b;
+    --text-2: #6b7075;
+    --text-3: #9ba0a6;
+    --black: #1a1d21;
+    --goal: #7c5cd6;
+    --design: #3b7dd8;
+    --record: #8a9099;
+    --work: #2e9e6b;
+    --danger: #c0392b;
+    --brand: #3b7dd8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 22px 90px; background: var(--bg); color: var(--text);
+    font: 13px/1.5 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  h1 { margin: 0 0 6px; font-size: 19px; font-weight: 650; }
+  .lead { margin: 0 0 24px; color: var(--text-2); max-width: 1020px; }
+  .lead b { color: var(--text); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 1260px) { .grid { grid-template-columns: 1fr; } }
+  .col-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; padding-left: 2px; }
+  .col-head h2 { margin: 0; font-size: 14px; font-weight: 650; }
+  .tag-now, .tag-next { font-size: 11px; padding: 1px 7px; border-radius: 4px; font-weight: 600; }
+  .tag-now { background: #fdecec; color: var(--danger); }
+  .tag-next { background: #e8f5ee; color: #1f7a4d; }
+
+  .pane {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(16,18,22,.06), 0 8px 24px rgba(16,18,22,.05);
+    display: flex; flex-direction: column; max-height: 1180px;
+  }
+
+  /* ── 头部 ── */
+  .pane-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--border); flex: none; position: relative; }
+  .head-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .head-top .no { font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+  .head-top .kind { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 3px; }
+  .head-top .domain { font-size: 10px; padding: 0 5px; border-radius: 3px;
+    border: 1px solid var(--border-strong); color: var(--text-3); }
+  .head-top .grow { flex: 1; }
+  .icon-btn {
+    width: 26px; height: 26px; padding: 0; border: 0; border-radius: 5px;
+    background: transparent; color: var(--text-2); cursor: pointer; font-size: 13px;
+    display: inline-grid; place-items: center;
+  }
+  .icon-btn:hover { background: #f2f4f6; }
+  .icon-btn.on { background: #eef0f2; color: var(--text); }
+  .pane-head h3 { margin: 0 0 6px; font-size: 16px; font-weight: 650; line-height: 1.35; }
+  .head-meta { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-2); }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 10px;
+    border: 1px solid transparent; cursor: pointer; font-family: inherit;
+    transition: border-color 120ms, background 120ms;
+  }
+  .status-pill:hover { border-color: currentColor; }
+  .status-pill[aria-expanded="true"] { border-color: currentColor; }
+  .status-pill .pill-chev {
+    font-size: 8px; opacity: .7; margin-left: 1px;
+    transition: transform 120ms;
+  }
+  .status-pill[aria-expanded="true"] .pill-chev { transform: rotate(180deg); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  /*
+   * 状态操作二级菜单。
+   *
+   * ⚠️ 必须**从状态标签下方**展开，不能盖住标签本身。
+   *
+   * 之前写的是 `left:16px; top:76px` —— 那个坐标正好落在状态标签身上，
+   * 一展开就把「提交 · 已采纳」压在下面，用户看不到自己当前是什么状态，
+   * 也看不到点的是什么。菜单的锚点应该是"触发它的那个东西"。
+   *
+   * 现在把菜单改成标签的兄弟（在 .status-wrap 里），用
+   * `top: calc(100% + 6px)` 挂在标签下面。
+   */
+  .status-wrap { position: relative; display: inline-flex; }
+  .status-menu {
+    position: absolute; left: 0; top: calc(100% + 6px); z-index: 30;
+    width: 244px; padding: 5px;
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(16,18,22,.08), 0 16px 40px rgba(16,18,22,.16);
+  }
+  .status-menu[hidden] { display: none; }
+  .menu-cap {
+    font-size: 10px; font-weight: 700; color: var(--text-3);
+    letter-spacing: .06em; padding: 6px 9px 4px;
+  }
+  .menu-item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 6px 9px; font: inherit; font-size: 12.5px; text-align: left;
+    background: transparent; border: 0; border-radius: 5px; cursor: pointer; color: var(--text);
+  }
+  .menu-item:hover { background: #f2f4f6; }
+  .menu-item .ic { flex: none; width: 15px; text-align: center; color: var(--text-3); font-size: 11px; }
+  .menu-item .sub { margin-left: auto; font-size: 10px; color: var(--text-3); }
+  .menu-item.up { color: var(--brand); font-weight: 600; }
+  .menu-item.up .ic { color: var(--brand); }
+  .menu-item.bad { color: var(--danger); }
+  .menu-item.bad .ic { color: var(--danger); }
+  .menu-sep { height: 1px; background: var(--border); margin: 5px 4px; }
+  .menu-note { font-size: 10.5px; color: var(--text-3); padding: 5px 9px 7px; line-height: 1.5; border-top: 1px solid var(--border); margin-top: 4px; }
+
+  /*
+   * ── 父任务栏（一行）──
+   *
+   * 这一行同时承载三件事，因为它们都是"这条单在结构里的位置"：
+   *
+   *   [展开关系 3] │ 父任务 [DP-04 归档与分组]            [+ 派生子任务]
+   *
+   * 「展开关系」原来是独立一行，白白占掉 30px 高度。
+   * 它和父任务是一类信息（都是关系），并到一行更省空间，也更容易被一起看到。
+   * 竖线是分隔：左边是"我指向谁"，右边是"谁指向我"。
+   *
+   * 没有父任务时，`│ 父任务 [xxx]` 整段不渲染（label 一起消失）。
+   */
+  /*
+   * 三列：第一列 auto（按「展开关系」按钮的自然宽度），
+   * 第二列吃掉剩余空间，第三列 auto（派生子任务靠右）。
+   *
+   * 用户要求：
+   *   > "展开关系"这个按钮不需要占据 1/3。他要之前那样的自然宽度。
+   *
+   * 之前改成 1fr 三等分是为了和下面关系区对齐，但那样按钮被拉得很长，
+   * 反而显得空。现在按内容宽度，对齐关系也不重要了 ——
+   * 下面关系区的页头是独立一块，两者不需要列宽一致。
+   */
+  .parent-row {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center;
+    padding: 8px 16px; border-bottom: 1px solid var(--border); flex: none; background: #fcfcfd;
+  }
+  .parent-slot { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .parent-row .derive-slot { display: flex; justify-content: flex-end; }
+
+  /* 展开关系：现在是个紧凑按钮，不再是整行 */
+  .rel-toggle {
+    display: inline-flex; align-items: center; gap: 5px; flex: none;
+    padding: 4px 9px; font: inherit; font-size: 11.5px; color: var(--text-2);
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 6px;
+    cursor: pointer;
+  }
+  .rel-toggle:hover { border-color: #b9bdc2; color: var(--text); }
+  .rel-toggle .chev { font-size: 8px; color: var(--text-3); transition: transform .15s; }
+  .rel-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+  .rel-toggle[aria-expanded="true"] { background: #eef0f2; }
+  .rel-toggle .n {
+    font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 8px;
+    background: #eceef0; color: var(--text-2); line-height: 15px;
+  }
+
+  /* 竖线分隔 */
+  .vsep { width: 1px; height: 16px; background: var(--border-strong); flex: none; }
+
+  .parent-row .cap {
+    font-size: 11px; font-weight: 600; color: var(--text-3); flex: none;
+  }
+  .parent-pick {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 320px;
+    padding: 3px 9px; font: inherit; font-size: 12px;
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 6px;
+    color: var(--brand); cursor: pointer;
+  }
+  .parent-pick:hover { border-color: #b9bdc2; }
+  .parent-pick .pid { font-weight: 650; }
+  .parent-pick .ptitle { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .btn-derive {
+    flex: none; display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 11px; font: inherit; font-size: 12px; font-weight: 550;
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 6px;
+    color: var(--text); cursor: pointer;
+  }
+  .btn-derive:hover { border-color: var(--black); background: #f7f8f9; }
+  .btn-derive .plus { color: var(--text-3); font-size: 13px; }
+
+  /*
+   * ── 展开的关系（按类型分组）──
+   *
+   * 原来是一排 chip，每个自己写「子 WI-01」「依赖 DB-01」——
+   * 类型混在每一条里，扫一遍看不出"我有几个子任务、几个依赖"。
+   *
+   * 现在按类型分组，每组一条**横幅**写着这组是什么，组内的项不再重复类型。
+   * 横幅要够显眼：浅色底 + 左边色条，一眼能把组切开。
+   */
+  /*
+   * ── 展开的关系：按**状态组**分三列 ──
+   *
+   * 用户的要求：
+   *   > 这个切成三分。让这个按钮占据三分之一大小。
+   *   > 然后在这个分组上面加一个页头：进行|搁置|完成
+   *
+   *   > 没开始，和进行中，都是进行。需要授权，需要信息，被阻碍，都是搁置。
+   *   > 成功，失败，取消，都是完成。
+   *   > 所以小字就别写了。不区分那个具体是哪个状态。知道状态组就行了。
+   *
+   * 所以关系条目按**状态组**分栏，而不是按关系类型分组。
+   * 每条右边不再写具体状态（草稿/进行/完成），因为列头已经说明了。
+   * 具体状态是九态里的事，这里只需要"这些是还没动的 / 卡住的 / 完事的"。
+   */
+  /*
+   * 关系区是**网状**的：行 = 关系类型，列 = 状态组。
+   *
+   *   ┌──────────────────────────────────────────┐
+   *   │          进行        搁置        完成      │  ← 页头（三列）
+   *   ├──────────────────────────────────────────┤
+   *   │ 子任务 2                                   │  ← 横幅（横跨整行）
+   *   │  WI-01       —          WI-02             │  ← 条目按状态落位
+   *   ├──────────────────────────────────────────┤
+   *   │ 本项依赖 1                                 │
+   *   │  —           —          DB-01             │
+   *   └──────────────────────────────────────────┘
+   *
+   * 用户原话：
+   *   > 那个横幅还是显示的。在横幅之上显示页头。
+   *   > 也就是说，他们是在横幅下面，分组的情况下，
+   *   > 然后一个一个按钮，摆在对应的位置的。
+   *   > 一个分组的高度就是这三列里面最高的。
+   *
+   * 所以每个横幅行是一个独立的三列网格，行高由该行最高的格子决定。
+   */
+  .rel-body {
+    padding: 0 16px 10px; border-bottom: 1px solid var(--border);
+    background: #fbfbfc; flex: none;
+  }
+  .rel-body[hidden] { display: none; }
+
+  /*
+   * 页头：进行 | 搁置 | 完成。
+   *
+   * 用户要求：
+   *   > 这个进行，搁置，完成，他们都要是上两角圆角。
+   *   > 有一个分割线跟下面的组隔开，也就是说，
+   *   > 页头应该长得和组横幅不一样，不能接着。
+   *
+   * 所以页头单独一块：
+   *   · 上两角圆角（5px）
+   *   · 底色比横幅深（#e4e7ea vs #eef0f2）
+   *   · 下面有一条实分割线（2px），和第一个组彻底断开
+   *   · 字号大一号、字重更重
+   *
+   * 不这样区分的话，页头和第一条横幅会连成一片，看不出哪个是列头。
+   */
+  .rel-headrow {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
+    margin-top: 10px;
+    background: #e4e7ea;
+    border: 1px solid var(--border-strong);
+    border-bottom: 2px solid var(--border-strong);   /* ← 和下面的组隔开 */
+    border-radius: 5px 5px 0 0;                       /* ← 上两角圆角 */
+    overflow: hidden;
+  }
+  .rel-head {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 700; color: var(--text);
+    padding: 6px 9px;
+    border-left: 3px solid var(--border-strong);
+  }
+  .rel-head .cnt { font-weight: 600; color: var(--text-2); }
+  .rel-head.active  { border-left-color: var(--design); }
+  .rel-head.held    { border-left-color: #c98a20; }
+  .rel-head.done    { border-left-color: var(--work); }
+
+  /* 一个关系类型 = 一条横幅 + 一个三列网格 */
+  .rel-block { margin-top: 8px; }
+  .rel-banner {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10.5px; font-weight: 700; color: var(--text-2);
+    letter-spacing: .03em; padding: 3px 9px;
+    background: #eef0f2; border-left: 3px solid var(--border-strong);
+    border-radius: 4px 4px 0 0;
+  }
+  .rel-banner .cnt { font-weight: 600; color: var(--text-3); }
+  .rel-banner.sub  { border-left-color: var(--design); }
+  .rel-banner.dep  { border-left-color: #c98a20; }
+  .rel-banner.rel  { border-left-color: var(--text-3); }
+
+  /*
+   * 网格只是**帮你看清列位置**，不是视觉装饰。
+   * 所以不要竖的分割线 —— 三列靠对齐表达，不靠画线。
+   */
+  .rel-cells {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    background: transparent;
+    border: 0;
+  }
+  .rel-cell { background: transparent; padding: 5px 4px 3px; display: grid; gap: 3px; align-content: start; }
+  /* 空格子：一条极淡的斜纹，说明"这里本来可以放东西" */
+  .rel-cell.void {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent, transparent 3px,
+      rgba(0,0,0,.022) 3px, rgba(0,0,0,.022) 6px
+    );
+    border-radius: 4px;
+  }
+
+  .rel-item {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    padding: 5px 7px; font: inherit; font-size: 11.5px; text-align: left;
+    background: #fff; border: 1px solid var(--border); border-radius: 4px;
+    cursor: pointer; color: var(--text); min-width: 0;
+  }
+  .rel-item:hover { background: #f7faff; border-color: var(--design); }
+  .rel-item .arrow { color: var(--text-3); font-size: 10px; flex: none; }
+  .rel-item .rid { color: var(--brand); font-weight: 650; flex: none; }
+  .rel-item .rtitle {
+    color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;
+  }
+
+  .rel-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; padding: 2px 9px; border-radius: 10px;
+    background: #f0f2f4; color: var(--brand); cursor: pointer; border: 1px solid transparent;
+  }
+  .chip:hover { border-color: #c8ccd0; }
+  .chip .lbl { color: var(--text-3); }
+
+  /* ── 正文区 ── */
+  .pane-body { padding: 4px 16px 16px; overflow-y: auto; flex: 1; }
+  .sec { border-top: 1px solid var(--border); padding: 12px 0 2px; }
+  .sec:first-child { border-top: 0; }
+  .sec-title { display: flex; align-items: center; gap: 7px;
+    font-size: 11px; font-weight: 700; color: var(--text-3);
+    letter-spacing: .04em; margin-bottom: 8px; }
+  .sec-title .n { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 8px;
+    background: #eceef0; color: var(--text-2); line-height: 15px; }
+  .prose { font-size: 12.5px; line-height: 1.7; white-space: pre-wrap; }
+
+  .answers { display: grid; gap: 8px; }
+  .answer-row { display: grid; grid-template-columns: 132px 1fr; gap: 10px;
+    padding: 7px 0; border-top: 1px dashed var(--border); }
+  .answer-row:first-child { border-top: 0; }
+  .answer-row .q { font-size: 11.5px; color: var(--text-2); }
+  .answer-row .a { font-size: 12px; }
+  .answer-row .a.empty { color: var(--text-3); font-style: italic; }
+
+  .choices { display: grid; gap: 7px; }
+  .choice { display: flex; align-items: flex-start; gap: 9px; width: 100%;
+    padding: 9px 11px; text-align: left; font: inherit; font-size: 12.5px;
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 7px; cursor: pointer; }
+  .choice:hover { border-color: var(--brand); background: #f7faff; }
+  .choice.on { border-color: var(--brand); background: #f7faff; }
+  .choice .idx { flex: none; width: 17px; height: 17px; border-radius: 4px;
+    background: #eceef0; color: var(--text-2); font-size: 10px; font-weight: 700;
+    display: grid; place-items: center; margin-top: 1px; }
+  .choice.on .idx { background: var(--brand); color: #fff; }
+  .choice .txt { flex: 1; line-height: 1.5; }
+  .choice .pick { flex: none; font-size: 11px; color: var(--text-3); }
+  .choices-foot { display: flex; gap: 7px; margin-top: 8px; flex-wrap: wrap; }
+
+  /*
+   * 交互区块：引擎识别出来的每一处交互都包在 .inter 里，
+   * 上面有个小标题说明"这是从哪里看出来的"。
+   * 一处任务可以有多个，形态可以混（选择 + 排序 + 派生）。
+   */
+  .inter {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 11px 11px; margin-bottom: 9px; background: #fcfcfd;
+  }
+  .inter:last-child { margin-bottom: 0; }
+  .inter-cap {
+    display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+    font-size: 11.5px; font-weight: 650; color: var(--text); margin-bottom: 8px;
+  }
+  .inter-cap .src {
+    font-size: 10px; font-weight: 500; color: var(--text-3);
+    padding: 0 5px; border-radius: 3px; background: #eceef0; letter-spacing: 0;
+  }
+
+  /* 排序 */
+  .rank { display: grid; gap: 5px; }
+  .rank-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 9px; background: #fff; border: 1px solid var(--border-strong);
+    border-radius: 6px; font-size: 12.5px; cursor: grab;
+  }
+  .rank-row:active { cursor: grabbing; }
+  .rank-row.off { opacity: .62; }
+  .rank-row .grip { color: var(--text-3); font-size: 10px; letter-spacing: -1px; flex: none; }
+  .rank-row .rno {
+    flex: none; width: 16px; height: 16px; border-radius: 4px;
+    background: #eceef0; color: var(--text-2); font-size: 10px; font-weight: 700;
+    display: grid; place-items: center;
+  }
+  .rank-row .rtext { flex: 1; }
+  .rank-row .rkeep {
+    flex: none; font-size: 10.5px; padding: 1px 7px; border-radius: 9px;
+    border: 1px solid var(--border-strong); background: #fff; color: var(--text-3);
+    cursor: pointer;
+  }
+  .rank-row .rkeep.on { background: rgba(59,125,216,.10); border-color: transparent; color: var(--brand); font-weight: 600; }
+  .rank-hint { font-size: 10.5px; color: var(--text-3); margin-top: 6px; }
+
+  /* ── 行为区：模板声明的快捷动作 ── */
+  .behavior-cap {
+    font-size: 10.5px; font-weight: 700; color: var(--text-3);
+    letter-spacing: .04em; margin: 12px 0 7px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .behavior-cap .src {
+    font-size: 9.5px; font-weight: 500; padding: 0 5px; border-radius: 3px;
+    background: #eef0f2; color: var(--text-3); letter-spacing: 0;
+  }
+  .quick { display: flex; flex-wrap: wrap; gap: 7px; }
+  .quick-task {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 11px; font: inherit; font-size: 12px;
+    background: #fff; border: 1px dashed var(--border-strong); border-radius: 6px;
+    color: var(--text); cursor: pointer;
+  }
+  .quick-task:hover { border-style: solid; border-color: var(--brand); color: var(--brand); background: #f7faff; }
+  .quick-task .tpl-code {
+    font-size: 10px; font-weight: 700; color: var(--text-3);
+    padding: 0 4px; border-radius: 3px; background: #f0f2f4;
+  }
+  .quick-task:hover .tpl-code { background: #e6eefb; color: var(--brand); }
+  /* 授权档标在按钮右边：问你 / 直接建 / 只能你建 */
+  .quick-task .mode {
+    font-size: 9.5px; padding: 0 5px; border-radius: 8px;
+    background: #eceef0; color: var(--text-3);
+  }
+  .quick-task .mode.manual { background: #fdf3e6; color: #a9701a; }
+  .quick-hint { font-size: 10.5px; color: var(--text-3); margin-top: 6px; line-height: 1.55; }
+
+  /* 槽位说明：讲清"默认 / 覆盖 / null"这套规则 */
+  .slot-note {
+    margin-top: 9px; padding: 8px 10px;
+    font-size: 11px; line-height: 1.65; color: var(--text-2);
+    background: #f4f6f8; border-left: 2px solid var(--border-strong); border-radius: 0 5px 5px 0;
+  }
+  .slot-note b { color: var(--text); font-weight: 600; }
+  .slot-note .kbd { font-size: 10px; }
+
+  .timeline { display: grid; }
+  .tl-row { display: grid; grid-template-columns: 74px 16px 1fr; gap: 8px; font-size: 11.5px; }
+  .tl-row .t { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .tl-row .mark { position: relative; }
+  .tl-row .mark::before { content: ''; position: absolute; left: 50%; top: 6px; width: 5px; height: 5px;
+    border-radius: 50%; background: var(--text-3); transform: translateX(-50%); }
+  .tl-row .mark::after { content: ''; position: absolute; left: 50%; top: 13px; bottom: -3px; width: 1px;
+    background: var(--border); transform: translateX(-50%); }
+  .tl-row:last-child .mark::after { display: none; }
+  .tl-row .what { padding-bottom: 9px; }
+  .tl-row .what b { font-weight: 600; }
+
+  /* 备注：固定底部 */
+  .pane-foot { padding: 10px 16px 12px; border-top: 1px solid var(--border); flex: none; background: #fcfcfd; }
+  textarea.ta { width: 100%; min-height: 46px; resize: vertical; padding: 7px 10px;
+    font: 12.5px/1.55 inherit; font-family: inherit; color: var(--text);
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 6px; outline: none; }
+  textarea.ta:focus { border-color: #9aa0a8; }
+
+  /* ── 旧版 ── */
+  .old-head { padding: 14px 16px 10px; }
+  .old-title { font-size: 15px; font-weight: 650; margin: 0 0 3px; }
+  .old-sub { font-size: 11px; color: var(--text-2); }
+  .old-body { padding: 0 16px 14px; overflow-y: auto; }
+  .old-sec { border-top: 1px solid var(--border); padding-top: 9px; margin-top: 9px; }
+  .old-sec-title { font-size: 11px; color: var(--text-2); margin-bottom: 6px; }
+  .old-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 12px; }
+  .btn-old { font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 8px;
+    border: 1px solid var(--border-strong); background: #fff; cursor: pointer; }
+  .btn-old.p { background: var(--black); color: #fff; border-color: var(--black); }
+
+  .notes { margin-top: 34px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 1260px) { .notes { grid-template-columns: 1fr; } }
+  .note { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 15px 17px; }
+  .note h3 { margin: 0 0 9px; font-size: 13.5px; font-weight: 650; }
+  .note ul, .note ol { margin: 0; padding-left: 19px; color: var(--text-2); font-size: 12.5px; line-height: 1.75; }
+  .note li + li { margin-top: 4px; }
+  .note b { color: var(--text); font-weight: 600; }
+  .kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; padding: 1px 5px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: #f7f8f9; }
+</style>
+</head>
+<body>
+
+<h1>事项详情 · 改版原型 v2</h1>
+<p class="lead">
+  按反馈改：<b>① 状态操作收进二级菜单</b>（防误触，入口是状态标签本身）·
+  <b>② 展开关系并进父任务那一行</b>（省 30px，竖线分隔）·
+  <b>③ 父任务不占满，右边「派生子任务」</b>·
+  <b>④ 关系按类型分组，每组一条横幅</b>。
+</p>
+
+<!-- 演示开关：切换「有 / 无父任务」 -->
+<div style="display:flex;align-items:center;gap:10px;margin:0 0 18px;padding:9px 13px;
+  background:#fff;border:1px solid var(--border);border-radius:8px;max-width:520px">
+  <span style="font-size:11.5px;font-weight:600;color:var(--text-2)">演示</span>
+  <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+    <input type="checkbox" id="noParent" style="cursor:pointer">
+    这条事项没有父任务（顶部「父任务」整段应消失，「派生子任务」保留）
+  </label>
+</div>
+
+<div class="grid">
+
+  <!-- ══════════ 现在 ══════════ -->
+  <div>
+    <div class="col-head"><h2>事项详情</h2><span class="tag-now">现在</span></div>
+    <div class="pane">
+      <div class="old-head">
+        <div class="old-title">用户任务：剩下没做完的 5 条</div>
+        <div class="old-sub">GU-01 · 目标 · 提交（已采纳）</div>
+      </div>
+      <div class="old-actions">
+        <button class="btn-old p" type="button">领取</button>
+        <button class="btn-old" type="button">直接完成</button>
+        <button class="btn-old" type="button">取消</button>
+        <button class="btn-old" type="button">拒绝</button>
+      </div>
+      <div class="old-body">
+        <div class="old-sec">
+          <div class="old-sec-title">关系</div>
+          <div class="rel-chips">
+            <span class="chip"><span class="lbl">父</span>↗ DP-04 · 归档与分组</span>
+            <span class="chip"><span class="lbl">子</span>↗ WI-01 · 失败必须有理由</span>
+          </div>
+        </div>
+        <div class="old-sec">
+          <div class="old-sec-title">开放问题（已答 0 / 共 2）</div>
+          <div class="answer-row"><div class="q">做到什么程度算完？</div><div class="a empty">未答</div></div>
+          <div class="answer-row"><div class="q">这 5 条里哪几条必须做？</div><div class="a empty">未答</div></div>
+        </div>
+        <div class="old-sec">
+          <div class="old-sec-title">正文</div>
+          <div class="prose">剩下没做完的 5 条：分组、模板、抽屉、详情、日志。</div>
+        </div>
+        <div class="old-sec">
+          <div class="old-sec-title">备注 / 搁置理由</div>
+          <textarea class="ta" placeholder="写点什么…"></textarea>
+        </div>
+        <div class="old-sec">
+          <div class="old-sec-title">历史</div>
+          <div class="timeline">
+            <div class="tl-row"><div class="t">10-26 22:10</div><div class="mark"></div><div class="what">状态 · 未指定 → 提交</div></div>
+            <div class="tl-row"><div class="t">10-26 21:04</div><div class="mark"></div><div class="what">创建</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="margin-top:12px">
+      <ol>
+        <li>「领取 / 直接完成 / 取消 / 拒绝」四个按钮<b>平铺在标题下面</b>，一点就生效，最容易误触「拒绝」。</li>
+        <li>父任务藏在「关系」里，和子任务混在一起 —— 但父任务是<b>结构位置</b>，不是普通关系。</li>
+        <li>没有任何「从这条派生一条新的」入口，只能去新建页再回头选父任务。</li>
+        <li>模板的 <span class="kbd">behavior</span> 只影响选项区，<b>不提供任何动作</b>。</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- ══════════ 建议 ══════════ -->
+  <div>
+    <div class="col-head"><h2>事项详情</h2><span class="tag-next">建议</span></div>
+    <div class="pane">
+
+      <div class="pane-head">
+        <div class="head-top">
+          <span class="no" style="color:var(--goal)">GU-01</span>
+          <span class="kind" style="color:var(--goal);background:rgba(124,92,214,.10)">目标</span>
+          <span class="domain">通用</span>
+          <span class="grow"></span>
+          <button class="icon-btn" type="button" title="分支">⑂</button>
+          <button class="icon-btn" type="button" title="归档">▣</button>
+          <button class="icon-btn" type="button" title="关闭">✕</button>
+        </div>
+        <h3>用户任务：剩下没做完的 5 条</h3>
+        <div class="head-meta">
+          <!--
+            状态标签**本身就是入口**，菜单从它下面展开（.status-wrap 提供定位基准）。
+            之前把状态操作全塞进右上角一个 ⋯ 图标里，结果和 ⑂ ▣ ✕ 长得一样，
+            用户根本不知道那里能改状态 —— 等于把功能藏没了。
+          -->
+          <span class="status-wrap">
+            <button class="status-pill" type="button" id="statusBtn" aria-expanded="false"
+              style="background:rgba(59,125,216,.10);color:var(--design)">
+              <span class="dot" style="background:var(--design)"></span>提交 · 已采纳
+              <span class="pill-chev">▾</span>
+            </button>
+
+            <!-- 二级菜单：挂在标签正下方，不遮挡标签 -->
+            <div class="status-menu" id="statusMenu" hidden>
+              <div class="menu-cap">变更状态</div>
+              <button class="menu-item up" type="button">
+                <span class="ic">▶</span>领取<span class="sub">开始做</span>
+              </button>
+              <button class="menu-item" type="button">
+                <span class="ic">✓</span>标记完成
+              </button>
+              <div class="menu-sep"></div>
+              <button class="menu-item" type="button">
+                <span class="ic">?</span>搁置 · 需要补充
+              </button>
+              <button class="menu-item" type="button">
+                <span class="ic">⚿</span>搁置 · 需要授权
+              </button>
+              <div class="menu-sep"></div>
+              <button class="menu-item" type="button">
+                <span class="ic">⊘</span>取消<span class="sub">可重开</span>
+              </button>
+              <button class="menu-item bad" type="button">
+                <span class="ic">✕</span>拒绝<span class="sub">不可逆</span>
+              </button>
+              <div class="menu-note">状态变更会影响 AI 能否继续这张单，所以都收在这里，不在正文旁边直接放按钮。</div>
+            </div>
+          </span>
+          <span>创建 10-26</span><span>·</span><span>最后动过 10-26 22:10</span>
+        </div>
+      </div>
+
+      <!--
+        父任务栏：三列，和下面关系区的三列对齐
+        ┌──────────┬─────────────────────┬──────────────────┐
+        │展开关系 4 │ │ 父任务 [DP-04 …]   │      [＋ 派生子任务] │
+        └──────────┴─────────────────────┴──────────────────┘
+        第一列固定占 1/3 —— 用户要求「让这个按钮占据三分之一大小」，
+        这样它和下面「进行」那一列正好对齐。
+        没有父任务时，第二列里的竖线和「父任务…」整段不渲染。
+      -->
+      <div class="parent-row">
+        <button class="rel-toggle" type="button" id="relToggle" aria-expanded="false">
+          <span class="chev">▶</span>展开关系<span class="n">4</span>
+        </button>
+
+        <span class="parent-slot">
+          <!-- 有父任务才渲染这一段（整段一起隐藏） -->
+          <span class="vsep" data-parent-only></span>
+          <span class="cap" data-parent-only>父任务</span>
+          <button class="parent-pick" type="button" title="跳到父任务" data-parent-only>
+            <span class="pid">DP-04</span>
+            <span class="ptitle">归档与分组</span>
+          </button>
+        </span>
+
+        <span class="derive-slot">
+          <button class="btn-derive" type="button" id="deriveBtn">
+            <span class="plus">＋</span>派生子任务
+          </button>
+        </span>
+      </div>
+
+      <!--
+        展开的关系：网状结构
+          页头（一次）：进行 | 搁置 | 完成
+          每个关系类型：一条横幅 + 一个三列网格，条目按状态落到对应格子里
+          行高 = 该行三列里最高的那个
+      -->
+      <div class="rel-body" id="relBody" hidden>
+
+        <!-- 页头：只出现一次，钉在最上方 -->
+        <div class="rel-headrow">
+          <div class="rel-head active">进行<span class="cnt">2</span></div>
+          <div class="rel-head held">搁置<span class="cnt">0</span></div>
+          <div class="rel-head done">完成<span class="cnt">3</span></div>
+        </div>
+
+        <!-- 子任务 -->
+        <div class="rel-block">
+          <div class="rel-banner sub">子任务<span class="cnt">3</span></div>
+          <div class="rel-cells">
+            <div class="rel-cell">
+              <button class="rel-item" type="button">
+                <span class="arrow">↗</span><span class="rid">WI-01</span>
+                <span class="rtitle">失败必须有理由</span>
+              </button>
+              <button class="rel-item" type="button">
+                <span class="arrow">↗</span><span class="rid">WI-02</span>
+                <span class="rtitle">dispatch 字段要有消费者</span>
+              </button>
+            </div>
+            <div class="rel-cell void"></div>
+            <div class="rel-cell">
+              <button class="rel-item" type="button">
+                <span class="arrow">↗</span><span class="rid">WI-03</span>
+                <span class="rtitle">详情层派发按钮</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 本项依赖 -->
+        <div class="rel-block">
+          <div class="rel-banner dep">本项依赖<span class="cnt">2</span></div>
+          <div class="rel-cells">
+            <div class="rel-cell void"></div>
+            <div class="rel-cell void"></div>
+            <div class="rel-cell">
+              <button class="rel-item" type="button">
+                <span class="arrow">↗</span><span class="rid">DB-01</span>
+                <span class="rtitle">状态集要不要按 kind 收窄</span>
+              </button>
+              <button class="rel-item" type="button">
+                <span class="arrow">↗</span><span class="rid">RR-02</span>
+                <span class="rtitle">摘要改用宿主投影</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 相关 -->
+        <div class="rel-block">
+          <div class="rel-banner rel">相关<span class="cnt">1</span></div>
+          <div class="rel-cells">
+            <div class="rel-cell void"></div>
+            <div class="rel-cell void"></div>
+            <div class="rel-cell">
+              <button class="rel-item" type="button">
+                <span class="arrow">↗</span><span class="rid">DP-05</span>
+                <span class="rtitle">关联要更多关系类型</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="pane-body">
+
+        <div class="sec">
+          <div class="sec-title">正文</div>
+          <div class="prose">剩下没做完的 5 条：分组、模板、抽屉、详情、日志。
+
+每条都能单独验收，做完打勾。</div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">开放问题<span class="n">0 / 2 已答</span></div>
+          <div class="answers">
+            <div class="answer-row">
+              <div class="q">做到什么程度算完？</div>
+              <div class="a empty">还没答</div>
+            </div>
+            <div class="answer-row">
+              <div class="q">这 5 条里哪几条必须做？</div>
+              <div class="a empty">还没答</div>
+            </div>
+          </div>
+        </div>
+
+        <!--
+          交互区：**引擎分析正文后生成的**，不是模板预设的能力。
+          模板只提供正文结构；这里出现什么，取决于正文里有什么。
+          下面是三种可以同时出现的形态（union）。
+        -->
+        <div class="sec">
+          <div class="sec-title">
+            引擎从正文识别出 2 处交互
+            <span class="n">union</span>
+          </div>
+
+          <!-- 形态 A：互斥选择（正文里"要么…要么…"） -->
+          <div class="inter">
+            <div class="inter-cap">
+              需要你选
+              <span class="src">正文第 2 段 · 三个互斥方案</span>
+            </div>
+            <div class="choices" id="choices">
+              <button class="choice" type="button">
+                <span class="idx">1</span>
+                <span class="txt">先做分组，因为它是其它四项的容器</span>
+                <span class="pick">选这个</span>
+              </button>
+              <button class="choice" type="button">
+                <span class="idx">2</span>
+                <span class="txt">先做详情页，因为用户最常看</span>
+                <span class="pick">选这个</span>
+              </button>
+              <button class="choice" type="button">
+                <span class="idx">3</span>
+                <span class="txt">五个一起做，反正都不大</span>
+                <span class="pick">选这个</span>
+              </button>
+            </div>
+            <div class="choices-foot">
+              <button class="btn-old" type="button" style="padding:5px 11px;font-size:11.5px">都不是，我写一句</button>
+              <button class="btn-old" type="button" style="padding:5px 11px;font-size:11.5px;border-color:transparent;background:transparent;color:var(--text-2)">先不选，要更多信息</button>
+            </div>
+          </div>
+
+          <!-- 形态 B：排序（正文里"按优先级排"） -->
+          <div class="inter">
+            <div class="inter-cap">
+              排一下顺序
+              <span class="src">正文第 4 段 · 五件事都要做，但有先后</span>
+            </div>
+            <div class="rank" id="rank">
+              <div class="rank-row" draggable="true">
+                <span class="grip">⋮⋮</span><span class="rno">1</span>
+                <span class="rtext">分组</span>
+                <span class="rkeep on">保留</span>
+              </div>
+              <div class="rank-row" draggable="true">
+                <span class="grip">⋮⋮</span><span class="rno">2</span>
+                <span class="rtext">模板</span>
+                <span class="rkeep on">保留</span>
+              </div>
+              <div class="rank-row" draggable="true">
+                <span class="grip">⋮⋮</span><span class="rno">3</span>
+                <span class="rtext">抽屉</span>
+                <span class="rkeep on">保留</span>
+              </div>
+              <div class="rank-row off" draggable="true">
+                <span class="grip">⋮⋮</span><span class="rno">4</span>
+                <span class="rtext">详情</span>
+                <span class="rkeep">搁置</span>
+              </div>
+            </div>
+            <div class="rank-hint">拖动着排；点「保留 / 搁置」切换是否这一轮做。没保留的进「搁置」。</div>
+          </div>
+
+          <!--
+            形态 C：派生任务。
+            这一项**是模板默认给的**（union 里的 "derive" 槽），
+            模板没写它也存在；写了就覆盖；写 null 就没有。
+          -->
+          <div class="inter">
+            <div class="inter-cap">
+              拆成子任务
+              <span class="src">模板默认 · union 槽位 derive</span>
+            </div>
+            <div class="quick">
+              <button class="quick-task" type="button">
+                <span class="tpl-code">WR</span>派生调研任务
+                <span class="mode">问你</span>
+              </button>
+              <button class="quick-task" type="button">
+                <span class="tpl-code">DP</span>派生设计任务
+                <span class="mode">问你</span>
+              </button>
+              <button class="quick-task" type="button">
+                <span class="tpl-code">WI</span>派生实现任务
+                <span class="mode manual">只能你建</span>
+              </button>
+            </div>
+            <div class="quick-hint">
+              点一下就把父任务填成本条、正文按来源自动写好，你只补标题。
+              「问你 / 只能你建」是授权档，决定 AI 能不能自己建。
+            </div>
+            <div class="slot-note">
+              这一块是 <b>union 槽位</b> <span class="kbd">derive</span>，三层按 key 叠：
+              <b>引擎默认</b> → <b>模板 YAML</b> → <b>工具传参</b>。
+              谁写了这个 key，就用谁那一份<b>整个替换</b>——不做深合并，
+              所以覆盖时必须把这个 key 的其他字段一起照抄。
+            </div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">历史</div>
+          <div class="timeline">
+            <div class="tl-row"><div class="t">10-26 22:10</div><div class="mark"></div><div class="what">状态 <b>未指定 → 提交</b>（用户采纳）</div></div>
+            <div class="tl-row"><div class="t">10-26 21:40</div><div class="mark"></div><div class="what">领取 <b>WI-03</b> 后放开</div></div>
+            <div class="tl-row"><div class="t">10-26 21:04</div><div class="mark"></div><div class="what">创建（模板 GU · 用户任务）</div></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="pane-foot">
+        <textarea class="ta" placeholder="备注 / 搁置理由（随时写，不跟着内容滚）"></textarea>
+      </div>
+    </div>
+    <div class="note" style="margin-top:12px">
+      <ol>
+        <li>状态操作<b>全收进 <span class="kbd">⋯</span> 菜单</b>。菜单里还标了「可重开 / 不可逆」，下手前能看清后果。</li>
+        <li>父任务独立一行放在<b>正文上面</b>，因为它决定这条单挂在哪；下一行才是「展开关系」，子任务和依赖收在那里。</li>
+        <li>父任务行<b>不占满</b>，右边留给「派生子任务」——从这条直接建子任务，父任务自动填好。</li>
+        <li>交互区是<b>引擎分析正文</b>得出的，不是模板预先写好的能力清单；模板最多<b>覆盖或删掉</b>其中某一块。</li>
+        <li>备注固定在底部，不跟着内容滚。</li>
+      </ol>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <div class="note">
+    <h3>为什么父任务和关系要分开</h3>
+    <ul>
+      <li>父任务是<b>唯一的一个</b>，关系是<b>任意多个</b>。混在一起时看不出一条单挂在哪棵树上。</li>
+      <li>父任务放正文上面，是因为它决定"这条单在整体里的位置"，比正文更靠前。</li>
+      <li>关系默认收起：多数时候你只关心这条本身，需要时才展开看牵连。</li>
+      <li>点父任务那一块直接跳过去，不用在树里找。</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h3>union 槽位：三层叠加，按 key 整份替换</h3>
+    <p style="margin:0 0 9px;font-size:12.5px;color:var(--text-2)">
+      交互区是一个 union，每个槽位有名字（<span class="kbd">derive</span>、
+      <span class="kbd">choose</span>、<span class="kbd">rank</span>…）。
+      引擎分析正文得出默认，模板和工具再逐层按 key 覆盖。
+    </p>
+    <p style="margin:0 0 6px;font-size:11.5px;color:var(--text-3);letter-spacing:.04em;font-weight:600">叠加顺序</p>
+    <div style="font-size:12px;line-height:1.9;color:var(--text-2);margin-bottom:10px">
+      ① 引擎默认（分析正文得出）<br>
+      ↓ 按 key 替补<br>
+      ② 模板 YAML 里声明的<br>
+      ↓ 按 key 替补<br>
+      ③ 调用工具时传的参数
+    </div>
+    <p style="margin:0 0 6px;font-size:11.5px;color:var(--text-3);letter-spacing:.04em;font-weight:600">怎么覆盖</p>
+    <ul>
+      <li>写哪个 key，就用你那一份<b>整个替换</b>那个 key 的内容——<b>不做深合并</b>。</li>
+      <li>所以改一项时，要把这个 key 里的<b>其他字段一起照抄</b>，否则会丢。</li>
+      <li>没写的 key 保留上一层的。</li>
+    </ul>
+    <p style="margin:9px 0 0;font-size:11.5px;color:var(--text-3)">
+      例：默认给「调研 / 设计 / 实现」三项。模板只想改「实现」的授权档，
+      就得把这个 key 完整写一遍（含它的模板代码、标题、授权档），
+      其他两项自动保留。
+    </p>
+    <p style="margin:9px 0 0;font-size:11.5px;color:var(--text-3)">
+      <b>要删掉某一项，是调用工具时传 <span class="kbd">null</span></b>，不是写在模板里。
+    </p>
+  </div>
+</div>
+
+<script>
+  /*
+   * 演示开关：没有父任务时，顶部「│ 父任务 [DP-04 …]」整段消失。
+   *
+   * 三种元素一起隐藏：竖线、label、选择块。少一个就会留下孤儿分隔线。
+   * 「派生子任务」不在其中 —— 它和有没有父任务无关（是从这条往下建）。
+   */
+  document.getElementById('noParent').addEventListener('change', (e) => {
+    const hide = e.target.checked;
+    document.querySelectorAll('[data-parent-only]').forEach((el) => {
+      el.style.display = hide ? 'none' : '';
+    });
+  });
+
+  // 状态菜单
+  const statusBtn = document.getElementById('statusBtn');
+  const statusMenu = document.getElementById('statusMenu');
+  statusBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    statusMenu.hidden = !statusMenu.hidden;
+    statusBtn.setAttribute('aria-expanded', String(!statusMenu.hidden));
+    statusBtn.classList.toggle('on', !statusMenu.hidden);
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (statusMenu.hidden) return;
+    if (statusMenu.contains(e.target) || statusBtn.contains(e.target)) return;
+    statusMenu.hidden = true;
+    statusBtn.setAttribute('aria-expanded', 'false');
+    statusBtn.classList.remove('on');
+  });
+
+  // 展开关系
+  const relToggle = document.getElementById('relToggle');
+  const relBody = document.getElementById('relBody');
+  relToggle.addEventListener('click', () => {
+    const open = relToggle.getAttribute('aria-expanded') === 'true';
+    relToggle.setAttribute('aria-expanded', String(!open));
+    relBody.hidden = open;
+  });
+
+  // 选项
+  document.querySelectorAll('.choice').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const was = btn.classList.contains('on');
+      document.querySelectorAll('.choice').forEach((b) => {
+        b.classList.remove('on');
+        b.querySelector('.pick').textContent = '选这个';
+      });
+      if (!was) {
+        btn.classList.add('on');
+        btn.querySelector('.pick').textContent = '已选 ✓';
+      }
+    });
+  });
+
+  // 派生子任务 / 快捷任务：原型里给个反馈
+  function flash(btn, text) {
+    const old = btn.innerHTML;
+    btn.innerHTML = '<span style="color:var(--brand);font-weight:600">' + text + '</span>';
+    btn.style.borderStyle = 'solid';
+    btn.style.borderColor = 'var(--brand)';
+    setTimeout(() => {
+      btn.innerHTML = old;
+      btn.style.borderStyle = '';
+      btn.style.borderColor = '';
+    }, 1100);
+  }
+  document.getElementById('deriveBtn').addEventListener('click', (e) => {
+    flash(e.currentTarget, '→ 父任务 = GU-01');
+  });
+  document.querySelectorAll('.quick-task').forEach((b) => {
+    b.addEventListener('click', (e) => flash(e.currentTarget, '→ 建子任务，父任务=GU-01'));
+  });
+
+  // 排序：保留 / 搁置 切换 + 拖拽换位
+  document.querySelectorAll('.rank-row .rkeep').forEach((pill) => {
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const on = pill.classList.contains('on');
+      pill.classList.toggle('on', !on);
+      pill.textContent = on ? '搁置' : '保留';
+      pill.closest('.rank-row').classList.toggle('off', on);
+      renumber();
+    });
+  });
+  function renumber() {
+    document.querySelectorAll('#rank .rank-row').forEach((row, i) => {
+      row.querySelector('.rno').textContent = String(i + 1);
+    });
+  }
+  let dragRow = null;
+  document.querySelectorAll('#rank .rank-row').forEach((row) => {
+    row.addEventListener('dragstart', () => { dragRow = row; row.style.opacity = '.4'; });
+    row.addEventListener('dragend', () => { row.style.opacity = ''; dragRow = null; renumber(); });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!dragRow || dragRow === row) return;
+      const box = row.getBoundingClientRect();
+      const after = (e.clientY - box.top) > box.height / 2;
+      row.parentNode.insertBefore(dragRow, after ? row.nextSibling : row);
+    });
+  });
+</script>
+</body>
+</html>

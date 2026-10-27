@@ -39,6 +39,14 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { defineTool } from '@deepseek-ai/dsh-tools';
+/*
+ * 正文校验（行动库 + 模板章节）。
+ *
+ * 用相对路径直接引 `packages/actions` —— 两个包都在同一个仓库里，
+ * 走相对路径比配 `@local/taskboard-actions` 更省事，也不会因为 profile
+ * 的 node_modules 没 link 上而炸。这个包是零依赖的，直接 import 就行。
+ */
+import { checkBody } from '../actions/check-body.js';
 
 export const name = 'taskboard-tools';
 
@@ -391,7 +399,26 @@ function registerTools(ctx) {
 				title: { type: 'string', required: true, description: '一句话标题' },
 				type: { type: 'string', description: `${TYPES.join('/')}，或留空 = 空模板` },
 				kind: { type: 'string', description: 'goal/design/record/work；留空则按 type 推断' },
-				body: { type: 'string', required: true, description: '正文 Markdown，按该类型模板的小节填' },
+				body: {
+					/*
+					 * 正文接受两种形态，所以用 `json`（任意 JSON 值）而不是 `string`。
+					 *
+					 *   · 对象 —— 新格式，按章节 id 索引：
+					 *       { want: { action: 'textarea', value: '…' },
+					 *         how:  { action: 'choose', options: ['A','B'] } }
+					 *   · 字符串 —— 旧的 Markdown 全文，原样保存（用户明确说不迁移）
+					 *
+					 * 为什么不在 schema 里把两种都列出来：`dsh-tools` 的 DSL 没有
+					 * union，只能二选一。而正文的具体形状要跟模板章节对照才能校验，
+					 * 那件事放在 execute 里做（checkBody），schema 只保证"是个 JSON 值"。
+					 */
+					type: 'json',
+					required: true,
+					description:
+						'正文。对象形态：按章节 id 索引，每个值是带 action 的 object，' +
+						'如 {"want":{"action":"textarea","value":"…"}}；' +
+						'字符串形态：旧的 Markdown 全文（兼容）。',
+				},
 				parent: { type: 'string', description: '父计划 id，空 = 顶层' },
 				links: { type: 'string', description: '链接，例如「依赖:GD-01, 派生:GR-01」' },
 				workspace: { type: 'string', description: '子工作空间绝对路径（单个）' },
@@ -455,6 +482,27 @@ function registerTools(ctx) {
 				}
 				/* 额外工作区：校验绝对路径并归一（逗号分隔）；非法直接拒，不落盘。 */
 				const workspaces = splitWorkspaces(args.workspaces).join(', ');
+				/*
+				 * 正文校验 —— **落盘之前**。
+				 *
+				 * 用户原话：
+				 *   > 架构校验不能过，直接拒绝这个计划提案。工具返回就是报错的。
+				 *   > 校验过了，才上任务板。然后解析器工作。
+				 *
+				 * 所以这里抛错 = 整个提案不成立，任务板上不会出现不合法的正文。
+				 * 校验只看「正文 vs 模板声明的章节」，不看业务规则（那些在 core）。
+				 *
+				 * `args.body` 现在允许两种：
+				 *   · 字符串 —— 旧的 Markdown，原样放行（用户明确说不迁移）
+				 *   · 对象   —— 按章节 id 索引，{ want: { action:'textarea', value:'…' } }
+				 */
+				const bodyCheck = await checkBody(args.body, {
+					type,
+					loadTemplate: (wanted) => loadTemplate(wanted),
+				});
+				if (!bodyCheck.ok) {
+					throw new Error(`task_submit: 正文不合法 —— ${bodyCheck.reason}`);
+				}
 				const id = await createNew({
 					title,
 					type,
@@ -467,7 +515,7 @@ function registerTools(ctx) {
 					permission: text(args.permission),
 					deny: text(args.deny),
 					claimed_by: '',
-					body: text(args.body),
+					body: bodyCheck.body,
 				});
 				/* 建完立刻认领进分组（同一把锁里已算好 groupId）。 */
 				await saveGroup({
@@ -1471,7 +1519,11 @@ function registerUpdate(ctx) {
 				title: { type: 'string', description: '新标题' },
 				type: { type: 'string', description: 'A/B/C/D/R/F，或空串表示空模板' },
 				kind: { type: 'string', description: 'goal/design/record/work；空则按 type 推断' },
-				body: { type: 'string', description: '新正文（Markdown）' },
+				body: {
+					/* 和 task_submit 一样：对象（按章节 id 索引）或字符串（旧 Markdown）。 */
+					type: 'json',
+					description: '新正文。对象形态按章节 id 索引，字符串形态是旧的 Markdown 全文。',
+				},
 				parent: { type: 'string', description: '父计划 id，空 = 顶层' },
 				links: { type: 'string', description: '关联，例如「依赖:GD-01, 派生:GR-01」' },
 				workspace: { type: 'string', description: '子工作空间绝对路径' },
@@ -1484,12 +1536,31 @@ function registerUpdate(ctx) {
 			},
 			async execute(args) {
 				const patch = {};
-				for (const field of ['title', 'type', 'kind', 'body', 'parent', 'links', 'workspace', 'workspaces', 'permission', 'deny']) {
+				/*
+				 * 逐个字段取，但**不要一律 String()** ——
+				 * `body` 可能是对象，`String(obj)` 会得到 "[object Object]"。
+				 * 所以 body 单独处理，其余仍是字符串字段。
+				 */
+				for (const field of ['title', 'type', 'kind', 'parent', 'links', 'workspace', 'workspaces', 'permission', 'deny']) {
 					if (args[field] !== undefined) patch[field] = String(args[field]);
 				}
 				if (patch.type !== undefined) {
 					patch.type = patch.type.toUpperCase();
 					if (patch.type !== '' && !allTypes().includes(patch.type)) throw new Error(`type 必须是 ${allTypes().join('/')} 或留空`);
+				}
+				/* 正文：改了才校验，校验用的是**改完之后的 type**（可能同时改了 type）。 */
+				if (args.body !== undefined) {
+					let wantedType = patch.type;
+					if (wantedType === undefined) {
+						const current = await readTask(args.id);
+						wantedType = current === undefined ? '' : String(current.type ?? '');
+					}
+					const bodyCheck = await checkBody(args.body, {
+						type: wantedType,
+						loadTemplate: (wanted) => loadTemplate(wanted),
+					});
+					if (!bodyCheck.ok) throw new Error(`task_update: 正文不合法 —— ${bodyCheck.reason}`);
+					patch.body = bodyCheck.body;
 				}
 				const task = await updateTask(args.id, patch);
 				return { text: `已更新 ${task.id}：${task.title}` };
