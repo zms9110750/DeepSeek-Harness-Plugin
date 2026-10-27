@@ -1244,6 +1244,8 @@ window.__ModuleLoader__.load({
        * （分支/归档/关闭），再塞一个长得一样的，用户不知道那里能改状态。
        */
       const [menuOpen, setMenuOpen] = React.useState(false);
+      /* 关系区展开状态：默认收起（多数时候只关心这一条本身）。 */
+      const [relOpen, setRelOpen] = React.useState(false);
       /* 选项按钮：只有 `behavior: decide` 的模板才有。
        *
        * 用户原话：「用户决策，实际上跟 ask 一样。可以选择，
@@ -1640,29 +1642,325 @@ window.__ModuleLoader__.load({
             node.permission || '（未指定）',
           ),
         ),
-        section(
-          '关系',
+        /*
+         * ── 父任务栏（一行）──────────────────────────────────────────
+         *
+         * 用户看原型时定的排版：
+         *
+         *   [▼ 展开关系 4] │ 父任务 [DP-04 归档与分组]      [+ 派生子任务]
+         *
+         * 「展开关系」原来单独一行，白占 30px；它和父任务都是"结构位置"，
+         * 并到一行更省空间。竖线分隔：左边是"我指向谁"，右边是"谁指向我"。
+         *
+         * 没有父任务时，`│ 父任务 [xxx]` 整段不渲染（label 一起消失），
+         * 「派生子任务」保留 —— 它和有没有父任务无关。
+         */
+        h(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              paddingTop: 8,
+              borderTop: '1px solid var(--dsw-alias-border-l1)',
+              paddingBottom: 8,
+              borderBottom: '1px solid var(--dsw-alias-border-l1)',
+            },
+          },
           h(
-            'div',
-            { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-            relationRows.map(function (row) {
-              return h(
-                'div',
-                { key: 'relrow-' + row[0], style: { display: 'flex', gap: 8, alignItems: 'flex-start' } },
+            'button',
+            {
+              type: 'button',
+              'aria-expanded': relOpen,
+              onClick: function () {
+                setRelOpen(!relOpen);
+              },
+              style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                flex: 'none',
+                padding: '4px 9px',
+                font: 'inherit',
+                fontSize: 11.5,
+                color: 'var(--dsw-alias-label-secondary)',
+                background: relOpen ? 'var(--dsw-alias-bg-layer-2)' : 'var(--dsw-alias-bg-layer-1)',
+                border: '1px solid var(--dsw-alias-border-l1)',
+                borderRadius: 6,
+                cursor: 'pointer',
+              },
+            },
+            h('span', { style: { fontSize: 8, display: 'inline-block', transform: relOpen ? 'rotate(90deg)' : 'none' } }, '▶'),
+            '展开关系',
+            h(
+              'span',
+              {
+                style: {
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '0 5px',
+                  borderRadius: 8,
+                  lineHeight: '15px',
+                  background: 'var(--dsw-alias-bg-layer-2)',
+                  color: 'var(--dsw-alias-label-secondary)',
+                },
+              },
+              String(children.length + outLinks.length + inLinks.length + (node.parent ? 1 : 0)),
+            ),
+          ),
+          node.parent
+            ? h(
+                'span',
+                { style: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 } },
+                h('span', { style: { width: 1, height: 16, background: 'var(--dsw-alias-border-l2)', flex: 'none' } }),
+                h('span', { style: { fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', flex: 'none' } }, '父任务'),
                 h(
-                  'span',
-                  { style: { width: 56, flex: 'none', fontSize: 11, lineHeight: '24px', color: 'var(--dsw-alias-label-secondary)' } },
-                  row[0],
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: function () {
+                      props.onJump(node.parent);
+                    },
+                    style: clickableStyle({
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      padding: '2px 8px',
+                      borderRadius: 8,
+                      font: 'inherit',
+                      fontSize: 11,
+                      lineHeight: '20px',
+                      cursor: 'pointer',
+                      background: 'var(--dsw-alias-bg-layer-1)',
+                      color: 'var(--dsw-alias-brand-primary)',
+                    }),
+                  },
+                  node.parent,
                 ),
-                h(
-                  'div',
-                  { style: { display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 } },
-                  row[1].length ? row[1] : h('span', { style: { fontSize: 11, lineHeight: '24px', color: 'var(--dsw-alias-label-secondary)' } }, '—'),
-                ),
-              );
-            }),
+              )
+            : null,
+          h('span', { style: { flex: 1 } }),
+          h(
+            'button',
+            {
+              type: 'button',
+              title: '从这一条往下建一条新的，父任务自动填成它',
+              onClick: function () {
+                if (typeof props.onDeriveChild === 'function') props.onDeriveChild(node.id);
+              },
+              style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                flex: 'none',
+                padding: '5px 11px',
+                font: 'inherit',
+                fontSize: 12,
+                fontWeight: 550,
+                color: 'var(--dsw-alias-label-primary)',
+                background: 'var(--dsw-alias-bg-layer-1)',
+                border: '1px solid var(--dsw-alias-border-l1)',
+                borderRadius: 6,
+                cursor: 'pointer',
+              },
+            },
+            h('span', { style: { color: 'var(--dsw-alias-label-secondary)', fontSize: 13 } }, '＋'),
+            '派生子任务',
           ),
         ),
+
+        /*
+         * ── 展开的关系：网状 ─────────────────────────────────────────
+         *
+         * 用户原话：
+         *   > 那个横幅还是显示的。在横幅之上显示页头。
+         *   > 也就是说，他们是在横幅下面，分组的情况下，
+         *   > 然后一个一个按钮，摆在对应的位置的。
+         *   > 一个分组的高度就是这三列里面最高的。
+         *
+         * 页头（进行|搁置|完成）只出现一次，然后每个关系类型一条横幅
+         * + 一个三列网格，条目按状态落进对应格子。行高由该行最高的格子决定。
+         */
+        relOpen
+          ? h(
+              'div',
+              {
+                style: {
+                  paddingBottom: 10,
+                  borderBottom: '1px solid var(--dsw-alias-border-l1)',
+                  background: 'var(--dsw-alias-bg-layer-2)',
+                },
+              },
+              (function () {
+                const heads = [
+                  { key: 'active', label: '进行', color: 'var(--dsw-alias-brand-primary)' },
+                  { key: 'held', label: '搁置', color: '#c98a20' },
+                  { key: 'done', label: '完成', color: '#2e9e6b' },
+                ];
+
+                /* 一个关系类型 = 一条横幅 + 三列格子 */
+                const groupOf = function (title, color, entries) {
+                  if (entries.length === 0) return null;
+                  const cols = [[], [], []];
+                  for (const entry of entries) {
+                    const group = groupLabel(entry.status);
+                    cols[group === '搁置' ? 1 : group === '完成' ? 2 : 0].push(entry);
+                  }
+                  return h(
+                    'div',
+                    { key: 'grp-' + title, style: { marginTop: 8 } },
+                    h(
+                      'div',
+                      {
+                        style: {
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          color: 'var(--dsw-alias-label-secondary)',
+                          letterSpacing: '.03em',
+                          padding: '3px 9px',
+                          background: 'var(--dsw-alias-bg-layer-1)',
+                          borderLeft: '3px solid ' + color,
+                          borderRadius: '4px 4px 0 0',
+                        },
+                      },
+                      title,
+                      h('span', { style: { fontWeight: 600, opacity: 0.75 } }, String(entries.length)),
+                    ),
+                    h(
+                      'div',
+                      { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' } },
+                      cols.map(function (bucket, index) {
+                        return h(
+                          'div',
+                          {
+                            key: 'col-' + index,
+                            style: {
+                              padding: '5px 4px 3px',
+                              display: 'grid',
+                              gap: 3,
+                              alignContent: 'start',
+                              backgroundImage:
+                                bucket.length === 0
+                                  ? 'repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(0,0,0,.022) 3px, rgba(0,0,0,.022) 6px)'
+                                  : 'none',
+                              borderRadius: 4,
+                            },
+                          },
+                          bucket.map(function (entry) {
+                            return h(
+                              'button',
+                              {
+                                key: 'rel-' + entry.id,
+                                type: 'button',
+                                onClick: function () {
+                                  props.onJump(entry.id);
+                                },
+                                style: clickableStyle({
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  padding: '2px 8px',
+                                  borderRadius: 8,
+                                  font: 'inherit',
+                                  fontSize: 11,
+                                  lineHeight: '20px',
+                                  whiteSpace: 'nowrap',
+                                  cursor: 'pointer',
+                                  background: 'var(--dsw-alias-bg-layer-1)',
+                                  color: 'var(--dsw-alias-brand-primary)',
+                                }),
+                              },
+                              h('span', { style: { color: statusTone(entry.status), fontSize: 8 } }, '●'),
+                              entry.id,
+                            );
+                          }),
+                        );
+                      }),
+                    ),
+                  );
+                };
+
+                const childEntries = children.map(function (id) {
+                  const found = props.tasks.find(function (item) {
+                    return item.id === id;
+                  });
+                  return { id, status: found === undefined ? '未指定' : found.status };
+                });
+                const outEntries = (node.links || []).map(function (link) {
+                  const found = props.tasks.find(function (item) {
+                    return item.id === link.to;
+                  });
+                  return { id: link.to, status: found === undefined ? '未指定' : found.status };
+                });
+                const inEntries = [];
+                props.tasks.forEach(function (item) {
+                  (item.links || []).forEach(function (link) {
+                    if (link.to === node.id) inEntries.push({ id: item.id, status: item.status });
+                  });
+                });
+
+                const blocks = [
+                  groupOf('子任务', 'var(--dsw-alias-brand-primary)', childEntries),
+                  groupOf('本项依赖', '#c98a20', outEntries),
+                  groupOf('被依赖', '#c98a20', inEntries),
+                ].filter(function (item) {
+                  return item !== null;
+                });
+
+                if (blocks.length === 0) {
+                  return h(
+                    'div',
+                    { style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)', padding: '10px 0' } },
+                    '这一条还没有任何关系。',
+                  );
+                }
+
+                return h(
+                  'div',
+                  null,
+                  h(
+                    'div',
+                    {
+                      style: {
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        marginTop: 10,
+                        background: 'var(--dsw-alias-bg-layer-2)',
+                        border: '1px solid var(--dsw-alias-border-l2)',
+                        borderBottom: '2px solid var(--dsw-alias-border-l2)',
+                        borderRadius: '5px 5px 0 0',
+                        overflow: 'hidden',
+                      },
+                    },
+                    heads.map(function (head) {
+                      return h(
+                        'div',
+                        {
+                          key: 'head-' + head.key,
+                          style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            color: 'var(--dsw-alias-label-primary)',
+                            padding: '6px 9px',
+                            borderLeft: '3px solid ' + head.color,
+                          },
+                        },
+                        head.label,
+                      );
+                    }),
+                  ),
+                  blocks,
+                );
+              })(),
+            )
+          : null,
         /* 开放问题：设计类事项正文里「要定的点 / 待定」小标题下编号的那些。
          *
          * 用户原话：「你的设计，里面有几个开放问题。而现在完全在备注里面打字。
@@ -4504,6 +4802,18 @@ window.__ModuleLoader__.load({
                * 才是作者排好的。拿不到模板就传 null，parseBody 退化成按键序显示。
                */
               sections: parseTemplateSections(templates[activeNode.typeCode] || ''),
+              /*
+               * 派生子任务：从这条往下建一条新的，父任务自动填成它。
+               *
+               * 用户原话：
+               *   > 新建任务去选择父任务太蠢了。标准应该从任务创建任务。
+               */
+              onDeriveChild: function (parentId) {
+                setSelected('');
+                setEditId('');
+                setEditMode('create');
+                setCreate({ open: true, busy: false, error: '', key: String(Date.now()), parent: parentId });
+              },
               busy: action.busy,
               error: action.error,
               dispatch: dispatchInfo.id === activeNode.id ? dispatchInfo.items : [],
