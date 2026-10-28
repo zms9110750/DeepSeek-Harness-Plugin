@@ -1096,7 +1096,7 @@ function registerExtraCommands(ctx) {
 			const out = [];
 			let types = [];
 			try {
-				types = availableTypes();
+				types = await availableTypes();
 			} catch (error) {
 				process.stderr.write(`[taskboard] 取模板类型失败：${String(error)}\n`);
 				types = [];
@@ -1181,9 +1181,9 @@ function registerExtraCommands(ctx) {
 		 * 查询是纯内存的（读一个数组长度 + 拼接），代价可以忽略；
 		 * 真正的写盘只在变化时发生。
 		 */
-		const signature = () => {
+		const signature = async () => {
 			try {
-				return availableTypes().join(',');
+				return (await availableTypes()).join(',');
 			} catch (error) {
 				return '';
 			}
@@ -1200,10 +1200,10 @@ function registerExtraCommands(ctx) {
 			 * 而且写盘发生在插件已经卸载之后，属于不该有的副作用。
 			 */
 			while (alive) {
-				const now = signature();
+				const now = await signature();
 				if (now !== last) {
 					await writeIndex();
-					last = signature();
+					last = await signature();
 				}
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			}
@@ -1369,7 +1369,7 @@ function registerExtraCommands(ctx) {
 			const out = [];
 			/* 只列 TYPES（当前模板）。H1–H8 已降级为停止原因，文件都删了，
 			   列出来只会让面板显示 8 个空模板。老数据靠 LEGACY_TYPES 兜住读取。 */
-			for (const type of availableTypes()) {
+			for (const type of await availableTypes()) {
 				try {
 					out.push({ type: type, yaml: await loadTemplate(type) });
 				} catch (error) {

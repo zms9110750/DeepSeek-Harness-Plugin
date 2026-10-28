@@ -1279,6 +1279,21 @@ function renderFull(task) {
  */
 const TEMPLATE_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'templates');
 
+/**
+ * 模板的三个来源目录（GU-08 之后模板分两处）。
+ *
+ *   core/templates/                 4 个内置（core 自带，不依赖任何插件）
+ *   ../templates/templates/         9 个核心地基（templates 插件提供）
+ *   ../extra-templates/templates/   领域模板（扩展包提供）
+ *
+ * core 挨个找，找到就用。装不装插件都能工作 —— 只是可选模板少一些。
+ */
+const TEMPLATE_DIRS = [
+	TEMPLATE_DIR,
+	join(fileURLToPath(new URL('.', import.meta.url)), '..', 'templates', 'templates'),
+	join(fileURLToPath(new URL('.', import.meta.url)), '..', 'extra-templates', 'templates'),
+];
+
 /** 内置模板编号。 */
 const BUILTIN_TYPES = ['GU', 'WI', 'DP', 'RR'];
 
@@ -1310,16 +1325,46 @@ function bindTemplates(ctx) {
  * 附加模板里不在 `TYPES` 中的追加在后面。
  * **不排序**——界面和文档都按"大类"分组读，字母序会把四个大类搅在一起。
  */
-function availableTypes() {
+async function availableTypes() {
 	const added = TEMPLATES_SERVICE && typeof TEMPLATES_SERVICE.types === 'function' ? TEMPLATES_SERVICE.types() : [];
-	const known = TYPES.filter((type) => BUILTIN_TYPES.includes(type) || added.includes(type));
-	const unknown = added.filter((type) => !TYPES.includes(type));
+
+	/*
+	 * 没有 templates 插件时，自己扫目录。
+	 *
+	 * 之前这里只认 BUILTIN_TYPES（4 个），于是测试环境里
+	 * 「工作不能派 WT」这类规则根本没机会触发 —— WT 不在可用列表里，
+	 * 就没被检查。
+	 *
+	 * 现在按「文件在不在」判断：三个目录里任何一处有 `XX.yml`，就算可用。
+	 * 这样 core 单独跑也能看到全部模板，装上插件则用插件的扫描结果
+	 * （插件能感知配置开关）。
+	 */
+	const fromDisk = added.length > 0 ? [] : await TEMPLATE_TYPES_ON_DISK();
+	const pool = added.length > 0 ? added : fromDisk;
+
+	const known = TYPES.filter((type) => BUILTIN_TYPES.includes(type) || pool.includes(type));
+	const unknown = pool.filter((type) => !TYPES.includes(type));
 	return [...known, ...unknown];
+}
+
+/** 三个模板目录里实际有哪些编号（每次现扫，不缓存 —— 开发时改文件要生效）。 */
+async function TEMPLATE_TYPES_ON_DISK() {
+	const found = new Set();
+	for (const dir of TEMPLATE_DIRS) {
+		try {
+			for (const file of await readdir(dir)) {
+				if (file.endsWith('.yml')) found.add(file.replace(/\.yml$/u, '').toUpperCase());
+			}
+		} catch {
+			/* 目录不存在就跳过 */
+		}
+	}
+	return [...found];
 }
 
 async function loadTemplate(type) {
 	const wanted = String(type ?? '').trim().toUpperCase();
-	const types = availableTypes();
+	const types = await availableTypes();
 	/* 只接受当前模板（内置 + 附加）。H1–H8 已废除：它们是停止理由，不是模板，
 	   文件也删了。给老 type 一个清楚的报错，而不是"文件不存在"。 */
 	if (!types.includes(wanted)) {
@@ -1346,7 +1391,15 @@ async function loadTemplate(type) {
 			/* 附加来源没有这个编号 → 回落到内置。 */
 		}
 	}
-	return readFile(join(TEMPLATE_DIR, `${wanted}.yml`), 'utf8');
+	/* 附加来源没给 → 自己按三个目录挨个找。 */
+	for (const dir of TEMPLATE_DIRS) {
+		try {
+			return await readFile(join(dir, `${wanted}.yml`), 'utf8');
+		} catch (failure) {
+			if (failure?.code !== 'ENOENT') throw failure;
+		}
+	}
+	throw new Error(`模板 ${wanted} 的文件找不到（找过 ${TEMPLATE_DIRS.length} 个目录）`);
 }
 
 /*
@@ -1444,7 +1497,7 @@ async function dispatchOptions(fromId) {
 
 	const allowed = [];
 	const blocked = [];
-	for (const type of availableTypes()) {
+	for (const type of await availableTypes()) {
 		const meta = await templateMeta(type);
 		if (meta === null) continue;
 		const childKind = meta.defaultKind !== '' && Object.hasOwn(KINDS, meta.defaultKind)

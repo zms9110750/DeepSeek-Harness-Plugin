@@ -60,15 +60,40 @@ export const inject = [];
 
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), 'templates');
 
+/**
+ * 领域模板在扩展包里（GU-08）。
+ *
+ * 用户原话：
+ *   > 领域模板在模板扩展包里面。而且他们可能就没有自带的状态转移行为了。
+ *   > 状态转移行为就在 core 里面。
+ *
+ * 所以这个包（templates）负责**全部**模板的读取和校验，
+ * 但领域模板的**文件**放在 extra-templates 包里。
+ *
+ * 两个目录都扫，核心的在前（编号一样时核心赢）。
+ */
+const EXTRA_DIR = join(
+	dirname(fileURLToPath(import.meta.url)),
+	'..',
+	'extra-templates',
+	'templates',
+);
+
 /** 当前可用的模板编号（扫描目录得到，不是硬编码）。 */
 let TYPES = [];
 
-/** 读模板文件的内容。 */
+/** 读模板文件的内容。核心目录优先，找不到再去扩展包找。 */
 async function readTemplate(type) {
 	const wanted = String(type ?? '').trim().toUpperCase();
 	if (wanted === '') throw new Error('模板类型不能为空');
-	const source = await readFile(join(TEMPLATE_DIR, `${wanted}.yml`), 'utf8');
-	return source;
+	for (const dir of [TEMPLATE_DIR, EXTRA_DIR]) {
+		try {
+			return await readFile(join(dir, `${wanted}.yml`), 'utf8');
+		} catch (failure) {
+			if (failure?.code !== 'ENOENT') throw failure;
+		}
+	}
+	throw new Error(`没有这个模板：${wanted}`);
 }
 
 /** 列出所有模板（编号 + YAML 全文），给面板的 INDEX 用。 */
@@ -167,11 +192,17 @@ export function apply(ctx, config) {
 			};
 		}
 		try {
-			const files = await readdir(TEMPLATE_DIR);
-			const all = files
-				.filter((file) => file.endsWith('.yml'))
-				.map((file) => file.replace(/\.yml$/u, '').toUpperCase())
-				.sort();
+			/* 两个目录：核心（本包）+ 领域（扩展包）。 */
+			const sets = [];
+			for (const dir of [TEMPLATE_DIR, EXTRA_DIR]) {
+				try {
+					const files = await readdir(dir);
+					sets.push({ dir, codes: files.filter((f) => f.endsWith('.yml')).map((f) => f.replace(/\.yml$/u, '').toUpperCase()) });
+				} catch {
+					/* 扩展包没装就跳过 */
+				}
+			}
+			const all = [...new Set(sets.flatMap((s) => s.codes))].sort();
 			/*
 			 * **不在这里按开关过滤。**
 			 *
@@ -197,11 +228,16 @@ export function apply(ctx, config) {
 			 */
 			const kept = [];
 			for (const type of all) {
-				try {
-					await readFile(join(TEMPLATE_DIR, `${type}.yml`), 'utf8');
-					kept.push(type);
-				} catch (failure) {
-					/* 读不出来就跳过 */
+				/* 核心优先：先试本包，再试扩展包。 */
+				for (const set of sets) {
+					if (!set.codes.includes(type)) continue;
+					try {
+						await readFile(join(set.dir, `${type}.yml`), 'utf8');
+						kept.push(type);
+						break;
+					} catch {
+						/* 读不出来就跳过 */
+					}
 				}
 			}
 			TYPES = kept;

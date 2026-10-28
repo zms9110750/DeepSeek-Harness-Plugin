@@ -1,0 +1,11 @@
+{
+	"name": "@local/taskboard-extra-templates",
+	"version": "0.1.0-a.1",
+	"private": true,
+	"type": "module",
+	"description": "领域模板扩展包：只提供章节，不带状态规则（状态规则在 core）",
+	"main": "index.js",
+	"peerDependencies": {
+		"@local/taskboard-templates": "*"
+	}
+}
