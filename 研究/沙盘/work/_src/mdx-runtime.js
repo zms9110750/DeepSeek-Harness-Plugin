@@ -848,11 +848,35 @@ function mergeCustom(picked, text) {
  */
 function renderAskComponent(props) {
   const options = Array.isArray(props.options) ? props.options : [];
-  const multi = props.multi === true;
+  /*
+   * 单选还是多选，看「最多能选几个」。
+   *
+   * 用户原话：
+   *   > 3.架构里面对这个东西接受的应该是数组。
+   *
+   * 所以答案统一是数组，单选只是 maxPicks === 1 的特例。
+   */
+  const maxPicks = Number(props.maxPicks) > 0 ? Number(props.maxPicks) : 1;
+  const multi = maxPicks > 1;
 
-  /* 单选：字符串；多选：数组 */
-  const single = String(props.picked === undefined || props.picked === null ? '' : props.picked);
-  const list = Array.isArray(props.pickedMulti) ? props.pickedMulti.map(String) : [];
+  /*
+   * 答案永远是数组。
+   *
+   * 用户原话：
+   *   > 3.架构里面对这个东西接受的应该是数组。
+   *
+   * 老数据（字符串 picked / pickedMulti）在这里兼容掉。
+   */
+  const pickedArr = (function () {
+    if (Array.isArray(props.picked)) return props.picked.map(String);
+    if (Array.isArray(props.pickedMulti)) return props.pickedMulti.map(String);
+    const s = String(props.picked === undefined || props.picked === null ? '' : props.picked);
+    return s.trim() === '' ? [] : [s];
+  })();
+
+  /* 下面还有地方用 single / list，保住它们 */
+  const single = pickedArr.length === 1 ? pickedArr[0] : '';
+  const list = pickedArr;
 
   /*
    * 「跳过」的定义收窄了。
@@ -912,10 +936,33 @@ function renderAskComponent(props) {
 
   options.forEach(function (opt, i) {
     const key = String(i + 1);
-    const active = multi ? list.includes(key) : pickedIndex === i + 1;
+    const active = list.includes(key);
     listBox.appendChild(optionRow(opt, i, active, function () {
-      if (multi) toggleMultiPick(props, key);
-      else commit(props, { picked: key });
+      /*
+       * 写回 —— **永远是数组**。
+       *
+       * 用户原话：
+       *   > 3.架构里面对这个东西接受的应该是数组。
+       *
+       *   单选  再点已选的那项 = 取消；否则替换成这一项
+       *   多选  toggle，但不超过 maxPicks
+       */
+      const nums = list.filter(function (x) { return /^\d+$/u.test(String(x)); });
+      const text = list.filter(function (x) {
+        return !/^\d+$/u.test(String(x)) && String(x) !== UNSET_LABEL;
+      }).join('、');
+
+      let next;
+      if (!multi) {
+        next = nums.includes(key) ? [] : [key];
+      } else {
+        next = nums.slice();
+        const at = next.indexOf(key);
+        if (at >= 0) next.splice(at, 1);
+        else if (next.length < maxPicks) next.push(key);
+      }
+      if (text !== '') next.push(text);
+      commit(props, { picked: next });
     }));
   });
 
@@ -929,17 +976,28 @@ function renderAskComponent(props) {
    *   > 多选的未选择，点击以后，会选中自定义输入框。
    *   > 并且填充（并覆盖）"未选择"的输入文字
    */
-  const isSentinel = function (x) { return /^\d+$/u.test(String(x)) || String(x) === UNSET_LABEL; };
-  const customText = multi
-    ? list.filter(function (x) { return !isSentinel(x); }).join('、')
-    : (isCustom ? single : '');
-  const hasCustom = multi
-    ? list.some(function (x) { return !isSentinel(x); })
-    : isCustom;
+  /*
+   * 自填文字。
+   *
+   * 注意：数组里**最多只该有一个**自填项。
+   * 之前用 join('、') 把多个拼起来，结果拼出的 "1、1" 又不匹配 ^\d+$，
+   * 下一轮被当成自填文字保留，形成正反馈，数组无限膨胀。
+   */
+  const isSentinel = function (x) {
+    const s = String(x);
+    return /^\d+$/u.test(s) || s === UNSET_LABEL;
+  };
+  const customParts = list.filter(function (x) { return !isSentinel(x); });
+  const customText = customParts.length > 0 ? String(customParts[0]) : '';
+  const hasCustom = customParts.length > 0;
 
-  if (props.allowCustom !== false) {
-    listBox.appendChild(customRow(props, customText, hasCustom, multi));
-  }
+  /*
+   * 自填框**永远画**，没有开关。
+   *
+   * 用户原话：
+   *   > 2.架构里面不允许关闭那个自填按钮。
+   */
+  listBox.appendChild(customRow(props, customText, hasCustom, multi));
 
   const card = optionCard(props, listBox, isSkip, function () {
     /*

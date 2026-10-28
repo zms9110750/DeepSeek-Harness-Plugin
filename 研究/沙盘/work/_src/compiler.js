@@ -122,38 +122,54 @@ function normalizeOptions(options) {
 }
 
 /**
- * ask —— 单选或多选，同一个行为。
+ * ask —— 让用户从几个选项里挑。
  *
- * multi: true 时用 picked_multi（数组），否则用 picked（字符串）。
+ * ## 架构只给「选项」和「最多选几个」
+ *
+ *   max_picks 不写或 1  → 单选
+ *   max_picks > 1       → 多选
+ *
+ * ## 用户答案永远是数组
+ *
+ * 用户原话：
+ *   > 架构里面对这个东西接受的应该是数组。
+ *
+ * 所以 mdx 里统一写 picked 数组：
+ *
+ *   <Ask options={[...]} maxPicks={1} picked={[]} />
+ *
+ * 单选时数组长度最多 1，由渲染器保证。
+ *
+ * ## 老数据兼容
+ *
+ * 以前存的是 picked:'2' / picked_multi:['1']，这里统一转成数组。
  *
  * @param {object} raw
  * @returns {string}
  */
 function compileAsk(raw) {
   const options = normalizeOptions(raw.options);
-  const multi = raw.multi === true;
 
-  /* 单选支持 picked，多选支持 picked_multi；两个都给时按 multi 取 */
-  /*
-   * 默认 '未选择'（没看这张卡片）。
-   *
-   * 用户原话：
-   *   > "未选择"，应该是默认选择，并且点击才激活。
-   *   > 然后未选择，应该改名为"未选择"
-   */
-  const single = String(raw.picked === undefined || raw.picked === null ? '未选择' : raw.picked);
-  const list = Array.isArray(raw.picked_multi)
-    ? raw.picked_multi.map(String)
-    : (Array.isArray(raw.picked) ? raw.picked.map(String) : []);
+  /* 最多选几个。老数据用 multi:true 表示的，转成不限 */
+  const maxPicks = Number(raw.max_picks) > 0
+    ? Number(raw.max_picks)
+    : (raw.multi === true ? 99 : 1);
+
+  /* 用户答案统一成数组 */
+  const picked = Array.isArray(raw.picked)
+    ? raw.picked.map(String)
+    : (Array.isArray(raw.picked_multi)
+        ? raw.picked_multi.map(String)
+        : (raw.picked === undefined || raw.picked === null || raw.picked === ''
+            ? []
+            : [String(raw.picked)]));
 
   return '<Ask'
     + attr('header', raw.header)
     + attr('question', raw.question)
     + attr('options', options)
-    + attr('multi', multi ? true : undefined)
-    + attr('picked', multi ? undefined : single)
-    + attr('pickedMulti', multi ? list : undefined)
-    + attr('allowCustom', raw.allow_custom === false ? false : true)
+    + attr('maxPicks', maxPicks)
+    + attr('picked', picked)
     + attr('placeholder', raw.placeholder)
     + attr('label', raw.label)
     + attr('description', raw.description)
