@@ -2507,6 +2507,7 @@ function coreService(ctx) {
 		/** 内置模板目录（core/templates）。面板要在这里写 INDEX.json 之外的清单，先拿路径。 */
 		templateDir: () => TEMPLATE_DIR,
 	TYPE_NAMES: () => TYPE_NAMES,
+	LEGACY_TYPES: () => LEGACY_TYPES,
 		resolveDshHome: (c) => resolveDshHome(c),
 		splitWorkspaces: (raw) => splitWorkspaces(raw),
 

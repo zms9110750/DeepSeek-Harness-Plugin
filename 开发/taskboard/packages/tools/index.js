@@ -72,6 +72,28 @@ function coreFn(name) {
 	};
 }
 
+/**
+ * 取 core 里的**值**（不是函数）的薄壳。
+ *
+ * core 导出的映射表是 getter（`TYPE_NAMES: () => TYPE_NAMES`），
+ * 所以这里调用一次拿结果。用 coreFn 会包成函数壳，
+ * 后续 `TYPE_NAMES[x]` 就变成读函数属性了。
+ */
+function coreVal(name) {
+	if (CORE === null || CORE[name] === undefined) {
+		throw new Error(`任务板核心不可用（缺 ${name}）。core 是必需依赖，不能关。`);
+	}
+	return CORE[name]();
+}
+
+/**
+ * 惰性取 core 里的值表。
+ *
+ * 模块加载时 CORE 还是 null（apply 才绑定），所以不能直接 coreVal()。
+ * 这个函数每次现取 —— 映射表很小，开销可忽略。
+ */
+const lazyTable = (name) => () => coreVal(name);
+
 /* 读 */
 const listAll = coreFn('listAll');
 const readTask = coreFn('readTask');
@@ -146,7 +168,7 @@ const TYPES = [
 ];
 /** 全部编号（含老类型）。函数而非常量：LEGACY_TYPES 在后面才定义。 */
 function allTypes() {
-	return TYPES.concat(LEGACY_TYPES);
+	return TYPES.concat(legacyTypes());
 }
 /* 三组的定义（顺序即面板展示顺序）。与 core 的 GROUPS 保持一致。 */
 const GROUPS = [
@@ -198,7 +220,7 @@ const KINDS = {
 };
 const KIND_ORDER = ['goal', 'design', 'record', 'work'];
 /* 模板名从 core 取 —— 两边各写一份必然漂移（core 有 37 项，这里曾经是空表）。 */
-const TYPE_NAMES = coreFn('TYPE_NAMES');
+const typeNames = lazyTable('TYPE_NAMES');
 const ENTITY_TYPES = new Set(['WT', 'WF', 'WI', 'WD', 'WE', 'WC', 'WP']);
 const NOTE_LIMIT = 4000;
 /*
@@ -209,10 +231,16 @@ const NOTE_LIMIT = 4000;
  * 但**老数据里还有**，所以读的时候必须认得出来 ——
  * 这也是为什么它们留在词表里却不在 TYPES 里。
  */
-const LEGACY_TYPES = [
-	'A', 'B', 'C', 'D', 'F', 'G', 'I', 'K', 'N', 'O', 'P', 'Q', 'R', 'W', 'X',
-	'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8',
-];
+/*
+ * 旧编号词表从 core 取。
+ *
+ * 之前这里是手抄的 23 项，core 有 46 项 —— 少的是第二代拼音前缀
+ * （MG/ML/SQ/JB/GR/GD…）。后果：`type:'GD'` 这类 core 明确支持
+ * （RENAME 有映射）的旧编号，被 tools 的校验直接拒掉。
+ *
+ * 两边各写一份必然漂移，所以只留真源。
+ */
+const legacyTypes = lazyTable('LEGACY_TYPES');
 
 /** 读文本：只认 string。 */
 function text(value) {
@@ -222,7 +250,7 @@ function summarize(task) {
 	const groups = groupsOf(task.status);
 	const kind = kindOf(task);
 	const bits = [
-		`${task.id} [${KINDS[kind]?.name ?? kind}/${task.type || '?'} ${TYPE_NAMES()[task.type] || ''}] ${task.title}`,
+		`${task.id} [${KINDS[kind]?.name ?? kind}/${task.type || '?'} ${typeNames()[task.type] || ''}] ${task.title}`,
 		`状态=${task.status}` + (groups.length > 0 ? `（${groups.join('/')}）` : '（草稿）'),
 	];
 	if (task.parent) bits.push(`父=${task.parent}`);
@@ -551,7 +579,7 @@ function registerTools(ctx) {
 				/* 走唯一的改状态入口：这里拿到写锁（并发双领会被串行化），
 				   并且 CLAIMS / 级联 / 转移校验全部由 setStateInner 一处维护。 */
 				const task = await setState(args.id, '处理中', agent, false);
-				const lines = [`已领取 ${task.id}：${task.title}`, `类型：${task.type} ${TYPE_NAMES()[task.type] || ''}`];
+				const lines = [`已领取 ${task.id}：${task.title}`, `类型：${task.type} ${typeNames()[task.type] || ''}`];
 				lines.push(`子工作空间：${task.workspace || '（计划没写，按会话当前工作目录）'}`);
 				lines.push(`额外工作区：${task.workspaces || '（无）'}`);
 				lines.push(`权限档位：${task.permission || '（计划没写，按会话当前档位）'}`);
