@@ -882,7 +882,20 @@ function renderAskComponent(props) {
    * 用 pickedMulti = ['未选择'] 这个哨兵值表示。
    */
   const UNSET = '未选择';
-  const isSkip = multi ? list.length === 1 && list[0] === UNSET : single === UNSET;
+
+  /*
+   * 单选：
+   *   '未选择'   → 未选择
+   *   ''         → **也算未选择**
+   *
+   * 为什么空串也算：老数据里 picked 存的是 ''（那时候「跳过」还是可选状态）。
+   * 现在「未选择」是默认值，空串和它表达的是同一件事 —— 用户没填。
+   *
+   * 多选：picked_multi 是 ['未选择']，或者空数组（老数据）也算未选择。
+   */
+  const isSkip = multi
+    ? (list.length === 0 || (list.length === 1 && list[0] === UNSET))
+    : (single === UNSET || single.trim() === '');
 
   /* 单选时：序号 / 自定义文字 */
   const pickedIndex = !multi && /^\d+$/u.test(single) ? Number(single) : -1;
@@ -929,11 +942,18 @@ function renderAskComponent(props) {
   }
 
   const card = optionCard(props, listBox, isSkip, function () {
-    if (isSkip) {
-      /* 再点一次取消「未选择」 */
-      commit(props, multi ? { picked_multi: [] } : { picked: '' });
-      return;
-    }
+    /*
+     * 「未选择」**不能二次点击取消**。
+     *
+     * 用户原话：
+     *   > "未选择"不应该能二次点击。现在二次点击他，他的按钮就不亮了
+     *
+     * 它表达的是「我没看这张卡片」—— 这个状态本身就该一直成立，
+     * 除非用户去选了别的选项。
+     *
+     * 所以已选中时再点，什么都不做。
+     */
+    if (isSkip) return;
     /*
      * 选中「未选择」。
      *

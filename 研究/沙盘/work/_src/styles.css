@@ -414,7 +414,8 @@
    * 所以给一个最小宽度，并允许向右伸出（right: auto）。
    * 原型里弹层是跨到右栏那边的。
    */
-  .tpl-pop{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;overscroll-behavior:contain;overflow:hidden;
+  /* 定位由 placePop() 用 fixed 控制（不受祖先 overflow 裁剪） */
+  .tpl-pop{z-index:200;overscroll-behavior:contain;overflow:hidden;
     border:1px solid var(--border-2);border-radius:8px;background:#fff;
     box-shadow:0 4px 10px rgba(16,18,22,.08), 0 16px 40px rgba(16,18,22,.14);
     overflow:hidden}
@@ -467,7 +468,7 @@
    */
   .tpl-desc{padding:9px 13px;font-size:11.5px;line-height:1.5;color:var(--text-2);
     border-top:1px solid var(--border);background:#fbfbfc;
-    height:92px;box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain}
+    height:74px;box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain}
   .tpl-desc .d-title{color:var(--text);font-weight:600;margin-bottom:2px}
   .tpl-desc .d-secs{margin-top:2px;font-size:11px;color:var(--text-3)}
 

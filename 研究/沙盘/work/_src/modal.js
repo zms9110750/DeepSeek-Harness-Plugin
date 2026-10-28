@@ -249,42 +249,45 @@ function openCreator(init) {
   });
 
   /*
-   * 放置弹层。
+   * 放置弹层 —— 用 fixed 相对**视口**定位。
    *
-   * 用户截图里弹层底部被对话框裁掉了 —— 因为它是绝对定位，
-   * 不知道下面还剩多少空间。
+   * ## 为什么不用 absolute
    *
-   * 这里算一下：下面放不下就翻到按钮上方。
+   * 用户截图里弹层底部被裁掉一块（「编号前缀 GO 最终编号形如 GO-01」
+   * 压在边界上）。
+   *
+   * 原因是 absolute 的祖先里有 .modal-body（overflow:auto），
+   * 它会把超出的部分裁掉；而弹层比按钮高得多，底部就没了。
+   *
+   * fixed 不受任何祖先裁剪，位置按视口算。
    */
   function placePop() {
-    /* 先复位，否则测量用的是上一次的偏移 */
-    tplPop.style.top = '';
-    tplPop.style.bottom = '';
-    tplPop.style.maxHeight = '';
-
     const btn = tplBtn.getBoundingClientRect();
-    const body = document.querySelector('.modal-body');
-    if (body === null) return;
-    const bodyRect = body.getBoundingClientRect();
+    const gap = 6;
+    const margin = 12;
 
-    /* 弹层想要的高度：先让它自己量 */
+    /* 先按内容量出想要的高度（top 归零，不限制高度） */
+    tplPop.style.position = 'fixed';
+    tplPop.style.left = Math.round(btn.left) + 'px';
+    tplPop.style.width = Math.round(btn.width) + 'px';
+    tplPop.style.top = '0px';
+    tplPop.style.maxHeight = 'none';
+
     const wanted = tplPop.getBoundingClientRect().height;
-    /* 按钮下方到 body 底边的距离 */
-    const below = bodyRect.bottom - btn.bottom - 8;
 
-    if (wanted > below) {
-      /* 下面放不下 —— 看上面够不够 */
-      const above = btn.top - bodyRect.top - 8;
-      if (above > below) {
-        /* 翻到上方 */
-        tplPop.style.top = 'auto';
-        tplPop.style.bottom = 'calc(100% + 6px)';
-        tplPop.style.maxHeight = Math.max(160, above) + 'px';
-      } else {
-        /* 上面也不够 —— 留在下面，限制高度让它自己滚 */
-        tplPop.style.maxHeight = Math.max(160, below) + 'px';
-      }
+    /* 默认放下方 */
+    let top = btn.bottom + gap;
+    let maxH = window.innerHeight - top - margin;
+
+    /* 下方放不下、且上方空间更大 → 翻到上方 */
+    const above = btn.top - gap - margin;
+    if (wanted > maxH && above > maxH) {
+      maxH = above;
+      top = Math.max(margin, btn.top - gap - Math.min(wanted, above));
     }
+
+    tplPop.style.top = Math.round(top) + 'px';
+    tplPop.style.maxHeight = Math.max(160, Math.floor(maxH)) + 'px';
   }
 
   /*
