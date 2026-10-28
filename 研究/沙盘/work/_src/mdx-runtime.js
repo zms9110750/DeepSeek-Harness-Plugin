@@ -248,13 +248,20 @@ const MDX_COMPONENTS = {
  * @returns {HTMLElement|null}
  */
 /**
- * 当前正在渲染的那条事项 + 它每章的 action。
+ * 当前正在渲染的那条事项。
  *
  * 为什么要这个：组件只拿到 props（值），不知道自己在哪。
  * 但改值要写回 —— 得知道「哪条事项的哪一章」。
  *
  * 用模块级变量而不是往下传，是因为组件表是按名字查的，
  * 签名统一是 (props) => HTMLElement，塞不进额外参数。
+ *
+ * ## keys 只是兼容垫
+ *
+ * 章节身份现在写在 mdx 里（编译器加 key 属性），从标签自己身上读。
+ * keys / index 只在遇到**老 mdx**（没有 key 属性）时才用得上，
+ * 而且取不到就是空 key —— 空 key 会让 commit 拒绝写入，
+ * 表现为只读，而不是写错章。
  */
 let renderCtx = { taskId: '', keys: [], index: 0 };
 
@@ -278,7 +285,20 @@ function renderMdx(mdx, ctx) {
   const box = el('div', {class:'mdx'});
   for (const tag of tags) {
     const Component = MDX_COMPONENTS[tag.name];
-    const key = renderCtx.keys[renderCtx.index] || '';
+
+    /*
+     * 章节身份**从标签自己身上读**，不再按「第几个」猜。
+     *
+     * 编译器现在会把 key 写进 mdx：<Ask key="want" ... />
+     * 于是标签数和 key 数对不上也不会错位 —— 每一章自带身份。
+     *
+     * 兼容：老编译器产出的 mdx 没有 key 属性，那时退回按位置取，
+     * 且**取不到就留空**（空 key 会让 commit 拒绝写入，
+     * 表现为只读，而不是写错章）。
+     */
+    const key = typeof tag.attrs.key === 'string'
+      ? tag.attrs.key
+      : (renderCtx.keys[renderCtx.index] || '');
     renderCtx.index += 1;
 
     if (Component === undefined) {

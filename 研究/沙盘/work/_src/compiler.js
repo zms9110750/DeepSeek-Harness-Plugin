@@ -248,13 +248,38 @@ function compileSection(key, raw) {
   const action = COMPILER_ALIASES[given] || given;
   const compile = ACTION_COMPILERS[action];
 
+  /*
+   * 把章节 id 当成 mdx 的一个属性写进去。
+   *
+   * ## 为什么必须这样
+   *
+   * 渲染器要回答「用户改的这一章是哪一章」。之前它靠「这是第几个标签」
+   * 去猜，而标签数是编译器决定的、key 列表是另一个文件算的 ——
+   * 两份实现必须永远同步，没有任何机制保证。
+   *
+   * 一旦对不上（body.want = null / 章节缺 action / 旧字符串正文），
+   * 之后每一章都错开一格：用户改 A 章，值写进 B 章，静默生效。
+   *
+   * 把 key 写进 mdx 之后，身份跟着标签走，顺序不再重要。
+   *
+   * key 是纯字符串，走 lit()（JSON.stringify），
+   * 不破坏「参数只当字面量」的边界。
+   */
+  const withKey = function (mdx) {
+    if (key === '' || mdx === '') return mdx;
+    /* 插在第一个空格前：<Ask xxx /> → <Ask key="want" xxx /> */
+    const at = mdx.indexOf(' ');
+    if (at < 0) return mdx;
+    return mdx.slice(0, at) + ' key=' + lit(key) + mdx.slice(at);
+  };
+
   if (compile === undefined) {
     /* 不认识这个行为：输出一个灰卡组件。
        外部渲染器如果也不认识 Unknown，它自己会兜底。 */
-    return '<Unknown name=' + lit(given) + ' value={' + lit(raw) + '} />';
+    return withKey('<Unknown name=' + lit(given) + ' value={' + lit(raw) + '} />');
   }
 
-  return compile(raw);
+  return withKey(compile(raw));
 }
 
 /**

@@ -2071,13 +2071,38 @@ function compileSection(key, raw) {
   const action = COMPILER_ALIASES[given] || given;
   const compile = ACTION_COMPILERS[action];
 
+  /*
+   * 把章节 id 当成 mdx 的一个属性写进去。
+   *
+   * ## 为什么必须这样
+   *
+   * 渲染器要回答「用户改的这一章是哪一章」。之前它靠「这是第几个标签」
+   * 去猜，而标签数是编译器决定的、key 列表是另一个文件算的 ——
+   * 两份实现必须永远同步，没有任何机制保证。
+   *
+   * 一旦对不上（body.want = null / 章节缺 action / 旧字符串正文），
+   * 之后每一章都错开一格：用户改 A 章，值写进 B 章，静默生效。
+   *
+   * 把 key 写进 mdx 之后，身份跟着标签走，顺序不再重要。
+   *
+   * key 是纯字符串，走 lit()（JSON.stringify），
+   * 不破坏「参数只当字面量」的边界。
+   */
+  const withKey = function (mdx) {
+    if (key === '' || mdx === '') return mdx;
+    /* 插在第一个空格前：<Ask xxx /> → <Ask key="want" xxx /> */
+    const at = mdx.indexOf(' ');
+    if (at < 0) return mdx;
+    return mdx.slice(0, at) + ' key=' + lit(key) + mdx.slice(at);
+  };
+
   if (compile === undefined) {
     /* 不认识这个行为：输出一个灰卡组件。
        外部渲染器如果也不认识 Unknown，它自己会兜底。 */
-    return '<Unknown name=' + lit(given) + ' value={' + lit(raw) + '} />';
+    return withKey('<Unknown name=' + lit(given) + ' value={' + lit(raw) + '} />');
   }
 
-  return compile(raw);
+  return withKey(compile(raw));
 }
 
 /**
@@ -2450,13 +2475,20 @@ const MDX_COMPONENTS = {
  * @returns {HTMLElement|null}
  */
 /**
- * 当前正在渲染的那条事项 + 它每章的 action。
+ * 当前正在渲染的那条事项。
  *
  * 为什么要这个：组件只拿到 props（值），不知道自己在哪。
  * 但改值要写回 —— 得知道「哪条事项的哪一章」。
  *
  * 用模块级变量而不是往下传，是因为组件表是按名字查的，
  * 签名统一是 (props) => HTMLElement，塞不进额外参数。
+ *
+ * ## keys 只是兼容垫
+ *
+ * 章节身份现在写在 mdx 里（编译器加 key 属性），从标签自己身上读。
+ * keys / index 只在遇到**老 mdx**（没有 key 属性）时才用得上，
+ * 而且取不到就是空 key —— 空 key 会让 commit 拒绝写入，
+ * 表现为只读，而不是写错章。
  */
 let renderCtx = { taskId: '', keys: [], index: 0 };
 
@@ -2480,7 +2512,20 @@ function renderMdx(mdx, ctx) {
   const box = el('div', {class:'mdx'});
   for (const tag of tags) {
     const Component = MDX_COMPONENTS[tag.name];
-    const key = renderCtx.keys[renderCtx.index] || '';
+
+    /*
+     * 章节身份**从标签自己身上读**，不再按「第几个」猜。
+     *
+     * 编译器现在会把 key 写进 mdx：<Ask key="want" ... />
+     * 于是标签数和 key 数对不上也不会错位 —— 每一章自带身份。
+     *
+     * 兼容：老编译器产出的 mdx 没有 key 属性，那时退回按位置取，
+     * 且**取不到就留空**（空 key 会让 commit 拒绝写入，
+     * 表现为只读，而不是写错章）。
+     */
+    const key = typeof tag.attrs.key === 'string'
+      ? tag.attrs.key
+      : (renderCtx.keys[renderCtx.index] || '');
     renderCtx.index += 1;
 
     if (Component === undefined) {
@@ -3364,31 +3409,13 @@ function el(tag, props, ...children) {
 function renderBody(task) {
   const mdx = compileBody(task);
   if (mdx === '') return null;
-  return renderMdx(mdx, { taskId: task.id, keys: sectionKeys(task) });
-}
-
-/**
- * 按 compileBody 的顺序列出章节 id。
- *
- * 因为 renderMdx 是按标签顺序走的，得让两边顺序对上，
- * 否则改值会改错章。
- *
- * @param {object} task
- * @returns {string[]}
- */
-function sectionKeys(task) {
-  const body = task.body;
-  if (body === null || typeof body !== 'object') return [];
-
-  const sections = sectionsOf(task.type);
-  const keys = [];
-  for (const s of sections) {
-    if (body[s.id] !== undefined) keys.push(s.id);
-  }
-  for (const key of Object.keys(body)) {
-    if (!sections.some((s) => s.id === key)) keys.push(key);
-  }
-  return keys;
+  /*
+   * keys 传空数组 —— 章节身份现在写在 mdx 里（编译器加 key 属性），
+   * 渲染器从标签自己身上读，不再靠位置对齐。
+   *
+   * sectionKeys / renderCtx.keys 整个机制已经不需要了。
+   */
+  return renderMdx(mdx, { taskId: task.id, keys: [] });
 }
 
 /**
