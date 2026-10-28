@@ -146,7 +146,24 @@ const server = createServer(async (request, response) => {
 
 		/* ── 健康检查 ── */
 		if (path === '/api/ping') {
-			sendJson(response, 200, { ok: true, port: PORT, items: await mtime(ITEMS) });
+			/*
+			 * page 是 工作区.html 的修改时间。
+			 *
+			 * 页面自己轮询这个值 —— 一旦发现服务端的 HTML 比自己新，
+			 * 就提示「有新版本」并自动重载。
+			 *
+			 * 用户原话：
+			 *   > 我关闭标签复制网址以后好了。ctrlf5并不成功。
+			 *
+			 * Ctrl+F5 对本地 127.0.0.1 页面不可靠（Edge 会跳过强制刷新
+			 * 某些情况下）。与其让用户记着关标签，不如让页面自己发现。
+			 */
+			sendJson(response, 200, {
+				ok: true,
+				port: PORT,
+				items: await mtime(ITEMS),
+				page: await mtime(PAGE)
+			});
 			return;
 		}
 

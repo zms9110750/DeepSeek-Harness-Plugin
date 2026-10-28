@@ -166,7 +166,13 @@ const server = createServer(async (request, response) => {
 
 		/* ── 健康检查 ── */
 		if (path === '/api/ping') {
-			sendJson(response, 200, { ok: true, port: PORT, items: await mtime(ITEMS) });
+			/* page 用于页面自检版本 —— 服务端 HTML 变了就自动刷新 */
+			sendJson(response, 200, {
+				ok: true,
+				port: PORT,
+				items: await mtime(ITEMS),
+				page: await mtime(PAGE)
+			});
 			return;
 		}
 

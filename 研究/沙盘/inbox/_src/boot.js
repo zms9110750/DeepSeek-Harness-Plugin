@@ -77,3 +77,35 @@ if (clearBtn) {
   renderAll();
   await loadDraft();
 })();
+
+
+/* ══════════════════════════════════════════════════════════════
+   版本检测 —— 服务端页面比本页新就自动重载
+
+   和工作区那边同一套。Ctrl+F5 对 127.0.0.1 不可靠，
+   所以让页面自己发现过期。
+   ══════════════════════════════════════════════════════════════ */
+
+let pageStamp = 0;
+
+async function checkPageVersion() {
+  try {
+    const response = await fetch(API.replace(/\/api\/.*$/u, '/api/ping'), { cache: 'no-store' });
+    if (!response.ok) return;
+    const data = await response.json();
+    const next = Number(data.page || 0);
+    if (next === 0) return;
+    if (pageStamp === 0) { pageStamp = next; return; }
+    if (next !== pageStamp) {
+      pageStamp = next;
+      const bar = document.createElement('div');
+      bar.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:9999;padding:7px 14px;border-radius:20px;background:#191b1f;color:#fff;font-size:12px;box-shadow:0 6px 20px rgba(0,0,0,.25);font-family:inherit';
+      bar.textContent = '页面已更新，正在刷新…';
+      document.body.appendChild(bar);
+      setTimeout(() => { location.reload(); }, 600);
+    }
+  } catch { /* 服务没起 */ }
+}
+
+checkPageVersion();
+setInterval(checkPageVersion, 3000);
