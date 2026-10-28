@@ -302,11 +302,11 @@ const TYPE_NAMES = {
 	H1: '需要授权 · 代价过大',
 	H2: '需要授权 · 用户转移话题',
 	H3: '需要授权 · 方案缺陷过大',
-	H4: '需要补充 · 缺用户信息',
-	H5: '需要补充 · 需要先调研',
+	H4: '需要信息 · 缺用户信息',
+	H5: '需要信息 · 需要先调研',
 	H6: '需要授权 · 资源被占用',
 	H7: '需要授权 · 缺权限 / 环境不对',
-	H8: '需要补充 · 子任务未回收',
+	H8: '需要信息 · 子任务未回收',
 };
 
 /*
@@ -469,7 +469,7 @@ function isClaimable(task) {
 }
 
 /** 父节点处于这些状态时，不允许再往下派生/领取。 */
-const PARENT_CLOSED = new Set(['完成', '失败', '取消', '拒绝']);
+const PARENT_CLOSED = new Set(['成功', '失败', '取消', '拒绝']);
 
 /** 模板目录说明，给工具描述用：`G 用户提出 / Q 决策 / …`，从常量生成避免漏改。 */
 function typeCatalog() {
@@ -495,7 +495,7 @@ function resolveKindArg(raw, type) {
 }
 
 /* 计划状态复用 A2A 的九态（见 计划\19-A2A调研\README.md）。 */
-const STATUS = ['未指定', '提交', '处理中', '需要补充', '需要授权', '完成', '失败', '取消', '拒绝'];
+const STATUS = ['未指定', '提交', '处理中', '需要信息', '需要授权', '成功', '失败', '取消', '拒绝'];
 
 /* 领取决定的常量在 task_claim 里（CLAIMABLE_FROM），
    原来这里还有一个 `CLAIMABLE = ['提交']`，改完就没用了。 */
@@ -504,34 +504,34 @@ const STATUS = ['未指定', '提交', '处理中', '需要补充', '需要授�
  * 九态 → 分组。一个状态**可以属于多个组**：
  *
  *   进行：还活着（已采纳待领、正在做、或者停下来等人但没放弃）
- *   搁置：停下来等人（需要补充 / 需要授权）
+ *   搁置：停下来等人（需要信息 / 需要授权）
  *   完成：终结了（成功 / 失败 / 取消 / 拒绝）
  *
- * 「需要补充」「需要授权」同时属于「进行」和「搁置」——它们是**进行中的暂停**，
+ * 「需要信息」「需要授权」同时属于「进行」和「搁置」——它们是**进行中的暂停**，
  * 不是终结。所以 GROUP_OF 的值是数组，判定用 hasGroup()，不要用 ===。
  *
  * 三分类（ACTIVE / DRAFT / FINAL，级联用的口径）由分组派生，不再各处手写：
- *   · 进行态 = 属于「进行」且不属于「完成」 → 活着，会被级联取消/搁置
- *   · 完成态 = 属于「完成」               → 已交付，不销毁
+ *   · 进行态 = 属于「进行」且不属于「结束」 → 活着，会被级联取消/搁置
+ *   · 成功态 = 属于「结束」               → 已交付，不销毁
  *   · 草稿   = 两组都不属于（只有「未指定」）→ 没采纳，不作数
  */
 const GROUP_OF = {
 	未指定: [],
 	提交: ['进行'],
 	处理中: ['进行'],
-	需要补充: ['进行', '搁置'],
+	需要信息: ['进行', '搁置'],
 	需要授权: ['进行', '搁置'],
-	完成: ['完成'],
-	失败: ['完成'],
-	取消: ['完成'],
-	拒绝: ['完成'],
+	成功: ['结束'],
+	失败: ['结束'],
+	取消: ['结束'],
+	拒绝: ['结束'],
 };
 
 /** 三组的定义（顺序即面板展示顺序）。 */
 const GROUPS = [
 	{ id: '进行', label: '进行', hint: '还活着：在做，或者停下来等人但没放弃' },
-	{ id: '搁置', label: '搁置', hint: '停下来等人：需要补充 / 需要授权' },
-	{ id: '完成', label: '完成', hint: '终结：成功 / 失败 / 取消 / 拒绝' },
+	{ id: '搁置', label: '搁置', hint: '停下来等人：需要信息 / 需要授权' },
+	{ id: '结束', label: '结束', hint: '终结：成功 / 失败 / 拒绝 / 取消' },
 ];
 
 /** 某个状态属于哪些组（拷贝，调用方改了不影响定义）。 */
@@ -544,12 +544,12 @@ function hasGroup(status, group) {
 	return (GROUP_OF[status] || []).includes(group);
 }
 
-/** 进行态：属于「进行」且不属于「完成」。 */
-const ACTIVE = STATUS.filter((status) => hasGroup(status, '进行') && !hasGroup(status, '完成'));
-/** 完成态：属于「完成」。 */
-const FINAL = STATUS.filter((status) => hasGroup(status, '完成'));
+/** 进行态：属于「进行」且不属于「结束」。 */
+const ACTIVE = STATUS.filter((status) => hasGroup(status, '进行') && !hasGroup(status, '结束'));
+/** 成功态：属于「结束」。 */
+const FINAL = STATUS.filter((status) => hasGroup(status, '结束'));
 /** 草稿：两组都不属于（目前只有「未指定」）。 */
-const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup(status, '完成'));
+const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup(status, '结束'));
 
 /*
  * ---------------------------------------------------------------------------
@@ -562,7 +562,7 @@ const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup
  *   > 子任务都被需要授权：需要授权。
  *   > 子任务有采纳的且未完成未中断：进行中。
  *   > 子任务全部失败：失败。
- *   > 子任务都在完成态且不是全部失败：完成。
+ *   > 子任务都在成功态且不是全部失败：完成。
  *
  * **不落盘**——只在读取时算。理由（用户原话）：
  *   「不存推导值。手动不能点完成。因为目标的语义就是无限的。完成了还能重开。没意义。」
@@ -573,45 +573,97 @@ const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup
  * 所以这里返回的是**展示用的派生状态**，它不进 `status` 字段，
  * 也不参与 `TRANSITIONS` 判定。真实的 `status` 仍然只由用户/工具显式设置。
  */
+/*
+ * ---------------------------------------------------------------------------
+ * 目标的状态由子事项推导（GU-08 1.1–1.10）
+ * ---------------------------------------------------------------------------
+ *
+ * 用户原话（1.1–1.10，后者成立需前者不成立）：
+ *
+ *   > 1.1 初始为未指定。需要手动进行状态转移进行"采纳"。采纳后才能进入
+ *   >     下方序列进行计算状态
+ *   > 1.2 如果没有任何子任务或他们的状态为"未指定"，为"提交"
+ *   > 1.3 如果有任何子任务为"处理中"或"提交"，则为"处理中"
+ *   > 1.4 如果有任何子任务为"需要信息"，则为"需要信息"
+ *   > 1.5 如果有任何子任务为"需要授权"，则为"需要授权"
+ *   > 1.6 如果有任何子任务为"失败"，且没有任何子任务为"成功"，则为"失败"
+ *   > 1.7 如果有任何子任务为"成功"，则为"成功"
+ *   > 1.8 任何时候可以手动控制状态转移为"取消"
+ *   > 1.9 目标不会成为"拒绝"
+ *
+ * ## 1.3 压在 1.4 上面，是刻意的
+ *
+ * 用户原话：
+ *
+ *   > 处理中，那么意味着 ai 要继续。你变成需要信息，那做一个停一个？
+ *   > 用户需要无人值守。
+ *
+ * 所以只要有一条子任务在跑，目标就显示"处理中" —— 哪怕另一条在等你补信息。
+ * "等你"这件事在子任务那一层看得见，不需要冒到目标上把整块板变成红色。
+ *
+ * ## 不落盘
+ *
+ * 目标是纯投影：它没有自己的生命周期，只有"下面那堆事到哪一步了"。
+ * 推导值不进 `status` 字段。真实的 `status` 只由用户/工具显式设置。
+ */
 const GOAL_DERIVED = {
 	未开始: '未开始',
+	提交: '提交',
+	处理中: '处理中',
+	需要信息: '需要信息',
 	需要授权: '需要授权',
-	需要补充: '需要补充',
-	进行中: '进行中',
 	失败: '失败',
-	完成: '完成',
-	取消: '已取消',
+	成功: '成功',
+	已取消: '已取消',
 };
 
 /**
- * 按子事项推导一个目标当前的样子。没有子事项时返回 `未开始`。
+ * 按子事项推导一个目标当前的样子。
  *
- * 优先级（先命中先返回）：
- *   1. 没有非草稿子事项            → 未开始
- *   2. 有子事项在「需要补充」      → 需要补充（用户没提，但它也是"中断"，归这里）
- *   3. 活跃的都在「需要授权」      → 需要授权
- *   4. 有子事项在「提交/处理中」  → 进行中
- *   5. 全是「失败」                → 失败
- *   6. 全终结且不全失败            → 完成
- *   7. 其它（混合了草稿和终结）    → 进行中（还有草稿没采纳，等于没完）
+ * 返回 `未开始` 表示「还没采纳」或「下面什么都没有」——
+ * 这两件事对用户是同一个意思：这目标还没动。
+ *
+ * @param {object} task
+ * @param {object[]} all
+ * @returns {string}
  */
 function deriveGoalStatus(task, all) {
-	const children = all.filter((item) => item.parent === task.id);
-	/* 草稿（未指定）不算数：用户还没采纳，等于"还没开始"。 */
-	const live = children.filter((item) => !DRAFT.includes(String(item.status || '未指定')));
-	if (live.length === 0) {
-		return children.length === 0 ? GOAL_DERIVED.未开始 : GOAL_DERIVED.未开始;
-	}
+	/* 1.1：没采纳就不计算，直接算未开始。 */
+	if (String(task.status || '未指定') === '未指定') return GOAL_DERIVED.未开始;
 
-	const statuses = live.map((item) => String(item.status || ''));
-	if (statuses.some((status) => status === '需要补充')) return GOAL_DERIVED.需要补充;
-	if (statuses.every((status) => status === '需要授权')) return GOAL_DERIVED.需要授权;
-	if (statuses.some((status) => status === '提交' || status === '处理中')) return GOAL_DERIVED.进行中;
-	if (statuses.every((status) => status === '失败')) return GOAL_DERIVED.失败;
-	/* 全终结且不全是失败 */
-	if (statuses.every((status) => FINAL.includes(status))) return GOAL_DERIVED.完成;
-	/* 混合：有还没开始的、也有终结的 */
-	return GOAL_DERIVED.进行中;
+	const children = all.filter((item) => item.parent === task.id);
+	const statuses = children.map((item) => String(item.status || '未指定'));
+
+	/* 1.2：没有子任务，或者子任务全是未指定 → 提交（已采纳，还没动）。 */
+	const live = statuses.filter((status) => status !== '未指定');
+	if (live.length === 0) return GOAL_DERIVED.提交;
+
+	/* 1.3：有任何子任务在处理中或提交 → 处理中。 */
+	if (live.some((status) => status === '处理中' || status === '提交')) return GOAL_DERIVED.处理中;
+
+	/* 1.4：有需要信息 → 需要信息。 */
+	if (live.some((status) => status === '需要信息')) return GOAL_DERIVED.需要信息;
+
+	/* 1.5：有需要授权 → 需要授权。 */
+	if (live.some((status) => status === '需要授权')) return GOAL_DERIVED.需要授权;
+
+	/* 1.6：有失败且没有任何成功 → 失败。 */
+	const hasFail = live.some((status) => status === '失败');
+	const hasDone = live.some((status) => status === '成功');
+	if (hasFail && !hasDone) return GOAL_DERIVED.失败;
+
+	/* 1.7：有任何成功 → 成功。 */
+	if (hasDone) return GOAL_DERIVED.成功;
+
+	/*
+	 * 兜底：到这里只可能是「子任务全是 取消 / 拒绝」。
+	 *
+	 * 规则里没写这一档（1.2–1.7 都要求子任务在某个具体状态），
+	 * 但不给兜底的话目标会没有状态。子任务全都不做了 → 目标也不做了。
+	 */
+	if (live.every((status) => status === '取消' || status === '拒绝')) return GOAL_DERIVED.已取消;
+
+	return GOAL_DERIVED.处理中;
 }
 
 function isActive(status) {
@@ -837,7 +889,7 @@ async function setTags(id, tags) {
  *
  * 为什么必须与状态分开：
  *   · 「已读」不是生命周期的一部分——一件「处理中」的事项可以已读也可以未读
- *   · 「需要处理」可能对应多个状态（需要授权 / 待选 / 需要补充），
+ *   · 「需要处理」可能对应多个状态（需要授权 / 待选 / 需要信息），
  *     但语义是同一个：**等我**
  *   · 塞进状态会数量爆炸（3 组 × 2 读 × 2 待 = 12 种，还要按 kind 再乘）
  */
@@ -959,8 +1011,8 @@ function renderList(tasks) {
 	for (const task of tasks) lines.push(`- ${summarize(task)}`);
 	lines.push(
 		'',
-		'九态分组：进行=提交/处理中/需要补充/需要授权；搁置=需要补充/需要授权；完成=完成/失败/取消/拒绝。',
-		'需要补充与需要授权同时属于「进行」和「搁置」——是进行中的暂停，不是终结。',
+		'九态分组：进行=提交/处理中/需要信息/需要授权；搁置=需要信息/需要授权；结束=成功/失败/拒绝/取消。',
+		'需要信息与需要授权同时属于「进行」和「搁置」——是进行中的暂停，不是终结。',
 		'未指定=AI 提交但用户还没采纳，不能领取；提交=可以 task_claim。',
 	);
 	return lines.join('\n');
@@ -1199,7 +1251,7 @@ async function dispatchOptions(fromId) {
 /**
  * 一个计划进入终止态后，把整片下游一起收掉（递归、防环）。
  *
- * 下游有两种，都是「进行态 → 取消」，草稿与完成态一律不动：
+ * 下游有两种，都是「进行态 → 取消」，草稿与成功态一律不动：
  *   · 派生子计划：`parent` 指向我；
  *   · 依赖方：`links` 里写着 `依赖:<我>`。
  *
@@ -1211,7 +1263,7 @@ async function dispatchOptions(fromId) {
  */
 async function cascadeClose(rootId, rootStatus) {
 	const seen = new Set();
-	const queue = [{ id: rootId, closeDependents: rootStatus !== '完成' }];
+	const queue = [{ id: rootId, closeDependents: rootStatus !== '成功' }];
 	while (queue.length > 0) {
 		const item = queue.shift();
 		if (seen.has(item.id)) continue;
@@ -1247,15 +1299,15 @@ async function cascadeClose(rootId, rootStatus) {
  *
  * 其它边按工作流放开（第一版写得太严，把正常用法也挡了）：
  *
- *   · 草稿可以转 需要补充 / 需要授权：H1..H8 搁置模板就是这么用的，
+ *   · 草稿可以转 需要信息 / 需要授权：H1..H8 搁置模板就是这么用的，
  *     建完草稿直接标明「我在等什么」。这两个状态**不授予任何权限**，安全。
- *   · 提交（已采纳、还没人领）可以转 需要补充 / 需要授权 / 完成 / 失败 / 取消 / 拒绝：
+ *   · 提交（已采纳、还没人领）可以转 需要信息 / 需要授权 / 完成 / 失败 / 取消 / 拒绝：
  *     用户采纳了但决定先不做、或者发现根本不用做。
- *   · 进行态之间随便转：处理中 ↔ 需要补充 / 需要授权，处理中 → 拒绝 也算放弃。
+ *   · 进行态之间随便转：处理中 ↔ 需要信息 / 需要授权，处理中 → 拒绝 也算放弃。
  *   · 终态（完成 / 失败 / 取消 / 拒绝）只能被**用户**重开回「提交」（T-030 决议）。
  */
-const ACTIVE_ALL = ['提交', '处理中', '需要补充', '需要授权'];
-const TERMINAL = ['完成', '失败', '取消', '拒绝'];
+const ACTIVE_ALL = ['提交', '处理中', '需要信息', '需要授权'];
+const TERMINAL = ['成功', '失败', '取消', '拒绝'];
 const DRAFT_STATUS = '未指定';
 
 /** 终态：重开这类计划属于「用户专属」动作，模型不能自己干。 */
@@ -1399,11 +1451,11 @@ async function setStateInner(id, next, agent, byUser, note) {
 		 * 原来只认「提交」，于是这条链会永久卡死：
 		 *
 		 *   领取 → 处理中
-		 *   AI 卡住 → 置为「需要补充」（setStateInner 会清掉 CLAIMS）
-		 *   用户补完信息 → 状态还是「需要补充」
+		 *   AI 卡住 → 置为「需要信息」（setStateInner 会清掉 CLAIMS）
+		 *   用户补完信息 → 状态还是「需要信息」
 		 *   AI 想接着做 → task_claim 要求 from === '提交' → 拒绝
 		 *
-		 * 「需要补充」「需要授权」的语义是**进行中的暂停**，不是终结
+		 * 「需要信息」「需要授权」的语义是**进行中的暂停**，不是终结
 		 * （见 GROUP_OF：它们同时属于「进行」和「搁置」）。暂停之后
 		 * 当然要能恢复，否则这张计划只能被取消重开。
 		 *
@@ -1411,7 +1463,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 		 *   · 草稿进不来（transitionBlocker 拦了「未指定」→「处理中」）
 		 *   · 已被别人领走的会读成「处理中」，而「处理中」不在这里的白名单
 		 */
-		const CLAIMABLE_FROM = ['提交', '需要补充', '需要授权'];
+		const CLAIMABLE_FROM = ['提交', '需要信息', '需要授权'];
 		if (!CLAIMABLE_FROM.includes(from)) {
 			throw new Error(
 				`${task.id} 当前状态是「${from}」，不能领取。` +
@@ -1428,8 +1480,8 @@ async function setStateInner(id, next, agent, byUser, note) {
 		const blocker2 = await claimBlocker(task);
 		if (blocker2 !== '') throw new Error(`不能领取 ${task.id}：${blocker2}`);
 	}
-	if (wanted === '完成') {
-		/* 上行：子计划里只要还有「进行态」（提交 / 处理中 / 需要补充 / 需要授权），父计划就不能完成。
+	if (wanted === '成功') {
+		/* 上行：子计划里只要还有「进行态」（提交 / 处理中 / 需要信息 / 需要授权），父计划就不能完成。
 		   草稿（未指定）不作数，完成态（完成/失败/取消/拒绝）不阻挡。 */
 		const all = await listAll();
 		const open = all.filter((child) => child.parent === task.id && isActive(child.status));
@@ -1473,7 +1525,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 			CLAIMS.delete(key);
 		}
 	}
-	if (wanted === '需要补充' || wanted === '需要授权') await shelveChildren(task.id);
+	if (wanted === '需要信息' || wanted === '需要授权') await shelveChildren(task.id);
 	if (isFinal(wanted)) await cascadeClose(task.id, wanted);
 	return task;
 }
@@ -1644,7 +1696,7 @@ async function claimBlocker(task, tasks) {
 		if (dep === undefined) return `依赖 ${link.to} 不存在`;
 		/* 依赖：必须先完成才能领。这是"还没开始、要等前面"的语义，
 		   和"阻碍"（在做、中途卡住）不是一回事。 */
-		if (dep.status !== '完成') return `依赖 ${link.to} 还没完成（当前「${dep.status}」），不能领取`;
+		if (dep.status !== '成功') return `依赖 ${link.to} 还没完成（当前「${dep.status}」），不能领取`;
 	}
 	/* 约束（RELATIONS.约束 = soft）：**不硬拒，只往 text 里加提示**。
 	 *
@@ -1766,8 +1818,8 @@ async function assertParent(parentId, childKind, childType) {
 	}
 }
 /**
- * 父计划被搁置（需要补充/需要授权）时，进行态的子计划一起转「需要授权」（递归，防环）。
- * 草稿（未指定）不作数、完成态是已交付的记录——两者都不动。
+ * 父计划被搁置（需要信息/需要授权）时，进行态的子计划一起转「需要授权」（递归，防环）。
+ * 草稿（未指定）不作数、成功态是已交付的记录——两者都不动。
  */
 async function shelveChildren(parentId, visited) {
 	const seen = visited || new Set();
@@ -1793,7 +1845,7 @@ async function cancelDerived(sourceId, all, visited) {
 		if (other.id === sourceId) continue;
 		const derived = linkPairs(other).some((link) => link.label === '派生' && link.to === sourceId);
 		if (!derived) continue;
-		/* 只动进行态：草稿不作数，完成态是已交付的记录。 */
+		/* 只动进行态：草稿不作数，成功态是已交付的记录。 */
 		if (isActive(other.status)) {
 			other.status = '取消';
 			other.claimed_by = '';
