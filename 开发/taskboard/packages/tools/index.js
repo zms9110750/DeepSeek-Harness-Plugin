@@ -36,8 +36,9 @@
  * 却没搬 import。运行期直接 ReferenceError，被 catch 吞掉，
  * 于是 INDEX.json 永远写不出来，面板报「读不到模板」。
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 /*
  * 正文校验（行动库 + 模板章节）。
@@ -570,6 +571,41 @@ function registerTools(ctx) {
 }
 
 function registerCommands(ctx) {
+	/*
+	 * 原型预览：把研究沙盘里那套 HTML 原样吐出来。
+	 *
+	 * ## 为什么走命令而不是静态资源
+	 *
+	 * 客户端插件拿不到自己的资源 URL（没有 `import.meta.url` 之类）。
+	 * 它唯一能跟宿主说话的路是 `remote.commands.execute`。
+	 * 所以把 HTML 当命令返回值传过去，前端用 iframe srcDoc 渲染。
+	 *
+	 * ## 文件在哪
+	 *
+	 * `packages/ui/prototype/` 下两份快照。它们是**研究阶段的产物**，
+	 * 跟着仓库走（不依赖 研究/沙盘 目录在不在一起）。
+	 */
+	ctx.commands.register({
+		name: 'taskboard-prototype',
+		description: '输出原型预览页的 HTML（面板用 iframe 显示）',
+		recordInput: false,
+		async handler() {
+			const which = 'work';
+			try {
+				const html = await readFile(
+					join(dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'prototype', `${which}.html`),
+					'utf8',
+				);
+				return { kind: 'success', text: html };
+			} catch (failure) {
+				return {
+					kind: 'error',
+					text: `原型快照读不出来：${failure?.message ?? failure}\n（文件应在 packages/ui/prototype/${which}.html）`,
+				};
+			}
+		},
+	});
+
 	ctx.commands.register({
 		name: 'tasks',
 		description: '输出任务库全部计划头的 JSON（面板读取）',

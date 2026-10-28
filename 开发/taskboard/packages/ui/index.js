@@ -79,6 +79,20 @@ export const inject = [];
 export const Config = z.object({
 	drawer: z.boolean().default(true).description('输入框旁边的箭头抽屉').volatile(),
 	sidebar: z.boolean().default(true).description('右侧栏的「任务」标签页').volatile(),
+	/*
+	 * 原型预览：一个全屏 iframe，装的是研究沙盘里那套 HTML。
+	 *
+	 * 用途是**对照**——改 mod 的时候开着它，能一眼看出"线上这个界面"
+	 * 和"沙盘里那个界面"差在哪。
+	 *
+	 * 沙盘是研究阶段的产物，可能不存在（用户没把 研究/沙盘 一起 checkout）。
+	 * 所以默认关，且打不开时给一条说明而不是白屏。
+	 */
+	prototype: z
+		.boolean()
+		.default(false)
+		.description('原型预览：内嵌研究沙盘的界面（用于对照）')
+		.volatile(),
 });
 
 /*

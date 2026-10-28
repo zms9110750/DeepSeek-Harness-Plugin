@@ -1,0 +1,4931 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作区 · AI 改版沙盘</title>
+<style>
+  :root{
+    --bg:#f4f5f6; --card:#fff; --border:#e4e6e8; --border-2:#d3d6da;
+    --text:#23262b; --text-2:#6b7075; --text-3:#9ba0a6;
+    --black:#1a1d21; --brand:#3b7dd8; --goal:#7c5cd6; --work:#2e9e6b;
+    --record:#8a9099; --warn:#c98a20; --danger:#c0392b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px 20px 60px;background:var(--bg);color:var(--text);
+    font:13px/1.5 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  h1{margin:0 0 4px;font-size:18px;font-weight:650}
+  .sub{margin:0 0 18px;color:var(--text-2);font-size:12.5px;max-width:900px}
+  .sub code{font:11.5px ui-monospace,Menlo,Consolas,monospace;background:#eceef0;padding:1px 5px;border-radius:3px}
+  .toplink{float:right;font-size:12px;color:var(--brand);text-decoration:none;
+    padding:5px 11px;border:1px solid var(--brand);border-radius:6px}
+  .toplink:hover{background:rgba(59,125,216,.07)}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:18px;align-items:start}
+  @media(max-width:1180px){.layout{grid-template-columns:1fr}}
+
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 1px 3px rgba(16,18,22,.06),0 8px 24px rgba(16,18,22,.05);overflow:hidden}
+  .panel-head{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border)}
+  .panel-title{font-weight:650;font-size:13.5px}
+  .count{color:var(--text-3);font-size:11.5px}
+  .grow{flex:1}
+  .btn{font:inherit;font-size:12px;padding:5px 11px;border-radius:6px;border:1px solid var(--border-2);
+    background:#fff;color:var(--text);cursor:pointer}
+  .btn:hover{border-color:#b9bdc2}
+  .btn.primary{background:var(--black);border-color:var(--black);color:#fff;font-weight:550}
+
+  .groups{display:flex;align-items:center;gap:6px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;background:#fcfcfd}
+  .group{font:inherit;font-size:12px;padding:4px 11px;border-radius:14px;border:1px solid var(--border-2);
+    background:#fff;color:var(--text-2);cursor:pointer}
+  .group.on{background:var(--black);border-color:var(--black);color:#fff;font-weight:600}
+  .group .n{opacity:.65;font-size:11px;margin-left:3px}
+
+  .filters{display:flex;align-items:center;gap:6px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .chip{font:inherit;font-size:11.5px;padding:3px 10px;border-radius:12px;border:1px solid var(--border-2);
+    background:#fff;color:var(--text-2);cursor:pointer}
+  .chip.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+  .search{font:inherit;font-size:12px;padding:5px 9px;border-radius:6px;border:1px solid var(--border-2);
+    background:#fff;outline:none;width:150px;margin-left:auto}
+
+  .rows{max-height:520px;overflow:auto}
+  .row{display:grid;grid-template-columns:auto auto 1fr auto;align-items:center;gap:9px;
+    padding:9px 14px;border-bottom:1px solid #f0f1f2;cursor:pointer;text-align:left;
+    background:transparent;border-left:0;border-right:0;border-top:0;font:inherit;width:100%}
+  .row:hover{background:#f7faff}
+  .row.on{background:#eef3fb;box-shadow:inset 3px 0 0 var(--brand)}
+  .row .id{font-weight:700;font-size:11.5px;letter-spacing:.02em;flex:none}
+  .row .kind{font-size:10px;padding:1px 6px;border-radius:3px;flex:none}
+  .row .title{color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .row .dot{font-size:8px;flex:none}
+
+  .detail{background:var(--card);border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 1px 3px rgba(16,18,22,.06),0 8px 24px rgba(16,18,22,.05);
+    display:flex;flex-direction:column;max-height:calc(100vh - 120px);position:sticky;top:16px}
+  .d-head{padding:13px 15px 10px;border-bottom:1px solid var(--border);flex:none;position:relative}
+  .d-top{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+  .d-top .id{font-weight:700;font-size:12px}
+  .d-top .kind{font-size:10px;padding:1px 7px;border-radius:3px}
+  .d-top .tpl{font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--border-2);color:var(--text-3)}
+  .icon-btn{width:26px;height:26px;padding:0;border:0;border-radius:5px;background:transparent;
+    color:var(--text-2);cursor:pointer;font-size:13px;display:grid;place-items:center}
+  .icon-btn:hover{background:#f2f4f6}
+  .d-head h3{margin:0 0 7px;font-size:16px;font-weight:650;line-height:1.35}
+  .d-meta{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--text-2);flex-wrap:wrap}
+  .status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:10px;
+    font:inherit;font-size:11px;font-weight:600;border:1px solid transparent;background:transparent;cursor:pointer}
+  .status-menu{position:absolute;left:15px;top:calc(100% + 6px);z-index:30;width:236px;padding:5px;
+    background:#fff;border:1px solid var(--border-2);border-radius:8px;
+    box-shadow:0 4px 10px rgba(16,18,22,.08),0 16px 40px rgba(16,18,22,.16)}
+  .status-menu[hidden]{display:none}
+  .menu-cap{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.06em;padding:6px 9px 4px}
+  .menu-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 9px;font:inherit;font-size:12.5px;
+    text-align:left;background:transparent;border:0;border-radius:5px;cursor:pointer;color:var(--text)}
+  .menu-item:hover{background:#f2f4f6}
+  .menu-item .ic{flex:none;width:14px;text-align:center;opacity:.7}
+  .menu-item.primary{color:var(--brand);font-weight:600}
+  .menu-item.bad{color:var(--danger)}
+  .menu-note{font-size:10.5px;color:var(--text-3);padding:6px 9px;line-height:1.5;
+    border-top:1px solid var(--border);margin-top:4px}
+
+  .parent-row{display:flex;align-items:center;gap:8px;padding:8px 15px;
+    border-bottom:1px solid var(--border);flex:none;background:#fcfcfd}
+  .rel-toggle{display:inline-flex;align-items:center;gap:5px;flex:none;padding:4px 9px;font:inherit;
+    font-size:11.5px;color:var(--text-2);background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;cursor:pointer}
+  .rel-toggle[aria-expanded="true"]{background:#eef0f2}
+  .rel-toggle .n{font-size:10px;font-weight:700;padding:0 5px;border-radius:8px;
+    background:#eceef0;color:var(--text-2);line-height:15px}
+  .rel-toggle .chev{font-size:8px;transition:transform .15s;display:inline-block}
+  .rel-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
+  .vsep{width:1px;height:16px;background:var(--border-2);flex:none}
+  .pcap{font-size:11px;font-weight:600;color:var(--text-3);flex:none}
+  .pbtn{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;font:inherit;font-size:11px;
+    background:#fff;border:1px solid var(--border-2);border-radius:8px;color:var(--brand);cursor:pointer}
+  .derive-btn{display:inline-flex;align-items:center;gap:5px;flex:none;padding:5px 11px;font:inherit;
+    font-size:12px;font-weight:550;background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;color:var(--text);cursor:pointer;margin-left:auto}
+  .derive-btn:hover{border-color:var(--black);background:#f7f8f9}
+
+  .rel-body{padding:0 15px 10px;border-bottom:1px solid var(--border);background:#fbfbfc;flex:none}
+  .rel-body[hidden]{display:none}
+  .rel-headrow{display:grid;grid-template-columns:repeat(3,1fr);margin-top:10px;
+    background:#e4e7ea;border:1px solid var(--border-2);border-bottom:2px solid var(--border-2);
+    border-radius:5px 5px 0 0;overflow:hidden}
+  .rel-head{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;
+    padding:6px 9px;border-left:3px solid var(--border-2)}
+  .rel-head.active{border-left-color:var(--brand)}
+  .rel-head.held{border-left-color:var(--warn)}
+  .rel-head.done{border-left-color:var(--work)}
+  .rel-block{margin-top:8px}
+  .rel-banner{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;
+    color:var(--text-2);letter-spacing:.03em;padding:3px 9px;background:#eef0f2;
+    border-left:3px solid var(--border-2);border-radius:4px 4px 0 0}
+  .rel-cells{display:grid;grid-template-columns:repeat(3,1fr)}
+  .rel-cell{padding:5px 4px 3px;display:grid;gap:3px;align-content:start;border-radius:4px}
+  .rel-cell.void{background-image:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(0,0,0,.022) 3px,rgba(0,0,0,.022) 6px)}
+  .rel-item{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;font:inherit;font-size:11px;
+    line-height:20px;background:#fff;border:1px solid var(--border);border-radius:8px;
+    color:var(--brand);cursor:pointer;white-space:nowrap}
+  .rel-item:hover{border-color:var(--brand)}
+
+  .d-body{overflow:auto;padding:4px 15px 14px;flex:1;min-height:0}
+  .sec{border-top:1px solid var(--border);padding:11px 0 2px}
+  .sec:first-child{border-top:0}
+  .sec-title{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
+    color:var(--text-3);letter-spacing:.04em;margin-bottom:8px}
+  .sec-title .n{font-size:10px;font-weight:700;padding:0 5px;border-radius:8px;
+    background:#eceef0;color:var(--text-2);line-height:15px}
+  .prose{font-size:12.5px;line-height:1.7;word-break:break-word}
+  .prose code{font:11.5px ui-monospace,Menlo,Consolas,monospace;background:#f2f4f6;padding:1px 4px;border-radius:3px}
+  .prose p{margin:0 0 8px}
+  .prose h3{margin:12px 0 6px;font-size:14px;font-weight:650}
+  .prose h4{margin:10px 0 5px;font-size:13px;font-weight:650}
+  .prose h5,.prose h6{margin:9px 0 4px;font-size:12.5px;font-weight:650}
+  .prose ul,.prose ol{margin:0 0 8px;padding-left:20px}
+  .prose li{margin:2px 0}
+  .prose blockquote{margin:0 0 8px;padding:6px 10px;border-left:2px solid var(--border-2);
+    background:#f7f8f9;color:var(--text-2);font-size:12px}
+  .prose hr{margin:10px 0;border:0;border-top:1px solid var(--border)}
+  .prose strong{font-weight:650}
+  .prose table{border-collapse:collapse;margin:0 0 9px;font-size:12px;width:100%}
+  .prose th,.prose td{border:1px solid var(--border);padding:4px 8px;text-align:left;vertical-align:top}
+  .prose th{background:#f2f4f6;font-weight:650;white-space:nowrap}
+  .prose td code{font-size:11px}
+  .prose pre.code{margin:0 0 9px;padding:9px 11px;background:#f7f8f9;border:1px solid var(--border);
+    border-radius:6px;overflow-x:auto;font-size:11.5px;line-height:1.6}
+  .prose pre.code code{background:transparent;padding:0;font-family:ui-monospace,Menlo,Consolas,monospace;
+    color:var(--text);white-space:pre;font-size:inherit}
+  .prose pre.code code[data-lang]::before{content:attr(data-lang);display:block;font-size:10px;
+    color:var(--text-3);margin-bottom:4px;font-family:inherit}
+
+  .inter{border:1px solid var(--border);border-radius:8px;padding:10px 11px 11px;margin-bottom:9px;background:#fcfcfd}
+  .inter-cap{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;font-size:11.5px;
+    font-weight:650;margin-bottom:8px}
+  .inter-cap .src{font-size:10px;font-weight:500;color:var(--text-3);padding:0 5px;
+    border-radius:3px;background:#eceef0}
+  .choice{display:flex;align-items:flex-start;gap:8px;width:100%;padding:8px 11px;margin-bottom:6px;
+    font:inherit;font-size:12.5px;text-align:left;color:var(--text);background:#fff;
+    border:1px solid var(--border-2);border-radius:7px;cursor:pointer}
+  .choice:hover{border-color:var(--brand);background:#f7faff}
+  .choice.on{border-color:var(--brand);background:#f7faff;color:var(--brand);font-weight:600}
+  .choice .radio{flex:none;width:13px;height:13px;border-radius:50%;border:1.5px solid var(--border-2);
+    display:grid;place-items:center;margin-top:2px}
+  .choice.on .radio{border-color:var(--brand)}
+  .choice.on .radio::after{content:'';width:6px;height:6px;border-radius:50%;background:var(--brand)}
+  .rank-row{display:flex;align-items:center;gap:8px;padding:6px 9px;margin-bottom:4px;
+    background:#fff;border:1px solid var(--border-2);border-radius:6px;font-size:12.5px}
+  .rank-row .no{flex:none;width:16px;color:var(--text-3);font-size:10px}
+  .rank-row .txt{flex:1}
+  .quick-task{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;margin:0 6px 6px 0;
+    font:inherit;font-size:12px;background:#fff;border:1px dashed var(--border-2);
+    border-radius:6px;cursor:pointer}
+  .quick-task:hover{border-style:solid;border-color:var(--brand);color:var(--brand)}
+  .quick-task .code{font-size:10px;font-weight:700;color:var(--text-3);padding:0 4px;
+    border-radius:3px;background:#f0f2f4}
+  .unknown{border:1px dashed var(--border-2);border-radius:6px;background:#f7f8f9;
+    padding:9px 11px;font-size:11.5px;color:var(--text-2)}
+  .unknown pre{margin:5px 0 0;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+
+  .d-foot{padding:10px 15px 12px;border-top:1px solid var(--border);flex:none;background:#fcfcfd}
+  .ta{width:100%;min-height:48px;resize:vertical;padding:8px 10px;font:12.5px/1.55 inherit;
+    font-family:inherit;border:1px solid var(--border-2);border-radius:6px;outline:none;background:#fff}
+
+  .writer{background:var(--card);border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 1px 3px rgba(16,18,22,.06);padding:14px 16px;margin-top:18px}
+  .writer h2{margin:0 0 6px;font-size:14px;font-weight:650}
+  .writer p{margin:0 0 10px;font-size:12px;color:var(--text-2)}
+  .writer p code{font:11px ui-monospace,Menlo,Consolas,monospace;background:#eceef0;padding:1px 5px;border-radius:3px}
+  .writer textarea{width:100%;min-height:200px;padding:11px 12px;font:12.5px/1.7 ui-monospace,Menlo,Consolas,monospace;
+    border:1px solid var(--border-2);border-radius:7px;outline:none;resize:vertical;background:#fcfcfd}
+  .writer-row{display:flex;align-items:center;gap:9px;margin-top:9px;font-size:11.5px;color:var(--text-3)}
+  .saved{color:var(--work);font-weight:600}
+
+  /*
+   * 遮罩层。
+   *
+   * overscroll-behavior: contain —— 弹窗里滚到底时不要把滚轮传给页面。
+   * 用户原话：「滚轮连着左边一起滚」（就是滚动联动）。
+   *
+   * 用 flex 而不是 grid 居中：grid 的 place-items 在内容超高时
+   * 会让盒子溢出到视口外（顶部被切掉），flex 的 margin:auto 更稳。
+   */
+  .mask{position:fixed;inset:0;z-index:100;background:rgba(20,22,26,.32);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+    overscroll-behavior:contain}
+  /*
+   * 对话框。
+   *
+   * 宽度给足 —— 新建事项是两栏（左字段 / 右正文），680px 太窄，
+   * 正文区会被挤成一行几个字。900px 是两栏都能用的下限。
+   *
+   * overscroll-behavior: contain 同样是为了不让滚轮传给外层。
+   */
+  .modal{background:#fff;border-radius:10px;box-shadow:0 24px 60px rgba(16,18,22,.28);
+    /*
+   * 对话框**固定高度**。
+   *
+   * 用户原话：
+   *   > 首先你要把他固定大小啊。
+   *
+   * 高度不跟着内容走 —— 换模板、展开/收起选项卡都不该让它变。
+   * 内容多了在 .modal-body 里滚。
+   */
+  width:min(720px,100%);height:min(600px,86vh);display:flex;flex-direction:column;
+    overflow:hidden;overscroll-behavior:contain}
+  .modal-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border)}
+  .modal-head b{font-size:14px;font-weight:650}
+  .modal-body{padding:14px 16px;overflow:auto;display:grid;gap:11px;overscroll-behavior:contain}
+  .modal-foot{display:flex;align-items:center;gap:9px;padding:11px 16px;border-top:1px solid var(--border);background:#fcfcfd}
+  .hint{font-size:10.5px;color:var(--text-3)}
+
+
+  /* ── 视图切换 ── */
+  .views{display:inline-flex;border:1px solid var(--border-2);border-radius:6px;overflow:hidden}
+  .vw{font:inherit;font-size:11.5px;padding:4px 11px;border:0;background:#fff;
+    color:var(--text-2);cursor:pointer}
+  .vw + .vw{border-left:1px solid var(--border-2)}
+  .vw.on{background:var(--black);color:#fff;font-weight:600}
+
+  /* ── 图例：解释连线颜色，不是视图切换 ── */
+  .legend{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .legend[hidden]{display:none}
+  .lg{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:var(--text-3);white-space:nowrap}
+  .lg svg{display:block}
+
+  /* ── 科技树 ── */
+  .treeview{height:520px;overflow:auto;padding:12px 14px;position:relative}
+  .treeview[hidden]{display:none}
+  .tree-canvas{position:relative;margin:0 auto;min-width:100%}
+  .tree-node{position:absolute;box-sizing:border-box;width:150px;height:50px;
+    padding:6px 8px;display:flex;flex-direction:column;gap:2px;
+    background:#fff;border:2px solid var(--border-2);border-radius:9px;
+    cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .tree-node:hover{border-color:var(--brand);box-shadow:0 2px 8px rgba(59,125,216,.18)}
+  .tree-node.on{border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}
+  .tree-node .top{display:flex;align-items:center;gap:5px}
+  .tree-node .tid{font-size:10.5px;font-weight:700}
+  .tree-node .tk{font-size:9px;padding:0 4px;border-radius:2px;background:rgba(0,0,0,.05)}
+  .tree-node .tt{font-size:11px;font-weight:600;color:var(--text);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tree-empty{display:grid;place-items:center;height:100%;color:var(--text-3);font-size:12px}
+
+  /* ── 新建/编辑浮层（照原型「建议版」）── */
+  .field{display:grid;gap:4px}
+  .lbl{font-size:11px;font-weight:600;color:var(--text-2);display:flex;align-items:center;gap:3px}
+  .req{color:var(--danger);font-weight:700}
+  .modal-body.two-col{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+  .modal-body.two-col > div{min-width:0}
+  .modal-body input[type="text"],.modal-body select,.modal-body textarea{
+    font:inherit;font-size:12.5px;padding:7px 10px;border:1px solid var(--border-2);
+    border-radius:6px;outline:none;background:#fff;width:100%;box-sizing:border-box}
+  .modal-body input[type="text"]:focus,.modal-body select:focus,.modal-body textarea:focus{
+    border-color:var(--brand);box-shadow:0 0 0 2px rgba(59,125,216,.1)}
+  .modal-body textarea{font-family:ui-monospace,Menlo,Consolas,monospace;line-height:1.6;resize:vertical}
+
+
+  .tpl-btn:hover{border-color:#b9bdc2}
+  .tpl-btn .code{font-size:10.5px;font-weight:700;padding:1px 5px;border-radius:3px;
+    background:#eceef0;color:var(--text-2)}
+  .tpl-btn .chev{margin-left:auto;font-size:9px;color:var(--text-3)}
+
+
+  .tabs{display:flex;gap:6px;padding-top:2px}
+  .tab{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;font:inherit;
+    font-size:11.5px;color:var(--text-2);background:#fff;border:1px solid var(--border-2);
+    border-radius:14px;cursor:pointer}
+  .tab:hover{border-color:#b9bdc2}
+  .tab[aria-pressed="true"]{background:#eef3fb;border-color:var(--brand);color:var(--brand);font-weight:600}
+  .tab .cnt{font-size:10px;font-weight:700;padding:0 5px;border-radius:8px;
+    background:#eceef0;color:var(--text-2);line-height:15px}
+  .tab[aria-pressed="true"] .cnt{background:rgba(59,125,216,.15);color:var(--brand)}
+  .tab-panel{display:grid;gap:9px;padding:10px 11px;background:#fafbfc;
+    border:1px solid var(--border);border-radius:7px}
+  .tab-panel[hidden]{display:none}
+  .rel-list{display:grid;gap:6px}
+  .rel-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px;align-items:center}
+  .rel-row .rel-kind{font:inherit;font-size:11.5px;padding:5px 7px;border:1px solid var(--border-2);
+    border-radius:5px;background:#fff;outline:none}
+  .rel-row .rel-target{font:inherit;font-size:11.5px;padding:5px 8px;border:1px solid var(--border-2);
+    border-radius:5px;background:#fff;outline:none;width:100%;box-sizing:border-box}
+  .rel-row .rel-dir{font-size:10.5px;color:var(--text-3);white-space:nowrap}
+  .rel-row .rel-del{padding:0 5px;font:inherit;font-size:12px;color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;border-radius:4px}
+  .rel-row .rel-del:hover{background:#f2f4f6;color:var(--danger)}
+
+  /* ── 正文里的代码块和表格 ── */
+  .prose pre.code{margin:0 0 9px;padding:9px 11px;background:#f7f8f9;border:1px solid var(--border);
+    border-radius:6px;overflow-x:auto;font-size:11.5px;line-height:1.6}
+  .prose pre.code code{background:transparent;padding:0;font-family:ui-monospace,Menlo,Consolas,monospace;
+    color:var(--text);white-space:pre;font-size:inherit}
+  .prose pre.code code[data-lang]::before{content:attr(data-lang);display:block;font-size:10px;
+    color:var(--text-3);margin-bottom:4px;font-family:inherit}
+  .prose table{border-collapse:collapse;margin:0 0 9px;font-size:12px;width:100%}
+  .prose th,.prose td{border:1px solid var(--border);padding:4px 8px;text-align:left;vertical-align:top}
+  .prose th{background:#f2f4f6;font-weight:650;white-space:nowrap}
+  .prose td code{font-size:11px}
+
+  /* ── 详情页头部：编号在左（半行高 + 两个标签），标题在右 ── */
+  .d-head-grid{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start}
+  .d-head-left{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .d-head-left .id{font-weight:700;font-size:12.5px;letter-spacing:.02em;line-height:1.1}
+  .d-head-tags{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+  .d-head-tags .kind{font-size:9.5px;padding:0 5px;border-radius:3px;line-height:14px}
+  .d-head-tags .domain{font-size:9.5px;padding:0 5px;border-radius:3px;line-height:14px;
+    border:1px solid var(--border-2);color:var(--text-3)}
+  .d-head-right{display:flex;align-items:flex-start;gap:8px;min-width:0}
+  .d-head-title{flex:1;font-size:19px;font-weight:650;line-height:1.28;color:var(--text);
+    overflow-wrap:break-word;min-width:0}
+  .d-head-icons{display:flex;gap:1px;flex:none}
+
+  /* ── 过滤栏（二级菜单，三级占文档流）── */
+  .filter-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%}
+  .filter-btn{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;font:inherit;
+    font-size:11.5px;color:var(--text-2);background:#fff;border:1px solid var(--border-2);
+    border-radius:14px;cursor:pointer}
+  .filter-btn:hover{border-color:#b9bdc2}
+  .filter-btn.on{background:#eef3fb;border-color:var(--brand);color:var(--brand);font-weight:600}
+  .filter-btn.has{border-color:var(--brand);color:var(--brand)}
+  .filter-btn .n{font-size:10px;font-weight:700;padding:0 5px;border-radius:8px;
+    background:var(--brand);color:#fff;line-height:15px}
+  .filter-btn .chev{font-size:8px;opacity:.6}
+  .filter-clear{font:inherit;font-size:11px;color:var(--text-3);background:transparent;
+    border:0;cursor:pointer;text-decoration:underline;padding:2px 4px}
+  .filter-clear:hover{color:var(--danger)}
+
+  .filter-panel{display:inline-flex;gap:0;margin-top:8px;align-self:flex-start;
+    border:1px solid var(--border-2);border-radius:7px;overflow:hidden;background:#fff;
+    box-shadow:0 2px 6px rgba(16,18,22,.06)}
+  .filter-col{display:flex;flex-direction:column;gap:1px;padding:4px;min-width:96px;
+    border-right:1px solid var(--border)}
+  .filter-col:last-child{border-right:0}
+  .filter-col.sub{min-width:130px;background:#fafbfc}
+  .filter-item{display:flex;align-items:center;gap:6px;width:100%;padding:3px 8px;
+    font:inherit;font-size:11.5px;line-height:1.5;text-align:left;background:transparent;
+    border:0;border-radius:5px;cursor:pointer;color:var(--text);white-space:nowrap}
+  .filter-item:hover{background:#f2f4f6}
+  .filter-item.on{background:#eef3fb;color:var(--brand)}
+  .filter-item.picked{font-weight:600}
+  .filter-item.picked::before{content:'●';font-size:7px;color:var(--brand);margin-right:-2px}
+  .filter-item .chev{margin-left:auto;font-size:8px;opacity:.5}
+  .filter-item .tick{margin-left:auto;color:var(--brand);font-weight:700}
+  .filter-item .tpl-code{font-size:10px;font-weight:700;color:var(--text-3);width:14px}
+  .filter-sub-head{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.05em;
+    padding:3px 8px 4px;white-space:nowrap}
+  .filter-empty{font-size:11.5px;color:var(--text-3);padding:6px 9px}
+
+  /* ── 五个行动的渲染样式 ── */
+  .sec-desc{font-size:11px;color:var(--text-3);line-height:1.6;margin-top:5px}
+  .muted{color:var(--text-3);font-style:italic}
+  .req{color:var(--danger);font-weight:700}
+  .text-input{width:100%;box-sizing:border-box;padding:7px 10px;font:inherit;font-size:12.5px;
+    line-height:1.6;color:var(--text);background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;outline:none;resize:vertical}
+  .text-input:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(59,125,216,.1)}
+
+  .choice-body{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+  .choice-title{font-size:12.5px;line-height:1.45}
+  .choice-sub{font-size:11px;color:var(--text-3);line-height:1.45}
+  .choice.on .choice-sub{color:var(--brand);opacity:.75}
+
+  .rank-body{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+  .rank-title{font-size:12.5px}
+  .rank-sub{font-size:11px;color:var(--text-3)}
+  .rank-btns{display:flex;gap:2px;flex:none}
+  .rank-btns button{padding:0 5px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;border-radius:4px;cursor:pointer}
+  .rank-btns button:hover:not(:disabled){background:#f2f4f6;color:var(--text)}
+  .rank-btns button:disabled{opacity:.3;cursor:default}
+
+  .link-btn{padding:4px 2px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;text-decoration:underline}
+  .link-btn:hover{color:var(--brand)}
+
+  .derive-row{display:flex;flex-wrap:wrap;gap:6px}
+  .derive-row .quick-task .mode{font-size:9.5px;color:var(--text-3);margin-left:4px}
+
+  /* ── 模板里章节 → 行动的预览 ── */
+  .tpl-sections{border-top:1px solid var(--border);padding:8px 10px 9px;overflow:auto;flex:1;min-height:0}
+  .tpl-sec-head{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.05em;margin-bottom:5px}
+  .tpl-sec{display:flex;align-items:baseline;gap:6px;padding:2px 0;font-size:11px;line-height:1.5}
+  .tpl-sec-act{flex:none;font-size:9.5px;font-weight:700;padding:0 5px;border-radius:3px;
+    line-height:15px;background:#eceef0;color:var(--text-2)}
+  .tpl-sec-act[data-act="text"]{background:#e8f0fb;color:#2c6ab8}
+  .tpl-sec-act[data-act="markdown"]{background:#f0f1f3;color:#6b7075}
+  .tpl-sec-act[data-act="ask"]{background:#eaf5ee;color:#2c7a52}
+  .tpl-sec-act[data-act="rank"]{background:#fdf2e3;color:#a9701a}
+  .tpl-sec-act[data-act="derive"]{background:#f0ebfa;color:#6a4bc4}
+  .tpl-sec-id{flex:none;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:10px;color:var(--text-3)}
+  .tpl-sec-label{color:var(--text);flex:none}
+  .tpl-sec-ph{color:var(--text-3);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;min-width:0}
+  .tpl-sec-foot{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px;
+    padding-top:6px;border-top:1px dashed var(--border);font-size:10.5px;color:var(--text-3)}
+  .tpl-act-chip{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:3px;
+    line-height:15px;background:#eceef0;color:var(--text-2)}
+  .tpl-sec-empty{font-size:11px;color:var(--text-3);line-height:1.5}
+
+  /* 左栏常驻的「正文会问这些」 */
+  .tpl-sections.inline{border:1px solid var(--border);border-radius:7px;
+    background:#fafbfc;padding:8px 10px;max-height:250px;overflow:auto}
+  .tpl-sec-count{margin-left:auto;font-size:9.5px;color:var(--text-3);font-weight:500}
+  .tpl-sec-head{display:flex;align-items:center}
+
+  /* mdx 源码（调试用） */
+  .mdx-source{margin:0;padding:10px 12px;background:#f7f8f9;border:1px solid var(--border);
+    border-radius:6px;font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;
+    color:var(--text);white-space:pre-wrap;word-break:break-all;overflow:auto;max-height:420px}
+  .mdx{display:flex;flex-direction:column;gap:0}
+
+  /* 多选的方框（和单选的圆点区分） */
+  .choice .checkbox{flex:none;width:13px;height:13px;border-radius:3px;
+    border:1.5px solid var(--border-2);display:grid;place-items:center;margin-top:2px}
+  .choice.multi.on .checkbox{border-color:var(--brand);background:var(--brand)}
+  .choice .checkbox .tick{color:#fff;font-size:9px;line-height:1;font-weight:700}
+  .choice.multi.on .choice-sub{color:var(--brand);opacity:.75}
+  .multi-count{font-size:10.5px;color:var(--text-3);margin-top:5px}
+
+  /* ── 选项（ask 单选 / multi 多选共用外框）── */
+  .inter{border:1px solid var(--border);border-radius:8px;padding:10px 11px 11px;
+    margin-bottom:9px;background:#fcfcfd}
+  .inter-cap{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;font-size:11.5px;
+    font-weight:650;margin-bottom:8px;color:var(--text-2)}
+  .inter-cap .src{font-size:10px;font-weight:500;color:var(--text-3);padding:0 5px;
+    border-radius:3px;background:#eceef0}
+
+  .choice{display:flex;align-items:flex-start;gap:8px;width:100%;padding:8px 11px;
+    margin-bottom:6px;font:inherit;font-size:12.5px;text-align:left;color:var(--text);
+    background:#fff;border:1px solid var(--border-2);border-radius:7px;cursor:pointer;
+    transition:border-color .12s,background .12s}
+  .choice:last-child{margin-bottom:0}
+  .choice:hover{border-color:#b9bdc2;background:#fafbfc}
+  .choice.on{border-color:var(--brand);background:#f4f8fe;color:var(--brand);font-weight:600}
+
+  /* 单选：圆点 */
+  .choice .radio{flex:none;width:13px;height:13px;border-radius:50%;
+    border:1.5px solid var(--border-2);display:grid;place-items:center;margin-top:2px;
+    background:#fff;transition:border-color .12s}
+  .choice:hover .radio{border-color:#b9bdc2}
+  .choice.on .radio{border-color:var(--brand)}
+  .choice.on .radio::after{content:'';width:6px;height:6px;border-radius:50%;
+    background:var(--brand);display:block}
+
+  .choice-body{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+  .choice-title{font-size:12.5px;line-height:1.45}
+  .choice-sub{font-size:11px;color:var(--text-3);line-height:1.45;font-weight:400}
+  .choice.on .choice-sub{color:var(--brand);opacity:.75}
+
+  .link-btn{padding:4px 2px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;text-decoration:underline}
+  .link-btn:hover{color:var(--brand)}
+
+  .text-input{width:100%;box-sizing:border-box;padding:7px 10px;font:inherit;font-size:12.5px;
+    line-height:1.6;color:var(--text);background:#fff;border:1px solid var(--border-2);
+    border-radius:6px;outline:none;resize:vertical}
+  .text-input:focus{border-color:var(--brand);box-shadow:0 0 0 2px rgba(59,125,216,.1)}
+
+  .rank-row{display:flex;align-items:center;gap:8px;padding:6px 9px;margin-bottom:4px;
+    background:#fff;border:1px solid var(--border-2);border-radius:6px;font-size:12.5px}
+  .rank-row .no{flex:none;width:16px;color:var(--text-3);font-size:10px}
+  .rank-row .txt{flex:1}
+
+  .derive-row{display:flex;flex-wrap:wrap;gap:6px}
+  .quick-task{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;
+    font:inherit;font-size:12px;background:#fff;border:1px dashed var(--border-2);
+    border-radius:6px;cursor:pointer}
+  .quick-task:hover{border-style:solid;border-color:var(--brand);color:var(--brand)}
+  .quick-task .code{font-size:10px;font-weight:700;color:var(--text-3);padding:0 4px;
+    border-radius:3px;background:#f0f2f4}
+  .quick-task .mode{font-size:9.5px;color:var(--text-3);margin-left:4px}
+
+  .sec-desc{font-size:11px;color:var(--text-3);line-height:1.6;margin-top:5px}
+  .muted{color:var(--text-3);font-style:italic}
+  .req{color:var(--danger);font-weight:700}
+  .unknown{border:1px dashed var(--border-2);border-radius:6px;background:#f7f8f9;
+    padding:9px 11px;font-size:11.5px;color:var(--text-2)}
+  .unknown pre{margin:5px 0 0;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+
+  /* ══════════════════════════════════════════════════════════
+     选项卡（Ask / Multi）—— 照宿主那个 ask 的样式
+
+     要点：没有圆点、没有方框。选中 = 整行加边框 + 淡蓝底。
+     ══════════════════════════════════════════════════════════ */
+  .oc{border:1px solid var(--border);border-radius:10px;background:#fff;
+    padding:12px 14px 10px;margin-bottom:10px}
+  .oc-head{margin-bottom:10px}
+  .oc-sub{font-size:11px;color:var(--text-3);margin-bottom:4px}
+  .oc-title{font-size:13.5px;color:var(--text);line-height:1.5;font-weight:400}
+
+  .oc-list{display:flex;flex-direction:column;gap:5px}
+
+  .oc-row{display:flex;align-items:baseline;gap:8px;width:100%;padding:7px 10px;
+    font:inherit;font-size:12.5px;text-align:left;color:var(--text);
+    background:#f7f8f9;border:1px solid transparent;border-radius:7px;
+    cursor:pointer;transition:border-color .12s,background .12s}
+  .oc-row:hover{background:#f1f3f5}
+  .oc-row.on{background:#f4f8fe;border-color:var(--brand);color:var(--brand)}
+
+  .oc-no{flex:none;width:16px;font-size:10px;font-weight:700;color:var(--text-3);
+    text-align:center;line-height:1.6}
+  .oc-row.on .oc-no{color:var(--brand)}
+  .oc-label{flex:none;font-weight:600}
+  .oc-rec{flex:none;font-size:9.5px;font-weight:700;color:var(--brand);
+    background:rgba(59,125,216,.12);padding:0 5px;border-radius:3px;line-height:15px}
+  .oc-desc{flex:1;min-width:0;font-size:11.5px;font-weight:400;color:var(--text-3);
+    line-height:1.5}
+  .oc-row.on .oc-desc{color:var(--brand);opacity:.8}
+
+  /* 自己填的那行 —— 和普通选项同高同底色 */
+  .oc-custom{align-items:center;cursor:default}
+  .oc-custom:hover{background:#f7f8f9}
+  .oc-input{flex:1;min-width:0;font:inherit;font-size:12.5px;color:var(--text);
+    background:transparent;border:0;outline:none;padding:0}
+  .oc-input::placeholder{color:var(--text-3)}
+
+  /* 跳过 */
+  .oc-skip{color:var(--text-3)}
+  .oc-skip .oc-label{font-weight:400}
+  .oc-skip.on{color:var(--brand)}
+  .oc-skip.on .oc-label{font-weight:600}
+
+  .oc-foot{margin-top:8px;font-size:10.5px;color:var(--text-3)}
+
+  /* ══════════════════════════════════════════════════════════
+     过滤栏 —— 横向展开
+
+     收起  >状态<
+     展开  >状态|进行|搁置|完成<
+     二级  >状态|进行|搁置-需要信息/需要授权|完成<
+     ══════════════════════════════════════════════════════════ */
+  .filters{padding:9px 14px;border-bottom:1px solid var(--border)}
+  .fb{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+  .fb-group{display:inline-flex;align-items:stretch;border:1px solid var(--border-2);
+    border-radius:7px;overflow:hidden;background:#fff}
+  .fb-group.open{border-color:var(--brand)}
+  .fb-group.has{border-color:var(--brand);background:#f4f8fe}
+
+  .fb-name{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;font:inherit;
+    font-size:11.5px;color:var(--text-2);background:transparent;border:0;cursor:pointer;
+    white-space:nowrap}
+  .fb-name:hover{background:#f2f4f6}
+  .fb-group.open .fb-name{color:var(--brand);font-weight:600;background:#eef3fb}
+  .fb-chev{font-size:8px;opacity:.7}
+
+  /* 展开后每一项一格，中间用竖线隔开 */
+  .fb-item{display:inline-flex;align-items:center;border-left:1px solid var(--border);
+    font-size:11.5px;white-space:nowrap}
+  .fb-item-name{padding:4px 10px;color:var(--text-2);cursor:pointer;display:inline-block}
+  .fb-item-name:hover{background:#f2f4f6;color:var(--text)}
+  .fb-item.on > .fb-item-name{color:var(--brand);font-weight:600;background:#eef3fb}
+
+  /* 子项：也是横向小格 */
+  .fb-sub{padding:4px 8px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;border-left:1px solid var(--border);cursor:pointer;
+    white-space:nowrap}
+  .fb-sub:hover{background:#f2f4f6;color:var(--text)}
+  .fb-sub.on{color:var(--brand);font-weight:600;background:#eef3fb}
+
+  .fb-clear{padding:4px 8px;font:inherit;font-size:11px;color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;text-decoration:underline}
+  .fb-clear:hover{color:var(--danger)}
+
+  /* 卡片头：灰色小字 + 右边的「跳过」 */
+  .oc-top{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .oc-sub{font-size:11px;color:var(--text-3)}
+  .oc-spacer{flex:1}
+  .oc-skipbtn{padding:2px 9px;font:inherit;font-size:10.5px;color:var(--text-3);
+    background:#fff;border:1px solid var(--border-2);border-radius:12px;cursor:pointer;
+    white-space:nowrap}
+  .oc-skipbtn:hover{border-color:#b9bdc2;color:var(--text)}
+  .oc-skipbtn.on{background:#eef3fb;border-color:var(--brand);color:var(--brand);font-weight:600}
+
+  /* 采纳后图标变灰 */
+  .icon-btn.off{opacity:.3;cursor:not-allowed}
+  .icon-btn.off:hover{background:transparent}
+
+  /* 元的推导态菜单 */
+  .goal-menu{width:290px}
+  .goal-row{display:flex;align-items:flex-start;gap:7px;padding:6px 9px;border-radius:5px;
+    font-size:12px;color:var(--text-2);line-height:1.5}
+  .goal-row.on{background:#eef3fb;color:var(--brand);font-weight:600}
+  .goal-mark{flex:none;font-size:8px;margin-top:5px}
+  .goal-body{display:flex;flex-direction:column;gap:1px;min-width:0}
+  .goal-name{font-size:12px}
+  .goal-why{font-size:10.5px;color:var(--text-3);font-weight:400}
+  .goal-row.on .goal-why{color:var(--brand);opacity:.75}
+
+  /* 元数据表 */
+  .d-meta-block{padding:8px 15px 10px;border-bottom:1px solid var(--border);
+    display:flex;flex-direction:column;gap:3px;flex:none}
+  .d-meta-row{display:flex;gap:8px;font-size:11.5px;line-height:1.6}
+  .d-meta-name{flex:none;width:64px;color:var(--text-3)}
+  .d-meta-value{flex:1;min-width:0;color:var(--text-2);word-break:break-all}
+
+  .d-meta-value.none{color:var(--text-3);font-style:italic}
+
+  /* 悬浮：和选中区分开 —— 悬浮是虚线框，选中是实心蓝框 */
+  .tree-node.hov{outline:1.5px dashed var(--brand);outline-offset:2px}
+  .tree-node.hov.on{outline:none}
+
+  /* ══════════════════════════════════════════════════════════
+     模板选择器 —— 照 新建计划-原型.html
+
+     三列：领域 | 类别 | 模板
+       · 前两列是单选（圆点），不是复选框
+       · 第三列点一下只是「预览」，右侧显示说明
+       · 双击或点「采用」才确认
+     ══════════════════════════════════════════════════════════ */
+
+  .tpl-btn{display:flex;align-items:center;gap:8px;width:100%;
+    padding:8px 10px;font:inherit;font-size:12.5px;text-align:left;
+    background:#fff;border:1px solid var(--border-2);border-radius:6px;
+    cursor:pointer;color:var(--text)}
+  .tpl-btn .code{font-size:11px;font-weight:600;color:var(--brand);
+    background:#eef3fb;border-radius:4px;padding:1px 6px}
+  .tpl-btn .chev{margin-left:auto;color:var(--text-3);font-size:9px}
+
+  /*
+   * 弹层比字段更宽。
+   *
+   * 三列设计宽度 108 + 108 + 170 = 386px，加上内边距要 420 左右。
+   * 而左栏只有约 470px —— 刚好够但很挤，第三列的模板名会被挤成省略号。
+   *
+   * 所以给一个最小宽度，并允许向右伸出（right: auto）。
+   * 原型里弹层是跨到右栏那边的。
+   */
+  /* 定位由 placePop() 用 fixed 控制（不受祖先 overflow 裁剪） */
+  .tpl-pop{z-index:200;overscroll-behavior:contain;overflow:hidden;
+    border:1px solid var(--border-2);border-radius:8px;background:#fff;
+    box-shadow:0 4px 10px rgba(16,18,22,.08), 0 16px 40px rgba(16,18,22,.14);
+    overflow:hidden}
+  .tpl-pop[hidden]{display:none}
+  .field.tpl-field{position:relative}
+
+  .tpl-grid{display:grid;grid-template-columns:92px 92px minmax(0,1fr);align-items:stretch;height:186px}
+  .tpl-col{padding:6px 0 8px;box-sizing:border-box;overflow:auto;border-right:1px solid var(--border);overscroll-behavior:contain}
+  .tpl-col:nth-child(1),.tpl-col:nth-child(2){background:#fbfbfc}
+  .tpl-col:nth-child(3){border-right:0;background:#fff}
+  .tpl-col-head{font-size:10px;font-weight:700;color:var(--text-3);
+    letter-spacing:.06em;padding:3px 12px 6px}
+
+  .tpl-item{display:flex;align-items:center;gap:7px;width:100%;
+    padding:5px 10px 5px 12px;font:inherit;font-size:12px;
+    background:transparent;border:0;text-align:left;cursor:pointer;color:var(--text)}
+  .tpl-item:hover{background:#eef0f2}
+  .tpl-item .radio{flex:none;width:13px;height:13px;border-radius:50%;
+    border:1.5px solid var(--border-2);background:#fff;display:grid;place-items:center}
+  .tpl-item .radio::after{content:'';width:6px;height:6px;border-radius:50%;background:transparent}
+  .tpl-item.on .radio{border-color:var(--brand)}
+  .tpl-item.on .radio::after{background:var(--brand)}
+  .tpl-item.on{color:var(--brand);font-weight:600}
+  .tpl-item .k-letter{flex:none;width:11px;font-size:10px;font-weight:700;
+    color:var(--text-3);text-align:center}
+  .tpl-item.on .k-letter{color:var(--brand)}
+
+  /* 模板列：预览是浅蓝，采用才是实心 */
+  .tpl-item.preview{background:#eef3fb}
+  .tpl-item.preview .tpl-name{color:var(--brand);font-weight:600}
+  .tpl-item .tpl-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tpl-item .tpl-code{flex:none;font-size:10px;font-weight:700;color:var(--text-3);width:22px}
+
+  /* 「采用」按钮 —— 只在正在预览那一行出现 */
+  .tpl-item .adopt{flex:none;font-size:10px;padding:1px 6px;border-radius:3px;
+    background:#191b1f;color:#fff;border:0;cursor:pointer;opacity:0;transition:opacity .1s}
+  .tpl-item.preview .adopt{opacity:1}
+  .tpl-item .adopt:hover{background:#000}
+
+  /*
+   * 说明面板：**固定高度**。
+   *
+   * 用户原话：
+   *   > 高度不一致。
+   *
+   * 之前用 min-height，说明长短不同时弹层整体高度就变 ——
+   * 空模板没有「章节：…」那行，比别的矮一截。
+   *
+   * 固定成 4 行的高度，内容超了自己滚。弹层高度就恒定了。
+   */
+  .tpl-desc{padding:9px 13px;font-size:11.5px;line-height:1.5;color:var(--text-2);
+    border-top:1px solid var(--border);background:#fbfbfc;
+    height:83px;box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain}
+  .tpl-desc .d-title{color:var(--text);font-weight:600;margin-bottom:2px}
+  .tpl-desc .d-secs{margin-top:2px;font-size:11px;color:var(--text-3)}
+
+  .tpl-preview{padding:7px 13px;font-size:10.5px;color:var(--text-3);
+    border-top:1px solid var(--border);background:#fff;
+    height:32px;box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tpl-preview b{color:var(--brand)}
+  .tpl-empty{padding:16px 12px;font-size:11.5px;color:var(--text-3);text-align:center}
+
+  .tpl-desc .d-hint{margin-top:3px;font-size:10.5px;color:var(--text-3)}
+
+  /*
+   * 「正文会问这些」那个章节预览。
+   *
+   * 用户原话：
+   *   > 你真的固定了吗？我点击还是会变高度。
+   *
+   * 这里是真的原因：不同模板的章节数不一样（空模板 0 章、
+   * 用户任务 5 章、目标·验证 6 章），这个块的高度跟着变，
+   * 把整个对话框撑起来。
+   *
+   * 固定高度 + 内部滚动。
+   */
+  .tpl-sections.inline{height:132px;box-sizing:border-box;overflow-y:auto;
+    overscroll-behavior:contain;padding:9px 11px;
+    border:1px dashed var(--border-2);border-radius:7px;background:#fcfcfd}
+
+  /*
+   * 一级那一格 + 它的子项。
+   *
+   * 子项在结构上就装在这个容器里（filters.js 里做的），
+   * 视觉上用「浅底 + 左侧竖线」表示从属。
+   */
+  .fb-cell{display:inline-flex;align-items:center;gap:3px;
+    padding:2px 6px 2px 2px;border-radius:6px}
+  /* 展开了子项的那一格给个浅底，把「它和它的孩子」圈在一起 */
+  .fb-cell.spread{background:#f4f6f8}
+
+  .fb-sub{padding:2px 8px;font:inherit;font-size:11px;
+    color:var(--text-2);background:#fff;border:1px solid var(--border-2);
+    border-radius:11px;cursor:pointer;white-space:nowrap}
+  .fb-sub:hover{border-color:var(--brand);color:var(--brand)}
+  .fb-sub.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+
+</style>
+</head>
+<body>
+
+<a class="toplink" href="http://127.0.0.1:52311/">切换到收件箱 →</a>
+<h1>工作区 · AI 改版沙盘</h1>
+<p class="sub">
+  <b>这一份是我改版用的，和你无关。</b>数据完全独立（<code>工作区.json</code>），
+  格式随时会变 —— 有破坏性更新时它可能暂时读不出来，那是我在改，刷新一下就好。
+  <br><span id="syncState" style="color:var(--work)">正在连接…</span>
+</p>
+
+<div class="layout">
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">任务</span>
+      <span class="count" id="count">共 0 条</span>
+      <span class="legend" id="legend">
+        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
+          stroke="var(--border-2)" stroke-width="1.5"/></svg>父子</span>
+        <span class="lg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4"
+          stroke="var(--brand)" stroke-width="1.5" stroke-dasharray="4 3"/></svg>链接</span>
+      </span>
+      <span class="grow"></span>
+      <span class="views">
+        <button class="vw on" type="button" data-view="tree">科技树</button>
+        <button class="vw" type="button" data-view="list">列表</button>
+      </span>
+      <button class="btn" type="button" id="newBtn">新建</button>
+      <button class="btn" type="button" id="resetBtn">重置为样本</button>
+    </div>
+
+    <div class="groups" id="groups"></div>
+
+    <div class="filters" id="filters"></div>
+
+    <div class="rows" id="rows" hidden></div>
+    <div class="treeview" id="treeview"></div>
+  </div>
+
+  <div class="detail" id="detail"></div>
+</div>
+
+<div class="writer">
+  <h2>改版笔记（自由文本）</h2>
+  <p>我改版时记点东西 —— 存成 <code>工作区-笔记.md</code>。</p>
+  <textarea id="draft"></textarea>
+  <div class="writer-row">
+    <button class="btn primary" type="button" id="exportBtn">立即保存</button>
+    <button class="btn" type="button" id="clearBtn">清空</button>
+    <span class="grow"></span>
+    <span id="saveHint">—</span>
+  </div>
+</div>
+
+<script>
+/* 内置样本（首次打开或服务没起时用）。 */
+const TASKS = [
+  {
+    id:'GU-01', title:'用户任务：剩下没做完的 5 条', type:'GU', kind:'goal', status:'提交',
+    parent:'', links:'', tags:[],
+    body:'## 这是什么\n\n这是 T-054 / T-056 的下一次重写。旧的都已取消，但**它们里面真正没做完的部分还在**，所以重新立一张。\n\n12 条要求里 7 条已做完，2 条半成品，3 条没动。这一张只装没做完的那些。\n\n## 没做完的 5 条\n\n① 失败必须有理由\n② dispatch 字段要有消费者\n③ 详情层派发按钮\n④ behavior 要影响界面\n⑤ 日志',
+    note:''
+  },
+  {
+    id:'GU-02', title:'用户任务5', type:'GU', kind:'goal', status:'提交',
+    parent:'', links:'', tags:[],
+    body:'1. GU01 仍然有领取、直接完成、取消、拒绝。说明「目标」大类现在还不是根据状态自动算的。\n\n2. 一个包里面可以有多个插件。以下内容放在一个包里，分插件：箭头面板、计划面板、「按计划」的权限状态、「子工作空间」、额外工作空间。\n\n3. 归档、分组。这个需要设计。否则之前用户任务提出来的任务，占据了太多竖向高度。\n\n4. 考虑给关联新增更多内容。例如一期、二期意味着他们是一件事情，那么是否除了兄弟节点的联系以外，还需要「相关」的关系？然后还要有「约束」「参考」之类的关系。',
+    note:''
+  },
+  {
+    id:'WI-01', title:'失败必须有理由', type:'WI', kind:'work', status:'完成',
+    parent:'GU-01', links:'', tags:[],
+    body:'## 要做什么\n\n转「失败」时强制填理由，不填不让改。\n\n## 用户原话\n\n> 进行失败状态一定要回报原因的。但是点击失败只是点击了，没有说明处。\n\n## 具体做什么\n\n1. `setState` 里加一条检查\n2. 报错文案要写出出路\n3. 允许理由里引用别的事项 id',
+    note:'已完成，按你的备注改成「失败 → 派一条阻碍」，不是「填一段 note」。'
+  },
+  {
+    id:'WI-02', title:'dispatch 字段要有消费者', type:'WI', kind:'work', status:'完成',
+    parent:'GU-01', links:'', tags:['dispatch','模板系统'],
+    body:'## 要做什么\n\n模板 YAML 里的 `dispatch` 字段现在没人读，等于装饰。要让界面真的按它收窄可派发范围。',
+    note:''
+  },
+  {
+    id:'WI-03', title:'详情层派发按钮', type:'WI', kind:'work', status:'完成',
+    parent:'GU-01', links:'', tags:[],
+    body:'## 要做什么\n\n详情页要有「派发」区，按钮列表来自宿主的 `task_dispatch`。\n\n判定三层（大类规则 / 父模板 dispatch / 子模板 default_kind）全在宿主做，面板只管显示。',
+    note:''
+  },
+  {
+    id:'DP-04', title:'归档与分组：老任务占了太多竖向高度', type:'DP', kind:'design', status:'完成',
+    parent:'GU-02', links:'', tags:[],
+    body:'## 问题\n\n老任务太多，列表一屏装不下。\n\n## 方案\n\n归档直接对分组归档。归档以后界面不显示，但索引还在，可以「显示已归档」。',
+    note:''
+  },
+  {
+    id:'DB-01', title:'record 的状态集要不要按 kind 收窄', type:'DB', kind:'design', status:'未指定',
+    parent:'', links:'', tags:[],
+    body:'## 说不清的地方\n\n九态是为拟合 A2A 硬套的。记录类说「搁置」不成立 —— 写出来就完了，没有搁置这回事。\n\n## 用户原话\n\n> 只有任务会派发出去。记录、决策、去问，是不是搁置了。这不成立。\n> 所以这 4 个类别应该有他们的状态。比如阻碍只有绕过、解决。成功和失败是什么含义呢？不知道。',
+    note:''
+  },
+  {
+    id:'DC-01', title:'【验证】不同前缀独立编号', type:'DC', kind:'design', status:'取消',
+    parent:'', links:'', tags:[],
+    body:'## 要定什么\n\n不同模板前缀是否各自独立流水。\n\n## 选项\n\n- WF-01 和 GU-01 各自从 01 开始\n- 全部共用一个流水号',
+    note:''
+  },
+  {
+    id:'WF-01', title:'【验证】编号应带模板前缀', type:'WF', kind:'work', status:'取消',
+    parent:'', links:'', tags:[],
+    body:'## 验证点\n\n编号形式应为 `前缀-流水`，例如 WF-01。',
+    note:''
+  }
+];
+
+/* ══════════════════════════════════════════════════════════════
+   数据层 —— 走服务端 API，落盘到文件
+
+   ## 为什么不用 localStorage
+
+   收件箱是「用户写，AI 读」的通道。localStorage 只活在浏览器里，
+   AI 读不到；下载文件又要用户多点几次。
+
+   所以起一个极小的本机服务（server.mjs），页面直接 POST，服务端写文件。
+
+   ## 两个页面两份数据
+
+     收件箱 → /api/inbox → 收件箱.json
+     工作区 → /api/work  → 工作区.json
+
+   完全隔离：工作区那边格式随时会变，不能牵连收件箱。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 服务端路径前缀，由 build 脚本按页面替换。 */
+const API = '/api/work';
+
+let DB = [];
+let saveTimer = null;
+let dirty = false;
+
+/** 从服务端读。 */
+async function loadFromServer() {
+  try {
+    const response = await fetch(API);
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const payload = await response.json();
+    DB = Array.isArray(payload.items) ? payload.items : [];
+    if (DB.length === 0) DB = JSON.parse(JSON.stringify(TASKS));
+    return true;
+  } catch (failure) {
+    /* 服务没起（比如直接双击 HTML）：退回内置样本，并提示 */
+    DB = JSON.parse(JSON.stringify(TASKS));
+    setSyncState('本地模式（服务未连接，改动只在这个页面里）', true);
+    return false;
+  }
+}
+
+/** 写回服务端（防抖 600ms，避免每敲一个字都发请求）。 */
+function scheduleSave() {
+  dirty = true;
+  setSyncState('有未保存的改动…', false);
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushSave, 600);
+}
+
+async function flushSave() {
+  saveTimer = null;
+  if (!dirty) return;
+  dirty = false;
+  try {
+    const response = await fetch(API, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ items: DB })
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    setSyncState('已保存 · ' + new Date().toLocaleTimeString('zh-CN'), false);
+  } catch (failure) {
+    setSyncState('保存失败：' + failure.message, true);
+  }
+}
+
+function setSyncState(text, isError) {
+  const box = document.getElementById('syncState');
+  if (!box) return;
+  box.textContent = text;
+  box.style.color = isError ? 'var(--danger)' : 'var(--work)';
+}
+
+/* ── 编号规则（和宿主一致）──
+   有模板 → 用模板编号（GU / WI / DP…）
+   空模板 → 用类别字母（G / D / R / W） */
+const KIND_PREFIX = { goal: 'G', design: 'D', record: 'R', work: 'W' };
+
+function nextId(type, kind) {
+  const t = String(type || '').toUpperCase();
+  const prefix = t !== '' ? t : (KIND_PREFIX[kind] || 'X');
+  const pattern = new RegExp('^' + prefix + '-(\\d+)$');
+  let max = 0;
+  for (const item of DB) {
+    const m = pattern.exec(item.id);
+    if (m !== null) max = Math.max(max, Number(m[1]));
+  }
+  return prefix + '-' + String(max + 1).padStart(2, '0');
+}
+
+/* ── 条目编辑 ── */
+
+function patchTask(id, patch) {
+  const i = DB.findIndex((t) => t.id === id);
+  if (i < 0) return;
+  DB[i] = Object.assign({}, DB[i], patch);
+  scheduleSave();
+  renderAll();
+}
+
+function createTask(init) {
+  const type = init.type || '';
+  const kind = init.kind || 'goal';
+  const task = {
+    id: nextId(type, kind),
+    title: init.title || '未命名',
+    type,
+    kind,
+    status: '未指定',
+    parent: init.parent || '',
+    links: '',
+    tags: [],
+    body: init.body || '',
+    note: '',
+    workspace: init.workspace || '',
+    workspaces: init.workspaces || '',
+    tmpWorkspace: init.tmpWorkspace || '',
+    permission: init.permission || '',
+    deny: init.deny || '',
+    tags: init.tags ? String(init.tags).split(',').map((x) => x.trim()).filter(Boolean) : []
+  };
+  DB.push(task);
+  scheduleSave();
+  state.selected = task.id;
+  renderAll();
+  return task.id;
+}
+
+function deleteTask(id) {
+  const ids = new Set([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const t of DB) {
+      if (t.parent && ids.has(t.parent) && !ids.has(t.id)) { ids.add(t.id); grew = true; }
+    }
+  }
+  DB = DB.filter((t) => !ids.has(t.id));
+  scheduleSave();
+  if (ids.has(state.selected)) state.selected = DB[0] ? DB[0].id : '';
+  renderAll();
+}
+
+function resetDB() {
+  DB = JSON.parse(JSON.stringify(TASKS));
+  scheduleSave();
+  state.selected = DB[0] ? DB[0].id : '';
+  renderAll();
+}
+
+/* ── 底部自由文本 ── */
+
+let draftTimer = null;
+
+async function loadDraft() {
+  const ta = document.getElementById('draft');
+  if (!ta) return;
+  try {
+    const response = await fetch(API + '/draft');
+    if (response.ok) {
+      const payload = await response.json();
+      ta.value = payload.text || '';
+    }
+  } catch (failure) {
+    /* 服务没起就留空 */
+  }
+  updateHint();
+  ta.addEventListener('input', () => {
+    updateHint();
+    if (draftTimer !== null) clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveDraft, 700);
+  });
+}
+
+async function saveDraft() {
+  draftTimer = null;
+  const ta = document.getElementById('draft');
+  if (!ta) return;
+  try {
+    await fetch(API + '/draft', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: ta.value })
+    });
+    updateHint();
+  } catch (failure) {
+    /* 静默失败：底部提示已经够多了 */
+  }
+}
+
+function updateHint() {
+  const ta = document.getElementById('draft');
+  const box = document.getElementById('saveHint');
+  if (!ta || !box) return;
+  box.textContent = ta.value.trim() === ''
+    ? '空'
+    : (ta.value.length + ' 字 · ' + new Date().toLocaleTimeString('zh-CN'));
+  box.className = ta.value.trim() === '' ? '' : 'saved';
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   模板章节表 —— 每章用哪个行动、什么标题、什么灰字
+
+   ## 这张表是干什么的
+
+   真实插件的模板是 YAML，章节这么写：
+
+     - id: want
+       type:
+         text: 用户原话优先，不要改写
+       required: true
+
+   沙盘不需要完整的 YAML 解析，但要能演示「章节 → 行动」的对应关系。
+   所以这里用紧凑的数组表达同样的信息：
+
+     ['字段 id', '标题', '行动', '灰字', 必填]
+
+   ## 为什么每个模板的章节不同
+
+   模板决定「这一条要填哪些东西」。
+    GU（用户任务）问「要什么、什么算做到了」；
+    WF（修复）问「怎么复现、根因是什么」。
+
+   同一个行动可以用在不同章节里 —— 比如 `text` 到处都在用，
+   `ask` 只在需要用户拍板的地方出现。
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * 模板 → 章节表。
+ *
+ * 每项：[id, 标题, 行动, 灰字, 必填]
+ *
+ * 行动是五个之一：text / markdown / ask / rank / derive
+ */
+const SECTIONS = {
+  /* ── 目标 ── */
+  GU: [
+    ['notice', '说明', 'markdown', '', false],
+    ['want', '要什么', 'text', '用户原话优先。不要改写、不要提炼', true],
+    ['done', '什么算做到了', 'text', '一句话一个判据，能验证的', true],
+    ['bounds', '边界', 'text', '明确不做什么、什么时候必须停下来问', false],
+    ['split', '怎么拆', 'derive', '拆完就派出去，别在这一条里写方案', false],
+    ['other', '其他', 'text', '装不下的东西写这里', false]
+  ],
+  GO: [
+    ['symptom', '现象', 'text', '哪里觉得不对？', true],
+    ['measure', '怎么衡量', 'text', '现在是什么数，想变成什么数', true],
+    ['enough', '什么算够', 'text', '到哪一步就停', false],
+    ['split', '怎么拆', 'derive', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  GA: [
+    ['want', '要什么', 'text', '用户说得含糊的地方，先问清', true],
+    ['done', '什么算做到了', 'text', '', true],
+    ['risk', '风险', 'text', '理解错了会怎样', false],
+    ['split', '怎么拆', 'derive', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  GV: [
+    ['want', '验证什么', 'text', '哪个假设要被证明或推翻', true],
+    ['done', '什么算成立', 'text', '', true],
+    ['bounds', '边界', 'text', '', false],
+    ['split', '怎么拆', 'derive', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+
+  /* ── 设计 ── */
+  DP: [
+    ['problem', '问题', 'text', '要解决的是什么', true],
+    ['plan', '方案', 'text', '怎么写，为什么这么写', true],
+    ['cost', '代价', 'text', '要放弃什么', false],
+    ['alternative', '别的选择', 'ask', '', false],
+    ['risk', '风险', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DB: [
+    ['pain', '痛点', 'text', '', true],
+    ['scenario', '场景', 'text', '', true],
+    ['fitness', '合不合适', 'text', '', false],
+    ['precedent', '先例', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DC: [
+    ['question', '要定什么', 'text', '一句话说清要拍板的是哪件事', true],
+    ['options', '选项', 'ask', '每个选项后面写清代价', true],
+    ['unknown', '我还不知道什么', 'text', '', false],
+    ['recommend', '我的建议', 'text', '', true],
+    ['other', '其他', 'text', '', false]
+  ],
+  DI: [
+    ['goal', '目标', 'text', '', true],
+    ['contract', '接口', 'text', '函数签名 / 协议 / 数据结构', true],
+    ['errors', '错误', 'text', '出错时返回什么', false],
+    ['breaking', '破坏性', 'text', '哪些调用方要改', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DQ: [
+    ['ask', '问什么', 'text', '一个问题。两个问号就拆成两条', true],
+    ['why', '为什么要问', 'text', '没有这个信息，我只能做 X 或 Y 的假设', true],
+    ['guess', '我的猜测', 'text', '给出一个假设答案，用户只要说对不对', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  DT: [
+    ['setup', '前置', 'text', '', true],
+    ['persp', '视角', 'rank', '排一下从哪个角度先想', false],
+    ['style', '风格', 'text', '', false],
+    ['check', '检查点', 'text', '', false],
+    ['cost', '代价', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+
+  /* ── 记录 ── */
+  RR: [
+    ['conclusion', '结论', 'text', '先说结论', true],
+    ['evidence', '依据', 'text', '凭什么这么说', true],
+    ['limits', '局限', 'text', '什么情况下这个结论不成立', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  RB: [
+    ['where', '卡在哪', 'text', '具体到哪一步过不去', true],
+    ['why', '为什么', 'text', '', true],
+    ['next', '下一步', 'derive', '绕过去 / 换条路 / 找人', false],
+    ['bypass', '绕过', 'text', '如果要带债关闭，债是什么', false],
+    ['reason', '原因', 'text', '', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  RD: [
+    ['what', '是什么', 'text', '一句话说清坏在哪', true],
+    ['repro', '复现', 'text', '按步骤能重现', true],
+    ['expect', '预期', 'text', '', true],
+    ['actual', '实际', 'text', '', true],
+    ['scope', '范围', 'text', '影响哪些用户 / 功能', false],
+    ['accept', '验收', 'text', '', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  RF: [
+    ['outcome', '结果', 'text', '成了还是败了', true],
+    ['root', '根因', 'text', '真正的原因是什么', true],
+    ['lesson', '教训', 'text', '', true],
+    ['apply', '怎么用', 'text', '下次什么情况该想起来', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+
+  /* ── 工作 ── */
+  WI: [
+    ['goal', '目标', 'text', '改完之后什么样', true],
+    ['change', '改什么', 'text', '具体到文件 / 函数', true],
+    ['verify', '怎么验', 'text', '跑什么命令、看什么结果', true],
+    ['magic', '魔法数字', 'text', '写死的值为什么是这个值', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WF: [
+    ['repro', '复现', 'text', '', true],
+    ['expect', '预期', 'text', '', true],
+    ['root', '根因', 'text', '不是「哪里错了」，是「为什么会错」', true],
+    ['fix', '修法', 'text', '', true],
+    ['regression', '回归', 'text', '加什么测试防止再来一次', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WR: [
+    ['target', '调研什么', 'text', '', true],
+    ['how', '怎么查', 'rank', '排一下先查哪个', false],
+    ['conclusion', '结论', 'text', '', true],
+    ['evidence', '依据', 'text', '', true],
+    ['other', '其他', 'text', '', false]
+  ],
+  WX: [
+    ['reader', '读者', 'text', '写给人看的，先想清是谁', true],
+    ['path', '读法', 'text', '从头读还是跳着查', false],
+    ['must', '必须有', 'text', '', true],
+    ['skip', '可以跳过', 'text', '', false],
+    ['verify', '校验', 'text', '', false],
+    ['deliver', '交付', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WD: [
+    ['target', '目标', 'text', '画出来要让人看到什么', true],
+    ['approach', '手法', 'text', '', false],
+    ['scene', '场景', 'text', '', false],
+    ['leave', '留白', 'text', '', false],
+    ['verify', '怎么验', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ],
+  WC: [
+    ['setup', '前置', 'text', '', true],
+    ['order', '顺序', 'rank', '先写哪段', false],
+    ['check', '检查点', 'text', '', false],
+    ['leave', '留白', 'text', '', false],
+    ['other', '其他', 'text', '', false]
+  ]
+};
+
+/**
+ * 取某模板的章节表。
+ *
+ * @param {string} type 模板编号
+ * @returns {Array<{id: string, label: string, action: string, placeholder: string, required: boolean}>}
+ */
+function sectionsOf(type) {
+  const rows = SECTIONS[String(type || '').toUpperCase()] || [];
+  return rows.map(function (row) {
+    return {
+      id: row[0],
+      label: row[1],
+      action: row[2],
+      placeholder: row[3] || '',
+      required: row[4] === true
+    };
+  });
+}
+
+/**
+ * 某模板用到的行动（去重，按出现顺序）。
+ *
+ * 新建时用它给用户看「选了这个模板，正文会问你要哪些东西」。
+ *
+ * @param {string} type
+ * @returns {string[]}
+ */
+function actionsOf(type) {
+  const out = [];
+  for (const s of sectionsOf(type)) {
+    if (s.action && !out.includes(s.action)) out.push(s.action);
+  }
+  return out;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   行动的中文名和一句话说明
+   ══════════════════════════════════════════════════════════════ */
+const ACTION_LABEL = {
+  text: '文本',
+  markdown: '说明',
+  ask: '选一个',
+  rank: '排序',
+  derive: '派生'
+};
+
+const ACTION_HINT = {
+  text: '一段可输入的文本',
+  markdown: '只读的一段说明',
+  ask: '从几个选项里挑一个',
+  rank: '排先后顺序',
+  derive: '从这一条派生子任务'
+};
+
+const DOMAIN_LABEL = { code: '代码', writing: '写作', art: '绘画', general: '通用' };
+
+/**
+ * 一条事项的领域。
+ *
+ * 数据里没有单独的 domain 字段 —— 领域由模板决定。
+ * 模板归属哪个领域在 TEMPLATES 表里（modal.js），这里按 type 反查。
+ * 查不到就归「通用」。
+ *
+ * @param {object} task
+ * @returns {string}
+ */
+function domainOf(task) {
+  const found = (typeof TEMPLATES !== 'undefined' ? TEMPLATES : []).find((x) => x.code === task.type);
+  return found ? found.domain : 'general';
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   过滤菜单的三列定义
+
+   用户原话：
+     > 过滤栏，应该做二级菜单。点击展开以后才有过滤选项。
+     > 一级菜单是"状态"，"类别"，"领域"。
+     > 当二级点进去的时候，他还会从旁边展开三级菜单（占文档流）。
+     > 例如"搁置"->"需要信息，需要权限"。"完成"-》"成功"，"失败"，"取消"。
+     > 而类别，就是这个类别下面的模板。
+   ══════════════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════════════
+   关系类型 → 颜色
+
+   用户原话：
+     > 这个图例只有父子和链接。但既然链接关系不多，那就可以给每个关系都做一种图例。
+
+   真实插件里 links 的 label 有六种（core 的 linkPairs 认这些）：
+     依赖 · 派生 · 来源 · 相关 · 约束 · 参考
+
+   每种一个颜色，图例全部列出来。
+   ══════════════════════════════════════════════════════════════ */
+const LINK_KINDS = [
+  { key: 'parent', label: '父子', color: '#9aa0a6', dashed: false },
+  { key: '依赖',   label: '依赖', color: '#c98a20', dashed: false },
+  { key: '派生',   label: '派生', color: '#3b7dd8', dashed: true },
+  { key: '来源',   label: '来源', color: '#7c5cd6', dashed: true },
+  { key: '相关',   label: '相关', color: '#2e9e6b', dashed: true },
+  { key: '约束',   label: '约束', color: '#c0392b', dashed: false },
+  { key: '参考',   label: '参考', color: '#8a9099', dashed: true }
+];
+
+/** 取关系类型的颜色（认不出就用「相关」那档）。 */
+function linkColor(kind) {
+  const found = LINK_KINDS.find((x) => x.key === kind);
+  return found ? found.color : '#8a9099';
+}
+
+
+
+/* ══════════════════════════════════════════════════════════════
+   科技树 —— 把事项铺成分层有向图
+
+   真实插件用 dagre（Sugiyama）。这里写简化版：按依赖深度分列，
+   层内按父节点行号排序。10~30 个节点看不出差别。
+
+   边的方向一律归一成「先决 → 依赖方」：
+     父 → 子 / 依赖:它 → 我 / 派生:我 → 它 / 来源:它 → 我
+   ══════════════════════════════════════════════════════════════ */
+const TREE_NODE_W = 150;
+const TREE_NODE_H = 50;
+const TREE_GAP_X = 62;
+const TREE_GAP_Y = 16;
+
+/** 解析 links 字符串：`依赖:WI-01, 派生:DP-02` */
+function parseLinks(raw) {
+  const text = String(raw || '').trim();
+  if (text === '') return [];
+  const out = [];
+  for (const part of text.split(',')) {
+    const piece = part.trim();
+    if (piece === '') continue;
+    const cut = piece.indexOf(':');
+    if (cut < 0) out.push({ label: '相关', to: piece });
+    else out.push({ label: piece.slice(0, cut).trim() || '相关', to: piece.slice(cut + 1).trim() });
+  }
+  return out.filter((link) => link.to !== '');
+}
+
+function buildTree(tasks) {
+  const byId = {};
+  for (const t of tasks) byId[t.id] = t;
+
+  const edges = [];
+  const seen = new Set();
+  const addEdge = (src, dst, kind, label) => {
+    if (src === dst || !byId[src] || !byId[dst]) return;
+    /* 去重键带上 kind：父子边和「来源」边指向同一对节点但语义不同，
+       以前只按 id 对去重，先加的父子边把来源边吞掉了。 */
+    const pair = src < dst ? src + '\u0000' + dst : dst + '\u0000' + src;
+    const key = pair + '\u0000' + kind + '\u0000' + (label || '');
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ src, dst, kind, label });
+  };
+
+  for (const t of tasks) {
+    if (t.parent) addEdge(t.parent, t.id, 'parent', 'parent');
+    for (const link of parseLinks(t.links)) {
+      if (link.label === '派生') addEdge(t.id, link.to, 'link', link.label);
+      else addEdge(link.to, t.id, 'link', link.label);
+    }
+  }
+
+  /* 分层：最长路径深度，最多 N 轮（防环） */
+  const depth = {};
+  for (const t of tasks) depth[t.id] = 0;
+  for (let round = 0; round < tasks.length; round++) {
+    let changed = false;
+    for (const edge of edges) {
+      const want = depth[edge.src] + 1;
+      if (depth[edge.dst] < want) { depth[edge.dst] = want; changed = true; }
+    }
+    if (!changed) break;
+  }
+
+  const layers = [];
+  for (const t of tasks) {
+    const d = depth[t.id];
+    if (!layers[d]) layers[d] = [];
+    layers[d].push(t);
+  }
+  const live = layers.filter((l) => Array.isArray(l) && l.length > 0);
+
+  const placed = {};
+  const nodes = [];
+  let maxRows = 0;
+
+  live.forEach((layer, col) => {
+    layer.sort((a, b) => {
+      const pa = a.parent && placed[a.parent] ? placed[a.parent].row : 999;
+      const pb = b.parent && placed[b.parent] ? placed[b.parent].row : 999;
+      if (pa !== pb) return pa - pb;
+      return a.id < b.id ? -1 : 1;
+    });
+    layer.forEach((t, row) => {
+      const x = col * (TREE_NODE_W + TREE_GAP_X);
+      const y = row * (TREE_NODE_H + TREE_GAP_Y);
+      placed[t.id] = { node: t, x, y, row, col };
+      nodes.push(placed[t.id]);
+    });
+    maxRows = Math.max(maxRows, layer.length);
+  });
+
+  return {
+    nodes,
+    edges: edges.filter((edge) => placed[edge.src] && placed[edge.dst]),
+    placed,
+    width: live.length === 0 ? 0 : live.length * (TREE_NODE_W + TREE_GAP_X) - TREE_GAP_X,
+    height: maxRows === 0 ? 0 : maxRows * (TREE_NODE_H + TREE_GAP_Y) - TREE_GAP_Y
+  };
+}
+
+/**
+ * 只重刷连线的透明度和线宽（hover 用），不重建 DOM。
+ *
+ * 重建整棵树的代价太大 —— 鼠标一进去就闪一下。
+ */
+function repaintEdges() {
+  const svg = document.querySelector('.tree-canvas svg');
+  if (svg === null) return;
+  const focusId = state.hoverId !== '' ? state.hoverId : state.selected;
+
+  /*
+   * 注意：没有 hover 也没有选中时，所有连线保持正常透明度（0.55）。
+   * 不能因为 focusId === '' 就把它们全压暗 —— 那样一进页面看起来
+   * 就像全被禁用了。
+   */
+  for (const path of svg.querySelectorAll('path[data-edge]')) {
+    const [src, dst] = path.getAttribute('data-edge').split('>');
+    const linked = focusId !== '' && (src === focusId || dst === focusId);
+    const dimmed = focusId !== '' && !linked;
+    path.setAttribute('opacity', focusId === '' ? '0.5' : (linked ? '1' : '0.14'));
+    path.setAttribute('stroke-width', linked ? '2' : '1.2');
+  }
+
+  /* 节点的悬浮描边也跟着刷 */
+  for (const node of document.querySelectorAll('.tree-node')) {
+    const isHover = state.hoverId !== '' && node.textContent.startsWith(state.hoverId);
+    node.classList.toggle('hov', isHover);
+  }
+}
+
+function renderTree(box, tasks) {
+  box.innerHTML = '';
+  if (tasks.length === 0) {
+    box.appendChild(el('div', {class:'tree-empty'}, '这个筛选下没有事项。'));
+    return;
+  }
+
+  const tree = buildTree(tasks);
+  const canvas = el('div', {class:'tree-canvas', style:{
+    width: (tree.width + 20) + 'px',
+    height: (tree.height + 20) + 'px'
+  }});
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', String(tree.width + 20));
+  svg.setAttribute('height', String(tree.height + 20));
+  svg.style.position = 'absolute';
+  svg.style.left = '0';
+  svg.style.top = '0';
+  svg.style.pointerEvents = 'none';
+
+  const defs = document.createElementNS(ns, 'defs');
+  const marker = document.createElementNS(ns, 'marker');
+  marker.setAttribute('id', 'tree-arrow');
+  marker.setAttribute('viewBox', '0 0 8 8');
+  marker.setAttribute('refX', '7');
+  marker.setAttribute('refY', '4');
+  marker.setAttribute('markerWidth', '7');
+  marker.setAttribute('markerHeight', '7');
+  marker.setAttribute('orient', 'auto');
+  const arrowPath = document.createElementNS(ns, 'path');
+  arrowPath.setAttribute('d', 'M0 0 L8 4 L0 8 Z');
+  arrowPath.setAttribute('fill', 'var(--border-2)');
+  marker.appendChild(arrowPath);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  /* 同一对节点的多条边（父子 + 来源 + 派生）会画成完全重叠的曲线，
+     看不出是几条。这里按同对出现的序号各自错开一点。 */
+  const pairSeen = new Map();
+  /* 画连线。抽成函数是因为 hover 时要重画（只改透明度，不动 DOM 结构）。 */
+  function paintEdges() {
+  for (const edge of tree.edges) {
+    const pairKey = edge.src < edge.dst ? edge.src + '|' + edge.dst : edge.dst + '|' + edge.src;
+    const index = pairSeen.get(pairKey) ?? 0;
+    pairSeen.set(pairKey, index + 1);
+
+    const from = tree.placed[edge.src];
+    const to = tree.placed[edge.dst];
+    const x1 = from.x + TREE_NODE_W;
+    const y1 = from.y + TREE_NODE_H / 2;
+    const x2 = to.x - 6;
+    const y2 = to.y + TREE_NODE_H / 2;
+    /*
+     * 曲率照 mod：dx = max(28, |x2 - x1| / 2)，控制点都在水平线上（不上下弯）。
+     *
+     * mod 的曲线是：
+     *   M x1 y1  C (x1+dx) y1  (x2-dx) y2  x2 y2
+     *
+     * 沙盘原来额外加了 bow（多条边错开弯曲），但这会让同一对节点间的
+     * 多条线看起来像不同种类的关系。mod 不做这个。
+     */
+    const dx = Math.max(28, Math.abs(x2 - x1) / 2);
+    const path = document.createElementNS(ns, 'path');
+    /* 照 mod：控制点都在水平线上，不上下弯 */
+    path.setAttribute('d', 'M' + x1 + ' ' + y1
+      + ' C' + (x1 + dx) + ' ' + y1 + ' ' + (x2 - dx) + ' ' + y2 + ' ' + x2 + ' ' + y2);
+    path.setAttribute('fill', 'none');
+    /*
+     * 和它相连的箭头要突出显示。
+     *
+     * 用户原话：
+     *   > 点击卡片选中卡片的时候。这个卡片的关联箭头没有突出显示。
+     *
+     * 后又指出 mod 里是鼠标悬浮就亮：
+     *   > 他的鼠标悬浮显示箭头
+     *
+     * 所以两个都支持，**hover 优先**：
+     *   hover 有值   按 hover 的节点算
+     *   hover 没值   按选中那条算
+     *
+     * 这样「鼠标扫一圈看关系」和「点开某条看它连谁」两种用法都成立。
+     */
+    const focusId = state.hoverId !== '' ? state.hoverId : state.selected;
+    const linked = focusId !== '' && (edge.src === focusId || edge.dst === focusId);
+    const dimmed = focusId !== '' && !linked;
+
+    path.setAttribute('stroke', linkColor(edge.label || edge.kind));
+    /*
+     * 数值照 mod（composer-drawer/client.src.js 的 TechTree）：
+     *
+     *   strokeWidth: active ? 2 : 1.2
+     *   opacity: hovered === '' ? 0.5 : active ? 1 : 0.14
+     *
+     * 之前沙盘用的是 2.6 / 1.5 / 0.55 / 0.12 —— 比 mod 重一点。
+     * 用户原话：
+     *   > 包括他那个线的粗细，箭头大小
+     */
+    path.setAttribute('opacity', focusId === '' ? '0.5' : (linked ? '1' : '0.14'));
+    path.setAttribute('stroke-width', linked ? '2' : '1.2');
+    {
+      const spec = LINK_KINDS.find((x) => x.key === (edge.label || edge.kind));
+      if (spec && spec.dashed) path.setAttribute('stroke-dasharray', '4 3');
+    }
+    path.setAttribute('marker-end', 'url(#tree-arrow)');
+    /* 存下 key，hover 时按它找回来改 */
+    path.setAttribute('data-edge', edge.src + '>' + edge.dst);
+    path.setAttribute('data-kind', edge.label || edge.kind);
+    svg.appendChild(path);
+  }
+  }
+  paintEdges();
+  canvas.appendChild(svg);
+
+  for (const placed of tree.nodes) {
+    const t = placed.node;
+    const color = KIND_COLOR[t.kind] || 'var(--text-3)';
+    canvas.appendChild(el('div', {
+      class: 'tree-node' + (t.id === state.selected ? ' on' : '') + (t.id === state.hoverId ? ' hov' : ''),
+      style: { left: (placed.x + 10) + 'px', top: (placed.y + 10) + 'px' },
+      /*
+       * 鼠标悬浮就显示这个节点的关系箭头。
+       *
+       * 用户原话：
+       *   > 他的鼠标悬浮显示箭头
+       *
+       * mod 里就是这么做的（onMouseEnter/onMouseLeave + hovered 状态）。
+       * 比「必须先点开」好 —— 扫一圈就能看关系。
+       *
+       * 只改 SVG 的透明度，不重绘整棵树（重绘会闪）。
+       */
+      onmouseenter() {
+        state.hoverId = t.id;
+        repaintEdges();
+      },
+      onmouseleave() {
+        state.hoverId = '';
+        repaintEdges();
+      },
+      onclick() {
+        state.selected = t.id;
+        state.menuOpen = false;
+        state.relOpen = false;
+        renderAll();
+      }
+    },
+      el('div', {class:'top'},
+        el('span', {class:'tid', style:{color}}, t.id),
+        el('span', {class:'tk', style:{color}}, KIND_LABEL[t.kind] || t.kind),
+        /* 领域：只写在类别后面。用户原话：
+           > 科技树模式下，目标的 label 后面还要放领域的 label。 */
+        el('span', {class:'tk', style:{color, opacity:'0.65'}}, DOMAIN_LABEL[domainOf(t)] || domainOf(t)),
+        el('span', {style:{marginLeft:'auto', color:toneOf(t.status), fontSize:'8px'}}, '●')),
+      el('div', {class:'tt'}, t.title)));
+  }
+
+  box.appendChild(canvas);
+}
+
+
+/*
+ * 状态 → 它属于哪些组。
+ *
+ * ## 「已结束」而不是「完成」
+ *
+ * 用户原话：
+ *   > "完成"，他的组装改为"成功，失败，取消"。
+ *
+ * 之前组叫「完成」，里面装的却是 完成/失败/取消/拒绝 ——
+ * 组名只覆盖了成功那一支。筛选器上这组就叫「完成」，
+ * 用户点它时分不清是想看「已完成的」还是「所有结束的」。
+ *
+ * 改名「已结束」，覆盖四个成员。
+ */
+const STATUS_GROUP = {
+  '未指定':[],
+  '提交':['进行'], '处理中':['进行'],
+  '需要补充':['进行','搁置'], '需要授权':['进行','搁置'],
+  '完成':['已结束'], '失败':['已结束'], '取消':['已结束'], '拒绝':['已结束']
+};
+/*
+ * 一个状态可能同时属于多个组。
+ *
+ * 「需要补充」「需要授权」是 ['进行','搁置'] —— 它卡住了（搁置），
+ * 但还在等人的动作（进行）。
+ *
+ * 之前 groupOf 只取 [0]，得到 '进行'，于是：
+ *   · 「搁置」这个筛选项永远匹配不到任何一条
+ *   · 这两个状态被染成品牌蓝而不是警示黄
+ *   · 详情页 pill 显示「需要补充 · 进行」
+ */
+const groupsOf = (s) => STATUS_GROUP[s] || [];
+
+/*
+ * 单一归类，用于取色和展示。
+ *
+ * 优先级：搁置 > 进行 > 已结束 > 草稿。
+ * 卡住的东西最该被看见，所以搁置优先。
+ */
+const groupOf = (s) => {
+  const gs = groupsOf(s);
+  if (gs.includes('搁置')) return '搁置';
+  if (gs.includes('进行')) return '进行';
+  if (gs.includes('已结束')) return '已结束';
+  return '草稿';
+};
+/*
+ * 状态的颜色。
+ *
+ * ## 为什么不能按组取色
+ *
+ * 之前是 `g === '完成' ? 'var(--work)'` —— 按组取色，于是
+ * 完成 / 失败 / 取消 / 拒绝 全都是同一个颜色。
+ *
+ * 一条失败的卡和一条完成的卡长得一模一样，扫一眼以为全绿。
+ * 这不是审美问题，是**看板会撒谎**。
+ *
+ * 所以改成按状态取色：
+ *   完成     绿（--work）
+ *   失败     红（--danger）—— 唯一需要后续动作的终结
+ *   取消/拒绝 灰（--text-3）—— 主动放弃，不需要处理
+ *   搁置两项 黄（--warn）
+ *   进行两项 蓝（--brand）
+ */
+const STATUS_TONE = {
+  '未指定': 'var(--text-3)',
+  '提交': 'var(--brand)', '处理中': 'var(--brand)',
+  '需要补充': 'var(--warn)', '需要授权': 'var(--warn)',
+  '完成': 'var(--work)',
+  '失败': 'var(--danger)',
+  '取消': 'var(--text-3)', '拒绝': 'var(--text-3)'
+};
+
+const toneOf = (s) => STATUS_TONE[s] || 'var(--text-3)';
+const KIND_COLOR = { goal:'var(--goal)', design:'var(--brand)', record:'var(--record)', work:'var(--work)' };
+const KIND_LABEL = { goal:'目标', design:'设计', record:'记录', work:'工作' };
+
+/* 状态转移表（和宿主 transitionBlocker 口径一致） */
+const TRANSITIONS = {
+  '未指定':[{to:'提交',label:'采纳',primary:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '提交':[{to:'处理中',label:'领取',primary:true},{to:'完成',label:'直接完成'},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '处理中':[{to:'完成',label:'完成',primary:true},{to:'失败',label:'失败',bad:true},{to:'取消',label:'取消',bad:true},{to:'需要补充',label:'搁置 · 需要补充'},{to:'需要授权',label:'搁置 · 需要授权'}],
+  '需要补充':[{to:'处理中',label:'继续',primary:true},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '需要授权':[{to:'处理中',label:'继续',primary:true},{to:'取消',label:'取消',bad:true},{to:'拒绝',label:'拒绝',bad:true}],
+  '完成':[{to:'提交',label:'重开',primary:true}],
+  '失败':[{to:'提交',label:'重开',primary:true}],
+  '取消':[{to:'提交',label:'重开',primary:true}],
+  '拒绝':[{to:'提交',label:'重开',primary:true}]
+};
+
+/* ══════════════════════════════════════════════════════════════
+   正文渲染 —— 按 action 分发（演示渲染器机制）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 极简 Markdown → HTML。只处理快照里用得到的几种语法：
+   标题、无序/有序列表、粗体、行内代码、引用、分割线、表格。 */
+function md(source) {
+  const text = String(source || '');
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let inList = null;
+  const inline = (s) => s
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  const flushList = () => { if (inList) { out.push('</' + inList + '>'); inList = null; } };
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i];
+    const line = raw.trimEnd();
+
+    /* 围栏代码块：```lang ... ``` */
+    if (/^```/.test(line.trim())) {
+      flushList();
+      const lang = line.trim().slice(3).trim();
+      const body = [];
+      i += 1;
+      while (i < lines.length && !/^```/.test(lines[i].trim())) {
+        body.push(lines[i]);
+        i += 1;
+      }
+      out.push('<pre class="code"><code' + (lang ? ' data-lang="' + esc(lang) + '"' : '') + '>'
+        + esc(body.join('\n')) + '</code></pre>');
+      continue;
+    }
+
+    /* 缩进代码块：连续 4 空格开头的行（表格/列表之后才算） */
+    if (/^ {4}\S/.test(raw) && inList === null) {
+      /* 先看它上面是不是空行或上一行也是缩进 —— 简单点：整段连续缩进行当一个块 */
+      const body = [line.slice(4)];
+      while (i + 1 < lines.length && (/^ {4}\S/.test(lines[i + 1]) || lines[i + 1].trim() === '')) {
+        i += 1;
+        body.push(lines[i].trim() === '' ? '' : lines[i].slice(4));
+      }
+      /* 去掉尾部空行 */
+      while (body.length > 0 && body[body.length - 1] === '') body.pop();
+      out.push('<pre class="code"><code>' + esc(body.join('\n')) + '</code></pre>');
+      continue;
+    }
+
+    if (line.trim() === '') { flushList(); continue; }
+
+    /* 表格：表头 + |---| + 数据行 */
+    if (/^\|.*\|$/.test(line.trim())) {
+      const next = lines[i + 1] ? lines[i + 1].trim() : '';
+      if (/^\|[\s:|-]+\|?$/.test(next)) {
+        flushList();
+        const cells = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+        out.push('<table><thead><tr>' + cells(line).map((c) => '<th>' + inline(c) + '</th>').join('') + '</tr></thead><tbody>');
+        i += 2;
+        while (i < lines.length && /^\|.*\|$/.test(lines[i].trim())) {
+          out.push('<tr>' + cells(lines[i]).map((c) => '<td>' + inline(c) + '</td>').join('') + '</tr>');
+          i += 1;
+        }
+        out.push('</tbody></table>');
+        i -= 1;
+        continue;
+      }
+    }
+
+    const h = /^(#{1,4})\s+(.*)$/.exec(line);
+    if (h) { flushList(); const lv = h[1].length + 2; out.push('<h' + lv + '>' + inline(h[2]) + '</h' + lv + '>'); continue; }
+    if (/^---+$/.test(line.trim())) { flushList(); out.push('<hr>'); continue; }
+    const q = /^>\s?(.*)$/.exec(line);
+    if (q) { flushList(); out.push('<blockquote>' + inline(q[1]) + '</blockquote>'); continue; }
+    const ul = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (ul) { if (inList !== 'ul') { flushList(); out.push('<ul>'); inList = 'ul'; } out.push('<li>' + inline(ul[1]) + '</li>'); continue; }
+    const ol = /^\s*\d+\.\s+(.*)$/.exec(line);
+    if (ol) { if (inList !== 'ol') { flushList(); out.push('<ol>'); inList = 'ol'; } out.push('<li>' + inline(ol[1]) + '</li>'); continue; }
+
+    flushList();
+    out.push('<p>' + inline(line) + '</p>');
+  }
+  flushList();
+  return out.join('');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   页面状态
+   ══════════════════════════════════════════════════════════════ */
+const state = {
+  view: 'tree',
+  group: 'g-2',
+  /* 过滤：三个维度各自多选，维度之间是「与」 */
+  filterOpen: '',
+  filterSub: '',
+  filterStatus: [],
+  filterKinds: [],
+  filterDomains: [],
+  filterTypes: [],
+  search: '',
+  selected: '',
+  menuOpen: false,
+  showMdx: false,
+  hoverId: '',
+  relOpen: false
+};
+
+/** 按 id 取一条（内存里的，不是磁盘）。 */
+function taskOf(id) {
+  return DB.find((x) => x.id === id);
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   编译器层 —— 参数（json）→ mdx 字符串
+
+   ## 管道
+
+   用户原话：
+
+     > 参数就是 .cs。然后渲染器给 mdx 就是 IL。
+     > 最后外部渲染器渲染 mdx，就是 .net。
+
+   对照：
+
+     .cs 源码    →  参数（JSON）
+     IL          →  mdx
+     CLR         →  外部渲染器
+     程序集/BCL  →  组件库（Ask / Rank / …）
+     编译器      →  **本文件**
+
+   ## 每个行动两个方向
+
+     form(schema)   创建时：画控件，让用户填 → 产出 json
+     render(json)   展示时：json → mdx
+
+   ## 唯一的安全边界
+
+   参数**只当字面量**嵌入，走 `JSON.stringify`：
+
+     对：`<Ask case={${JSON.stringify(raw.case)}} />`
+     错：`<Ask case={[${raw.case.join(',')}]} />`
+
+   第二种会让参数里长得像代码的字符串变成真代码。
+
+   这不是安全检查，是**类型保证**：schema 说 string，它就只能是 string。
+
+   ## 为什么渲染器不碰 React
+
+   它只生成文本。所以可以跑在宿主侧（Node），也可以在浏览器里。
+   真正把 mdx 变成界面的是外部渲染器（见 mdx-runtime.js）。
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * 把一个值编成 mdx 表达式里的**字面量**。
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function lit(value) {
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+/**
+ * 编一个属性。值是字符串就走 `"..."`，其它走 `{...}`。
+ *
+ * @param {string} name
+ * @param {unknown} value
+ * @returns {string}
+ */
+function attr(name, value) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value === 'string') return ' ' + name + '=' + lit(value);
+  if (typeof value === 'number') return ' ' + name + '={' + String(value) + '}';
+  if (typeof value === 'boolean') return ' ' + name + '={' + String(value) + '}';
+  return ' ' + name + '={' + lit(value) + '}';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   五个行动的编译器
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * text —— 一段可输入的文本。
+ *
+ * @param {object} raw
+ * @returns {string}
+ */
+function compileText(raw) {
+  const row = Number(raw.row) > 0 ? Number(raw.row) : 3;
+  return '<Text'
+    + attr('value', String(raw.value || ''))
+    + attr('row', row)
+    + attr('placeholder', raw.placeholder)
+    + attr('label', raw.label)
+    + attr('description', raw.description)
+    + attr('required', raw.required === true ? true : undefined)
+    + ' />';
+}
+
+/**
+ * markdown —— 只读富文本。
+ *
+ * @param {object} raw
+ * @returns {string}
+ */
+function compileMarkdown(raw) {
+  return '<Markdown'
+    + attr('value', String(raw.value || ''))
+    + attr('placeholder', raw.placeholder)
+    + attr('label', raw.label)
+    + ' />';
+}
+
+/**
+ * 把 options 归一成 { label, description, recommended }。
+ *
+ * 兼容两种旧写法：
+ *   'A'                             纯字符串
+ *   { title: 'A', placeholder: 'x' } 旧字段名
+ *
+ * @param {unknown} options
+ * @returns {Array<{label: string, description: string, recommended: boolean}>}
+ */
+function normalizeOptions(options) {
+  if (!Array.isArray(options)) return [];
+  return options.map(function (o) {
+    if (typeof o === 'string') return { label: o, description: '', recommended: false };
+    return {
+      label: String(o.label || o.title || ''),
+      description: String(o.description || o.placeholder || ''),
+      recommended: o.recommended === true
+    };
+  });
+}
+
+/**
+ * ask —— 让用户从几个选项里挑。
+ *
+ * ## 架构只给「选项」和「最多选几个」
+ *
+ *   max_picks 不写或 1  → 单选
+ *   max_picks > 1       → 多选
+ *
+ * ## 用户答案永远是数组
+ *
+ * 用户原话：
+ *   > 架构里面对这个东西接受的应该是数组。
+ *
+ * 所以 mdx 里统一写 picked 数组：
+ *
+ *   <Ask options={[...]} maxPicks={1} picked={[]} />
+ *
+ * 单选时数组长度最多 1，由渲染器保证。
+ *
+ * ## 老数据兼容
+ *
+ * 以前存的是 picked:'2' / picked_multi:['1']，这里统一转成数组。
+ *
+ * @param {object} raw
+ * @returns {string}
+ */
+function compileAsk(raw) {
+  const options = normalizeOptions(raw.options);
+
+  /* 最多选几个。老数据用 multi:true 表示的，转成不限 */
+  const maxPicks = Number(raw.max_picks) > 0
+    ? Number(raw.max_picks)
+    : (raw.multi === true ? 99 : 1);
+
+  /* 用户答案统一成数组 */
+  const picked = Array.isArray(raw.picked)
+    ? raw.picked.map(String)
+    : (Array.isArray(raw.picked_multi)
+        ? raw.picked_multi.map(String)
+        : (raw.picked === undefined || raw.picked === null || raw.picked === ''
+            ? []
+            : [String(raw.picked)]));
+
+  return '<Ask'
+    + attr('header', raw.header)
+    + attr('question', raw.question)
+    + attr('options', options)
+    + attr('maxPicks', maxPicks)
+    + attr('picked', picked)
+    + attr('placeholder', raw.placeholder)
+    + attr('label', raw.label)
+    + attr('description', raw.description)
+    + attr('required', raw.required === true ? true : undefined)
+    + ' />';
+}
+
+/**
+ * rank —— 排先后顺序。
+ *
+ * @param {object} raw
+ * @returns {string}
+ */
+function compileRank(raw) {
+  const items = Array.isArray(raw.items)
+    ? raw.items.map(function (o) {
+        if (typeof o === 'string') return { title: o, placeholder: '' };
+        return { title: String(o.title || ''), placeholder: String(o.placeholder || '') };
+      })
+    : [];
+
+  return '<Rank'
+    + attr('items', items)
+    + attr('placeholder', raw.placeholder)
+    + attr('label', raw.label)
+    + attr('description', raw.description)
+    + ' />';
+}
+
+/**
+ * derive —— 从这一条派生子任务。
+ *
+ * @param {object} raw
+ * @returns {string}
+ */
+function compileDerive(raw) {
+  const templates = Array.isArray(raw.templates) ? raw.templates.map(String) : [];
+  return '<Derive'
+    + attr('templates', templates)
+    + attr('mode', String(raw.mode || 'ask'))
+    + attr('placeholder', raw.placeholder)
+    + attr('label', raw.label)
+    + attr('description', raw.description)
+    + ' />';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   注册表
+   ══════════════════════════════════════════════════════════════ */
+
+/** 行为名 → 编译器。 */
+const ACTION_COMPILERS = {
+  text: compileText,
+  markdown: compileMarkdown,
+  ask: compileAsk,
+  rank: compileRank,
+  derive: compileDerive
+};
+
+/** 别名：旧模板还在用这些名字。 */
+const COMPILER_ALIASES = { textarea: 'text', input: 'text', choose: 'ask', multi: 'ask' };
+
+/**
+ * 编译一章。
+ *
+ * @param {string} key   章节 id
+ * @param {object} raw   这一章的值
+ * @returns {string} mdx 片段；不认识的行为返回灰卡
+ */
+function compileSection(key, raw) {
+  if (raw === null || typeof raw !== 'object') return '';
+
+  const given = String(raw.action || raw.type || '').trim();
+  if (given === '') return '';
+
+  const action = COMPILER_ALIASES[given] || given;
+  const compile = ACTION_COMPILERS[action];
+
+  /*
+   * 把章节 id 当成 mdx 的一个属性写进去。
+   *
+   * ## 为什么必须这样
+   *
+   * 渲染器要回答「用户改的这一章是哪一章」。之前它靠「这是第几个标签」
+   * 去猜，而标签数是编译器决定的、key 列表是另一个文件算的 ——
+   * 两份实现必须永远同步，没有任何机制保证。
+   *
+   * 一旦对不上（body.want = null / 章节缺 action / 旧字符串正文），
+   * 之后每一章都错开一格：用户改 A 章，值写进 B 章，静默生效。
+   *
+   * 把 key 写进 mdx 之后，身份跟着标签走，顺序不再重要。
+   *
+   * key 是纯字符串，走 lit()（JSON.stringify），
+   * 不破坏「参数只当字面量」的边界。
+   */
+  const withKey = function (mdx) {
+    if (key === '' || mdx === '') return mdx;
+    /* 插在第一个空格前：<Ask xxx /> → <Ask key="want" xxx /> */
+    const at = mdx.indexOf(' ');
+    if (at < 0) return mdx;
+    return mdx.slice(0, at) + ' key=' + lit(key) + mdx.slice(at);
+  };
+
+  if (compile === undefined) {
+    /* 不认识这个行为：输出一个灰卡组件。
+       外部渲染器如果也不认识 Unknown，它自己会兜底。 */
+    return withKey('<Unknown name=' + lit(given) + ' value={' + lit(raw) + '} />');
+  }
+
+  return withKey(compile(raw));
+}
+
+/**
+ * 把旧的字符串正文（`## 标题\n内容`）编译成 mdx。
+ *
+ * ## 为什么不能整段当一个 Markdown
+ *
+ * 旧正文是：
+ *
+ *     ## 要定什么
+ *
+ *     不同模板前缀是否各自独立流水。
+ *
+ *     ## 选项
+ *
+ *     - WF-01 和 GU-01 各自从 01 开始
+ *     - 全部共用一个流水号
+ *
+ * 如果整段包成一个 <Markdown>，**章节结构全丢了** ——
+ * 「选项」这章本该是 ask，结果变成一段文字。
+ *
+ * 所以：按 `## ` 切开，拿标题去章节表里查它是什么行为，
+ * 再用那个行为编译。
+ *
+ * ## 标题对不上时
+ *
+ * 归给 `other` 那一章的行为（通常是 text）。
+ * 还不行就当 markdown。
+ *
+ * @param {object} task
+ * @param {string} body
+ * @returns {string}
+ */
+function compileLegacyString(task, body) {
+  const sections = sectionsOf(task.type);
+
+  /* 按 `## 标题` 切段 */
+  const chunks = [];
+  let current = null;
+  for (const line of String(body).split(/\r?\n/u)) {
+    const m = /^##\s+(.+)$/u.exec(line);
+    if (m !== null) {
+      if (current !== null) chunks.push(current);
+      current = { title: m[1].trim(), lines: [] };
+      continue;
+    }
+    if (current === null) continue;
+    current.lines.push(line);
+  }
+  if (current !== null) chunks.push(current);
+
+  /* 一个 ## 都没有：整段当一个 Markdown */
+  if (chunks.length === 0) {
+    return '<Markdown value=' + lit(body) + ' />';
+  }
+
+  const parts = [];
+  for (const chunk of chunks) {
+    const text = chunk.lines.join('\n').trim();
+
+    /* 拿标题去章节表里查 —— 按 label 或 id 都认 */
+    const section = sections.find(function (s) {
+      return s.label === chunk.title || s.id === chunk.title;
+    });
+
+    /* 查不到这个标题 = 旧数据里的自由分节。
+       这种内容只能当**只读展示** —— 我们不知道它该填什么，也不能编一个输入框出来。
+       所以降级成 markdown，不是 text。 */
+    const action = section ? section.action : 'markdown';
+
+    const raw = { action: action, value: text, label: chunk.title };
+    /* 章节表里有 placeholder 就带上 */
+    if (section && section.placeholder) raw.placeholder = section.placeholder;
+
+    /* ask / rank / derive 这类要结构的，旧数据里没有 —— 降级成 markdown。
+       标题放到 label 上（由外部渲染器画），value 里不留 ##。 */
+    if (action === 'ask' || action === 'rank' || action === 'derive') {
+      parts.push('<Markdown value=' + lit(text) + ' label=' + lit(chunk.title) + ' />');
+      continue;
+    }
+
+    parts.push(compileSection(section ? section.id : chunk.title, raw));
+  }
+  return parts.join('\n');
+}
+
+/**
+ * 编译整份正文。
+ *
+ * @param {object} task
+ * @returns {string} mdx
+ */
+function compileBody(task) {
+  const body = task.body;
+
+  /* 旧格式字符串：按 `## 标题` 切开，每段按章节表匹配它的行为 */
+  if (typeof body === 'string') {
+    if (body.trim() === '') return '';
+    return compileLegacyString(task, body);
+  }
+
+  if (body === null || typeof body !== 'object') return '';
+
+  /* 按模板章节顺序；模板里没有的键排后面 */
+  const sections = sectionsOf(task.type);
+  const order = [];
+  for (const s of sections) {
+    if (body[s.id] !== undefined) order.push([s.id, body[s.id]]);
+  }
+  for (const [key, value] of Object.entries(body)) {
+    if (!sections.some((s) => s.id === key)) order.push([key, value]);
+  }
+
+  const parts = [];
+  for (const [key, raw] of order) {
+    const mdx = compileSection(key, raw);
+    if (mdx !== '') parts.push(mdx);
+  }
+  return parts.join('\n');
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   外部渲染器 —— mdx 字符串 → 真正的界面
+
+   ## 在管道里的位置
+
+     参数（json）
+        ↓  compiler.js
+     mdx 字符串
+        ↓  **本文件**
+     DOM + 行为
+
+   用户原话：
+
+      > 最后外部渲染器渲染 mdx，就是 .net。
+
+   ## 为什么这里不接 @mdx-js/mdx
+
+   真实的包是 `@mdx-js/mdx` + `@mdx-js/react`（见 RR-10）。
+
+   沙盘是两份独立的静态 HTML，不打包、不带 node_modules。
+   所以这里实现一个**子集编译器**，只认我们自己编译器产出的那几种形状：
+
+     <Text value="…" row={3} placeholder="…" />
+     <Ask options={[{…}]} picked="…" />
+     <Markdown value="…" />
+     <Rank items={[{…}]} />
+     <Derive templates={["WR"]} mode="ask" />
+     <Unknown name="…" value={{…}} />
+
+   这不是「另一种 mdx」，是 mdx 的受限子集 —— 解析规则和真 mdx 一致
+   （标签、字符串属性、`{}` 表达式），只是表达式只允许字面量。
+
+   ## 换成真包要改什么
+
+   只改 `renderMdx()` 这一个函数：
+
+     const { default: Content } = await evaluate(mdx, {
+       ...runtime,
+       useMDXComponents: () => COMPONENTS,
+     });
+     return Content;
+
+   组件表（COMPONENTS）原样可用。
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * 解析一个 mdx 属性串。
+ *
+ * 支持三种形态：
+ *   name="字符串"
+ *   name={字面量}
+ *   name
+ *
+ * @param {string} source
+ * @returns {Record<string, unknown>}
+ */
+function parseAttrs(source) {
+  const out = {};
+  let i = 0;
+
+  while (i < source.length) {
+    /* 跳过空白 */
+    while (i < source.length && /\s/u.test(source[i])) i += 1;
+    if (i >= source.length) break;
+
+    /* 属性名 */
+    const nameStart = i;
+    while (i < source.length && /[A-Za-z_$]/u.test(source[i])) i += 1;
+    const name = source.slice(nameStart, i);
+    if (name === '') { i += 1; continue; }
+
+    /* 等号 */
+    while (i < source.length && /\s/u.test(source[i])) i += 1;
+    if (source[i] !== '=') {
+      out[name] = true;
+      continue;
+    }
+    i += 1;
+    while (i < source.length && /\s/u.test(source[i])) i += 1;
+
+    if (source[i] === '"' || source[i] === "'") {
+      /* 字符串字面量。
+         注意：**只认起始那个引号**，中途出现的 ' 和 ` 都是普通字符。
+         以前是遇到任何引号都当边界，导致 `console.log('x')` 被截断。 */
+      const quote = source[i];
+      i += 1;
+      let text = '';
+      while (i < source.length && source[i] !== quote) {
+        /* 同类引号才结束 —— 其它引号是内容 */
+        if (source[i] === '\\') {
+          /* 还原转义：\\n → 换行，\\t → tab，\\" → 引号 */
+          const next = source[i + 1];
+          if (next === 'n') text += '\n';
+          else if (next === 't') text += '\t';
+          else if (next === 'r') text += '\r';
+          else text += next;
+          i += 2;
+          continue;
+        }
+        text += source[i];
+        i += 1;
+      }
+      i += 1;
+      out[name] = text;
+      continue;
+    }
+
+    if (source[i] === '{') {
+      /* 表达式：只吃一个平衡的 {...}，然后按字面量求值 */
+      const start = i;
+      let depth = 0;
+      let inStr = null;
+      while (i < source.length) {
+        const c = source[i];
+        if (inStr !== null) {
+          if (c === '\\') { i += 2; continue; }
+          if (c === inStr) inStr = null;
+          i += 1;
+          continue;
+        }
+        if (c === '"' || c === "'") { inStr = c; i += 1; continue; }
+        if (c === '{') depth += 1;
+        else if (c === '}') {
+          depth -= 1;
+          if (depth === 0) { i += 1; break; }
+        }
+        i += 1;
+      }
+      const expr = source.slice(start + 1, i - 1);
+      out[name] = evalLiteral(expr);
+      continue;
+    }
+
+    /* 其它：跳到下一个空白 */
+    const skipStart = i;
+    while (i < source.length && !/\s/u.test(source[i])) i += 1;
+    out[name] = source.slice(skipStart, i);
+  }
+
+  return out;
+}
+
+/**
+ * 求值一个「只允许字面量」的表达式。
+ *
+ * 不 eval。只认 JSON 能表达的形态（字符串、数字、布尔、数组、对象）。
+ * 认不出就原样返回字符串 —— 这样参数里的代码永远不会被执行。
+ *
+ * @param {string} expr
+ * @returns {unknown}
+ */
+function evalLiteral(expr) {
+  const text = expr.trim();
+  if (text === '') return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    /* 不是 JSON：可能是 true / false / null 之外的裸词，原样当字符串 */
+    if (text === 'true') return true;
+    if (text === 'false') return false;
+    if (text === 'null') return null;
+    return text;
+  }
+}
+
+/**
+ * 把一个自闭合标签（或成对标签）解析出来。
+ *
+ * @param {string} source
+ * @returns {Array<{name: string, attrs: object}>}
+ */
+function parseTags(source) {
+  const out = [];
+  const text = String(source);
+  let i = 0;
+
+  while (i < text.length) {
+    /* 找一个 < 后面紧跟大写字母的位置 */
+    if (text[i] !== '<' || !/[A-Z]/u.test(text[i + 1] || '')) { i += 1; continue; }
+
+    /* 标签名 */
+    const nameStart = i + 1;
+    let j = nameStart;
+    while (j < text.length && /[A-Za-z0-9]/u.test(text[j])) j += 1;
+    const name = text.slice(nameStart, j);
+
+    /* 扫属性，直到真正的 > */
+    const attrStart = j;
+    let depth = 0;
+    let quote = null;
+    let closed = -1;
+    for (; j < text.length; j += 1) {
+      const c = text[j];
+      if (quote !== null) {
+        if (c === '\\') { j += 1; continue; }
+        if (c === quote) quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'") { quote = c; continue; }
+      if (c === '{') { depth += 1; continue; }
+      if (c === '}') { depth -= 1; continue; }
+      /* 只有在 {} 外面、引号外面的 > 才是标签结束 */
+      if (c === '>' && depth === 0) { closed = j; break; }
+    }
+
+    if (closed < 0) break;
+
+    const attrText = text.slice(attrStart, closed).replace(/\/\s*$/u, '');
+    out.push({ name, attrs: parseAttrs(attrText) });
+    i = closed + 1;
+  }
+
+  return out;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   组件表
+
+   这就是「程序集」—— mdx 里的 <Ask> 对应这里的 Ask。
+   名字对不上 = 未注册组件 = 灰卡。
+   ══════════════════════════════════════════════════════════════ */
+
+const MDX_COMPONENTS = {
+  Text: function Text(props) {
+    return renderTextComponent(props);
+  },
+  Markdown: function Markdown(props) {
+    return renderMarkdownComponent(props);
+  },
+  Ask: function Ask(props) {
+    return renderAskComponent(props);
+  },
+  Rank: function Rank(props) {
+    return renderRankComponent(props);
+  },
+  Derive: function Derive(props) {
+    return renderDeriveComponent(props);
+  },
+  Unknown: function Unknown(props) {
+    return renderUnknownComponent(props);
+  }
+};
+
+/**
+ * 渲染一段 mdx 成 DOM。
+ *
+ * @param {string} mdx
+ * @returns {HTMLElement|null}
+ */
+/**
+ * 当前正在渲染的那条事项。
+ *
+ * 为什么要这个：组件只拿到 props（值），不知道自己在哪。
+ * 但改值要写回 —— 得知道「哪条事项的哪一章」。
+ *
+ * 用模块级变量而不是往下传，是因为组件表是按名字查的，
+ * 签名统一是 (props) => HTMLElement，塞不进额外参数。
+ *
+ * ## keys 只是兼容垫
+ *
+ * 章节身份现在写在 mdx 里（编译器加 key 属性），从标签自己身上读。
+ * keys / index 只在遇到**老 mdx**（没有 key 属性）时才用得上，
+ * 而且取不到就是空 key —— 空 key 会让 commit 拒绝写入，
+ * 表现为只读，而不是写错章。
+ */
+let renderCtx = { taskId: '', keys: [], index: 0 };
+
+/**
+ * 渲染一段 mdx 成 DOM。
+ *
+ * @param {string} mdx
+ * @param {{taskId?: string, keys?: string[]}} [ctx]
+ * @returns {HTMLElement|null}
+ */
+function renderMdx(mdx, ctx) {
+  const tags = parseTags(mdx);
+  if (tags.length === 0) return null;
+
+  renderCtx = {
+    taskId: (ctx && ctx.taskId) || '',
+    keys: (ctx && ctx.keys) || [],
+    index: 0
+  };
+
+  const box = el('div', {class:'mdx'});
+  for (const tag of tags) {
+    const Component = MDX_COMPONENTS[tag.name];
+
+    /*
+     * 章节身份**从标签自己身上读**，不再按「第几个」猜。
+     *
+     * 编译器现在会把 key 写进 mdx：<Ask key="want" ... />
+     * 于是标签数和 key 数对不上也不会错位 —— 每一章自带身份。
+     *
+     * 兼容：老编译器产出的 mdx 没有 key 属性，那时退回按位置取，
+     * 且**取不到就留空**（空 key 会让 commit 拒绝写入，
+     * 表现为只读，而不是写错章）。
+     */
+    const key = typeof tag.attrs.key === 'string'
+      ? tag.attrs.key
+      : (renderCtx.keys[renderCtx.index] || '');
+    renderCtx.index += 1;
+
+    if (Component === undefined) {
+      /* 未注册 = 程序集里没有这个类型。运行时才发现，画灰卡。 */
+      box.appendChild(renderUnknownComponent({ name: tag.name, value: tag.attrs }));
+      continue;
+    }
+    const node = Component({ ...tag.attrs, __key: key });
+    if (node !== null) box.appendChild(node);
+  }
+  return box;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   写回
+
+   行为在这里 —— mdx 里只写 <Ask options={...} picked="A" />，
+   点了怎么变、改哪条数据，都是渲染器给的。
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * 改一章的值。支持部分字段更新。
+ *
+ * @param {object} props    组件 props（带 __key）
+ * @param {object} patch    要改的字段
+ */
+function commit(props, patch) {
+  if (renderCtx.taskId === '') return;
+  const task = taskOf(renderCtx.taskId);
+  if (task === undefined) return;
+
+  const key = props.__key;
+  if (key === '' || typeof task.body !== 'object' || task.body === null) return;
+
+  const section = task.body[key];
+  if (section === undefined) return;
+
+  Object.assign(section, patch);
+  scheduleSave();
+  /* 点选项 / 未选择 → 焦点不该留在输入框 */
+  repaintBody(false);
+}
+
+/**
+ * 只重绘正文，保住滚动位置和焦点。
+ *
+ * 用户原话：
+ *
+ *   > 我一旦失去焦点。这个东西就整个重新绘制。回到了顶端
+ *
+ * 之前 commit 调的是 renderAll()，整页重建 —— 正文区滚到哪、
+ * 光标在哪个输入框，全丢。
+ *
+ * 现在只重绘 .d-body 里面，并且：
+ *   · 记下滚动位置，重绘后还原
+ *   · 记下焦点在哪个输入框、光标在第几个字符，重绘后还原
+ */
+/**
+ * 只存，不重绘。
+ *
+ * 用于「用户正在输入」这种场景 —— 重绘会打断打字。
+ *
+ * @param {object} props
+ * @param {object} patch
+ */
+function commitQuiet(props, patch) {
+  if (renderCtx.taskId === '') return;
+  const task = taskOf(renderCtx.taskId);
+  if (task === undefined) return;
+  const key = props.__key;
+  if (key === '' || typeof task.body !== 'object' || task.body === null) return;
+  const section = task.body[key];
+  if (section === undefined) return;
+  Object.assign(section, patch);
+  scheduleSave();
+}
+
+/**
+ * 重绘正文（保住滚动位置）。
+ *
+ * @param {boolean} [keepFocus] 要不要把焦点还原回原来的输入框。
+ *   · 输入框失焦、打字后同步 —— 要还原（用户还在里面）
+ *   · 点了「未选择」或别的选项 —— **不要还原**，焦点本就该离开输入框
+ */
+function repaintBody(keepFocus) {
+  const holder = document.querySelector('.d-body');
+  if (holder === null) { renderAll(); return; }
+
+  /*
+   * ① 记滚动 —— 用「锚点元素」而不是 scrollTop 数字。
+   *
+   * 用户原话：
+   *   > 第一次切换单选的时候，重新刷新。跳到了这个单选在详情页面顶的位置。
+   *
+   * 原因：重绘时用 scrollTop 还原，但内容高度变了（比如「未选择」那行
+   * 换成真实选项后高度不同），同一个数字指向的位置就变了。
+   *
+   * 改成记「视口顶端第一个章节的 id + 它相对视口的偏移」，
+   * 重绘后按这个把那一章放回原来的位置。
+   */
+  const scroll = holder.scrollTop;
+
+  /*
+   * 找一个锚点：视口顶端往下第一个 .sec。
+   *
+   * 用 getBoundingClientRect 而不是 offsetTop —— 因为
+   * .d-body 里的元素 offsetParent 是外层 .detail，不是 .d-body，
+   * offsetTop 和 holder.scrollTop 不在一个坐标系里。
+   */
+  /*
+   * 记一串锚点。
+   *
+   * 只记一个不够 —— 如果那一个自身的渲染高度变了，补偿就错了。
+   * 所以把视口里看得见的章节全记下来（id + 相对偏移），
+   * 还原时从上往下找第一个还存在的，用偏���差补偿。
+   */
+  const holderRect = holder.getBoundingClientRect();
+  const anchors = [];
+  for (const sec of holder.querySelectorAll('.sec')) {
+    const rect = sec.getBoundingClientRect();
+    const top = rect.top - holderRect.top;
+    /* 只记和视口有交集的 */
+    if (top + rect.height > 0 && top < holderRect.height) {
+      anchors.push({ key: sec.getAttribute('data-sec') || '', top });
+    }
+  }
+
+  /* ② 记焦点：哪个输入框、光标位置 */
+  const active = document.activeElement;
+  let focusInfo = null;
+  if (active !== null && holder.contains(active) && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
+    const all = [...holder.querySelectorAll('textarea, input[type="text"]')];
+    focusInfo = { index: all.indexOf(active), start: active.selectionStart, end: active.selectionEnd };
+  }
+
+  /* ③ 重绘 */
+  const task = taskOf(renderCtx.taskId);
+  if (task === undefined) return;
+  const fresh = renderBody(task);
+  holder.innerHTML = '';
+  if (fresh !== null) holder.appendChild(fresh);
+
+  /*
+   * ④ 还原滚动。
+   *
+   * 有锚点就按锚点还原（内容高度变了也不会跳），
+   * 没有锚点才退回 scrollTop 数字。
+   *
+   * 必须等下一帧：刚插进去时内容还没布局，scrollHeight 是旧的。
+   */
+  /*
+   * 用 rAF + setTimeout 双保险。
+   *
+   * requestAnimationFrame 在页面不可见（后台标签、无头模式、CDP 抓图时）
+   * 会被浏览器暂停 —— 只挂 rAF 的话，滚动还原根本不会执行。
+   * 所以再挂一个 setTimeout 兜底，两者谁先到用谁，只跑一次。
+   */
+  let restored = false;
+  const restore = function () {
+    if (restored) return;
+    restored = true;
+    /*
+     * 从上往下，找第一个「key 存在」的锚点，按它补偿。
+     *
+     * ## 公式为什么不能写成 `holder.scrollTop + delta`
+     *
+     * 因为上面刚做过 `holder.innerHTML = ''` —— 这一下会把
+     * scrollTop 重置成 0。所以这里的 holder.scrollTop 不是我记下的
+     * 那个值，直接拿它当基准会算错（第一次点单选时跳到顶部就是这么来的）。
+     *
+     * 正确做法：先把元素的**文档坐标**还原出来，再减去目标偏移。
+     *
+     *   E = (元素当前相对视口的 top) + (当前 scrollTop)      ← 文档坐标
+     *   scrollTop = E - 目标偏移
+     */
+    const cur = holder.scrollTop;
+    for (const anchor of anchors) {
+      if (anchor.key === '') continue;
+      const again = holder.querySelector('.sec[data-sec="' + anchor.key + '"]');
+      if (again === null) continue;
+      const nowTop = again.getBoundingClientRect().top - holder.getBoundingClientRect().top;
+      const want = (nowTop + cur) - anchor.top;
+      holder.scrollTop = want;
+      return;
+    }
+    holder.scrollTop = scroll;
+  };
+  requestAnimationFrame(restore);
+  setTimeout(restore, 0);
+  setTimeout(restore, 32);
+
+  /*
+   * ⑤ 还原焦点。
+   *
+   * 只有 keepFocus 为真才还原。
+   *
+   * 用户原话：
+   *   > 单选的"未选择"可以二次点击。若如此做，焦点会去自定义输入框。
+   *
+   * 原因是这里无条件还原：点「未选择」之前焦点在输入框里，
+   * 重绘后又被送回去 —— 看起来就像点击把焦点抢走了。
+   */
+  if (keepFocus === true && focusInfo !== null && focusInfo.index >= 0) {
+    const all = [...holder.querySelectorAll('textarea, input[type="text"]')];
+    const el2 = all[focusInfo.index];
+    if (el2 !== undefined) {
+      el2.focus();
+      try { el2.setSelectionRange(focusInfo.start, focusInfo.end); } catch { /* 某些 input 不支持 */ }
+    }
+  }
+}
+
+/**
+ * 排序：上移/下移一项。
+ *
+ * @param {object} props
+ * @param {number} index
+ * @param {number} delta
+ */
+function moveItem(props, index, delta) {
+  const items = Array.isArray(props.items) ? props.items.slice() : [];
+  const target = index + delta;
+  if (target < 0 || target >= items.length) return;
+  const [moved] = items.splice(index, 1);
+  items.splice(target, 0, moved);
+  commit(props, { items });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   组件实现
+
+   它们只接收 props（来自 mdx），不再接收 raw。
+   ══════════════════════════════════════════════════════════════ */
+
+function sectionShell(props, body) {
+  /* data-sec 是给 repaintBody 用的滚动锚点 */
+  const sec = el('div', {class:'sec', 'data-sec': props.__key || ''});
+  const label = String(props.label || '');
+  if (label !== '') {
+    sec.appendChild(el('div', {class:'sec-title'},
+      label,
+      props.required === true ? el('span', {class:'req'}, ' *') : null));
+  }
+  body.forEach(function (node) {
+    if (node !== null && node !== undefined) sec.appendChild(node);
+  });
+  if (props.description) {
+    sec.appendChild(el('div', {class:'sec-desc'}, String(props.description)));
+  }
+  return sec;
+}
+
+function renderTextComponent(props) {
+  const row = Number(props.row) > 0 ? Number(props.row) : 3;
+  const value = String(props.value || '');
+  const placeholder = String(props.placeholder || '');
+
+  const box = el('div', {class:'inter'});
+  if (row <= 1) {
+    box.appendChild(el('input', {
+      type:'text', value, placeholder, class:'text-input',
+      onchange(e) { commit(props, { value: e.target.value }); }
+    }));
+  } else {
+    const ta = el('textarea', {class:'text-input', rows:String(row), placeholder,
+      onchange(e) { commit(props, { value: e.target.value }); }});
+    ta.value = value;
+    box.appendChild(ta);
+  }
+  return sectionShell(props, [box]);
+}
+
+function renderMarkdownComponent(props) {
+  const text = String(props.value || '');
+  const d = el('div', {class:'prose'});
+  if (text.trim() === '') {
+    d.appendChild(el('span', {class:'muted'}, String(props.placeholder || '（空）')));
+  } else {
+    d.innerHTML = md(text);
+  }
+  /* 没 label 也包一层 —— 需要 data-sec 做滚动锚点 */
+  return sectionShell(props, [d]);
+}
+
+/**
+ * 「未选择」这个按钮的文字。
+ *
+ * 用户原话：
+ *   > 然后跳过，应该改名为"未选择"
+ *
+ * 它是「我没看这张卡片」，不是「都不要」——
+ * 所以不能叫跳过，那听起来像已经看过并跳过了。
+ */
+const UNSET_LABEL = '未选择';
+
+/* ══════════════════════════════════════════════════════════════
+   选项卡 —— 照宿主那个 ask 的样式
+
+   用户截图的要点：
+
+     > 主标题，副标题，手动输入。
+     > 他们没有选项点和选项框。选中了就是框框有焦点。
+     > 自己填写的那个也是合法的选项框。
+     > 渲染器给的渲染应该始终包含一个"未选择"或"跳过"。
+
+   所以：
+     · 不画圆点/方框，选中 = 整行加边框
+     · 自定义输入框和选项长得一样
+     · 「跳过」始终有
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * 一张选项卡的外壳：副标题（小字）+ 主标题（大字）。
+ *
+ * @param {object} props
+ * @param {HTMLElement} list 选项列表
+ * @returns {HTMLElement}
+ */
+function optionCard(props, list, skipActive, onSkip) {
+  /* 包一层 sectionShell。
+     不然这张卡在文档里没有 data-sec 锚点，重绘时滚动位置就补不回来。 */
+  const card = el('div', {class:'oc'});
+
+  const head = el('div', {class:'oc-head'});
+
+  /* 上面一行：灰色小字（header）+ 右边的「跳过」 */
+  const top = el('div', {class:'oc-top'});
+  if (props.header) top.appendChild(el('span', {class:'oc-sub'}, String(props.header)));
+  top.appendChild(el('span', {class:'oc-spacer'}));
+  top.appendChild(el('button', {
+    class: 'oc-skipbtn' + (skipActive ? ' on' : ''),
+    type: 'button',
+    title: '我没看这张卡片',
+    onclick: onSkip
+  }, UNSET_LABEL));
+  head.appendChild(top);
+
+  if (props.question) head.appendChild(el('div', {class:'oc-title'}, String(props.question)));
+  else if (props.placeholder) head.appendChild(el('div', {class:'oc-title'}, String(props.placeholder)));
+
+  card.appendChild(head);
+  card.appendChild(list);
+  return sectionShell(props, [card]);
+}
+
+/**
+ * 一行选项。编号 + 粗体标题 + 灰字说明 + 可选「推荐」。
+ *
+ * @param {object} opt      { label, description, recommended }
+ * @param {number} index    从 0 开始
+ * @param {boolean} active  是否选中
+ * @param {Function} onClick
+ * @returns {HTMLElement}
+ */
+function optionRow(opt, index, active, onClick) {
+  return el('button', {
+    class: 'oc-row' + (active ? ' on' : ''),
+    type: 'button',
+    onclick: onClick
+  },
+    el('span', {class:'oc-no'}, String(index + 1)),
+    el('span', {class:'oc-label'}, opt.label),
+    opt.recommended ? el('span', {class:'oc-rec'}, '推荐') : null,
+    opt.description ? el('span', {class:'oc-desc'}, opt.description) : null
+  );
+}
+
+
+/**
+ * 自己填的那一行。和普通选项长得一样，只是里面是输入框。
+ *
+ * @param {object} props
+ * @param {string} current
+ * @param {boolean} active
+ * @returns {HTMLElement}
+ */
+/**
+ * 自己填的那一行。
+ *
+ * ## 四条来自用户的 bug（都在这一块里）
+ *
+ *   > 单选的"未选择"可以二次点击。若如此做，焦点会去自定义输入框。
+ *   > 多选的未选择，点击以后，会选中自定义输入框。
+ *   > 并且填充（并覆盖）"未选择"的输入文字
+ *   > 单选点了未选择，会把自定义输入里面文字吃掉。
+ *   > 单选在自定义输入里面键入了以后，原始选项的焦点还在。
+ *   > 要失去焦点才变成选中自定义选择。
+ *
+ * 归成三条规则：
+ *
+ *   ① 点「未选择」不该把焦点送到输入框
+ *   ② 输入框的值不能包含「未选择」这个哨兵文字
+ *   ③ 一打字就立刻变成选中（不用等失焦）
+ *
+ * @param {object} props
+ * @param {string} current   要显示在框里的文字（已滤掉哨兵）
+ * @param {boolean} active
+ * @param {boolean} multi
+ * @returns {HTMLElement}
+ */
+function customRow(props, current, active, multi) {
+  const input = el('input', {
+    type: 'text',
+    class: 'oc-input',
+    placeholder: '自己填一个……',
+    value: current,
+    /*
+     * oninput 而不是 onchange。
+     *
+     * commitQuiet 只存不重绘 —— 用户正在里面打字，重画会打断光标。
+     * 但**选中态的切换要自己手动做**（规则③）：不能等失焦，
+     * 那一下之前的选中还挂在别的行上。
+     */
+    oninput(e) {
+      const text = String(e.target.value);
+      const trimmed = text.trim();
+
+      /*
+       * 写 picked 数组。
+       *
+       * ## 单选必须互斥
+       *
+       * 用户看到的是「选项 / 自填 / 未选择」三选一，那数据里就该是
+       * 一个元素。之前无条件保留序号项，于是已选第 1 项再打字得到
+       * ['1','测试'] —— 长度 2 的数组直接把「单选」这个前提打破：
+       * single 变成 ''，isSkip 因此为真，三处同时亮。
+       *
+       * 所以：单选打字时**丢掉序号项**；多选才并联。
+       */
+      const cur = Array.isArray(props.picked) ? props.picked.map(String) : [];
+      const nums = multi ? cur.filter(function (x) { return /^\d+$/u.test(x); }) : [];
+      const next = nums.slice();
+      if (trimmed !== '') next.push(trimmed);
+      commitQuiet(props, { picked: next });
+
+      paintSelection(props, multi, trimmed !== '');
+    },
+    onblur() {
+      /*
+       * 失焦才重绘一次，把「未选择」和选项行的选中态同步好。
+       *
+       * 这时用户是真的离开了输入框，所以不还原焦点。
+       */
+      repaintBody(false);
+    }
+  });
+
+  /*
+   * 点这一行的空白处（不是输入框）→ 聚焦到输入框。
+   * 但**只有用户真的点输入框那一块**才聚焦，不要在这里主动 focus()，
+   * 否则点「未选择」时焦点会被抢过来。
+   */
+  return el('div', {class:'oc-row oc-custom' + (active ? ' on' : '')},
+    el('span', {class:'oc-no'}, '✎'),
+    input);
+}
+
+/**
+ * 立刻重画「哪一行是选中的」（不重建 DOM）。
+ *
+ * 用于输入框打字时切换选中态 —— 重建会让输入框失焦。
+ *
+ * @param {object} props
+ * @param {boolean} multi
+ * @param {boolean} customOn
+ */
+function paintSelection(props, multi, customOn) {
+  const sec = document.querySelector('.sec[data-sec="' + props.__key + '"]');
+  if (sec === null) return;
+
+  const rows = [...sec.querySelectorAll('.oc-row')];
+  const custom = sec.querySelector('.oc-row.oc-custom');
+  const options = rows.filter(function (row) {
+    return !row.classList.contains('oc-custom') && !row.classList.contains('oc-skipbtn');
+  });
+
+  if (multi) {
+    /*
+     * 多选：自定义行只是「有没有内容」，别的行按 picked_multi 里有没有序号。
+     * 打字不会清掉序号项，所以别的行不用动。
+     */
+    if (custom !== null) custom.classList.toggle('on', customOn);
+    return;
+  }
+
+  /*
+   * 单选：三选一 —— 某个选项 / 自定义 / 未选择。
+   * 输入框有字就是自定义选中，其余全清。
+   */
+  for (const row of options) row.classList.remove('on');
+  if (custom !== null) custom.classList.toggle('on', customOn);
+
+  const skip = sec.querySelector('.oc-skipbtn');
+  if (skip !== null) skip.classList.toggle('on', !customOn && String(props.picked || '') === '未选择');
+}
+
+/**
+ * ask —— 单选。
+ *
+ * @param {object} props
+ * @returns {HTMLElement}
+ */
+/**
+ * ask —— 单选或多选，同一个组件。
+ *
+ * ## 单选和多选怎么分
+ *
+ *   multi: true   picked 是数组（从 pickedMulti 来），点了加入/移出
+ *   multi: false  picked 是字符串，点了替换
+ *
+ * 其余完全一样：卡片头、选项、自定义行、跳过行。
+ *
+ * ## 默认是「跳过」
+ *
+ * 用户原话：
+ *   > 没看这个卡片应该是默认选择的。
+ *
+ * 所以没给 picked 时，按「跳过」渲染 —— 那一行是选中的。
+ *
+ * @param {object} props
+ * @returns {HTMLElement}
+ */
+function renderAskComponent(props) {
+  const options = Array.isArray(props.options) ? props.options : [];
+  /*
+   * 单选还是多选，看「最多能选几个」。
+   *
+   * 用户原话：
+   *   > 3.架构里面对这个东西接受的应该是数组。
+   *
+   * 所以答案统一是数组，单选只是 maxPicks === 1 的特例。
+   */
+  const maxPicks = Number(props.maxPicks) > 0 ? Number(props.maxPicks) : 1;
+  const multi = maxPicks > 1;
+
+  /*
+   * 答案永远是数组。
+   *
+   * 用户原话：
+   *   > 3.架构里面对这个东西接受的应该是数组。
+   *
+   * 老数据（字符串 picked / pickedMulti）在这里兼容掉。
+   */
+  const pickedArr = (function () {
+    if (Array.isArray(props.picked)) return props.picked.map(String);
+    if (Array.isArray(props.pickedMulti)) return props.pickedMulti.map(String);
+    const s = String(props.picked === undefined || props.picked === null ? '' : props.picked);
+    return s.trim() === '' ? [] : [s];
+  })();
+
+  /* 下面还有地方用 single / list，保住它们 */
+  const single = pickedArr.length === 1 ? pickedArr[0] : '';
+  const list = pickedArr;
+
+  /*
+   * 「跳过」的定义收窄了。
+   *
+   * 用户原话（GU-06 第 3 条）：
+   *   > "跳过"，应该是默认选择，并且点击才激活。
+   *   > 没选择不自动等于没看见。
+   *   > 因为多选有可能是看见了并且一个都不选。
+   *
+   * 所以「没选」不再等于「没看」：
+   *
+   *   picked === '跳过'      明确点了跳过
+   *   其它（含空）           没跳过
+   *
+   * 但**默认要给 '跳过'** —— 那是初值。用户一旦动了选项就离开跳过。
+   */
+  /*
+   * 多选也要能「未选择」。
+   *
+   * 之前写成 `!multi && ...` —— 多选的跳过按钮永远点不亮，
+   * 因为 isSkip 恒为 false，点它只是清空数组，按钮没反应。
+   *
+   * 多选的两个独立状态：
+   *   pickedMulti 是空数组 + 其它选项都没选   不一定是未选择
+   *   点了「未选择」                          才是未选择
+   *
+   * 用 pickedMulti = ['未选择'] 这个哨兵值表示。
+   */
+  const UNSET = '未选择';
+
+  /*
+   * 单选：
+   *   '未选择'   → 未选择
+   *   ''         → **也算未选择**
+   *
+   * 为什么空串也算：老数据里 picked 存的是 ''（那时候「跳过」还是可选状态）。
+   * 现在「未选择」是默认值，空串和它表达的是同一件事 —— 用户没填。
+   *
+   * 多选：picked_multi 是 ['未选择']，或者空数组（老数据）也算未选择。
+   */
+  const isSkip = multi
+    ? (list.length === 0 || (list.length === 1 && list[0] === UNSET))
+    : (single === UNSET || single.trim() === '');
+
+
+  const listBox = el('div', {class:'oc-list'});
+
+  options.forEach(function (opt, i) {
+    const key = String(i + 1);
+    const active = list.includes(key);
+    listBox.appendChild(optionRow(opt, i, active, function () {
+      /*
+       * 写回 —— **永远是数组**。
+       *
+       * 用户原话：
+       *   > 3.架构里面对这个东西接受的应该是数组。
+       *
+       *   单选  再点已选的那项 = 取消；否则替换成这一项
+       *   多选  toggle，但不超过 maxPicks
+       */
+      const nums = list.filter(function (x) { return /^\d+$/u.test(String(x)); });
+      const text = list.filter(function (x) {
+        return !/^\d+$/u.test(String(x)) && String(x) !== UNSET_LABEL;
+      }).join('、');
+
+      let next;
+      if (!multi) {
+        /*
+         * 单选：三选一，**互斥**。
+         *
+         * 点选项就要丢掉自填文字 —— 否则会得到 ['2','abc'] 这种
+         * 长度 2 的数组，把「单选」这个前提打破：
+         * single 会变成 ''，isSkip 因此为真，
+         * 结果未选择 / 选项 / 自填三处同时亮。
+         */
+        next = nums.includes(key) ? [] : [key];
+      } else {
+        next = nums.slice();
+        const at = next.indexOf(key);
+        if (at >= 0) next.splice(at, 1);
+        else if (next.length + (text !== '' ? 1 : 0) < maxPicks) next.push(key);
+      }
+      /* 单选不加自填项（互斥）；多选才带上 */
+      if (multi && text !== '') next.push(text);
+      commit(props, { picked: next });
+    }));
+  });
+
+  /* 自定义行 */
+  /*
+   * 自定义行的文字。
+   *
+   * 注意滤掉 '未选择' —— 它是哨兵值，不是用户填的内容。
+   *
+   * 用户原话：
+   *   > 多选的未选择，点击以后，会选中自定义输入框。
+   *   > 并且填充（并覆盖）"未选择"的输入文字
+   */
+  /*
+   * 自填文字。
+   *
+   * 注意：数组里**最多只该有一个**自填项。
+   * 之前用 join('、') 把多个拼起来，结果拼出的 "1、1" 又不匹配 ^\d+$，
+   * 下一轮被当成自填文字保留，形成正反馈，数组无限膨胀。
+   */
+  const isSentinel = function (x) {
+    const s = String(x);
+    return /^\d+$/u.test(s) || s === UNSET_LABEL;
+  };
+  const customParts = list.filter(function (x) { return !isSentinel(x); });
+  const customText = customParts.length > 0 ? String(customParts[0]) : '';
+  const hasCustom = customParts.length > 0;
+
+  /*
+   * 自填框**永远画**，没有开关。
+   *
+   * 用户原话：
+   *   > 2.架构里面不允许关闭那个自填按钮。
+   */
+  listBox.appendChild(customRow(props, customText, hasCustom, multi));
+
+  const card = optionCard(props, listBox, isSkip, function () {
+    /*
+     * 「未选择」**不能二次点击取消**。
+     *
+     * 用户原话：
+     *   > "未选择"不应该能二次点击。现在二次点击他，他的按钮就不亮了
+     *
+     * 它表达的是「我没看这张卡片」—— 这个状态本身就该一直成立，
+     * 除非用户去选了别的选项。
+     *
+     * 所以已选中时再点，什么都不做。
+     */
+    if (isSkip) return;
+    /*
+     * 选中「未选择」。
+     *
+     * 单选写哨兵值就行 —— 但**不能保留旧的 picked 文字**，
+     * 否则自定义框里还显示着上次填的，看起来像「未选择」把它吃掉了。
+     *
+     * 用户原话：
+     *   > 单选点了未选择，会把自定义输入里面文字吃掉。
+     *
+     * 其实反过来：点了未选择，自定义框就该空 —— 那是「没填」的意思。
+     */
+    /*
+     * 单选多选都写 picked 数组 —— 统一字段。
+     *
+     * 之前多选写的是 picked_multi，而新架构下那个字段不存在：
+     * 编译器不产出它，渲染器读 picked 优先。于是多选里点「未选择」
+     * 后重绘，按钮不亮、选项还亮 —— 这个状态彻底不可达。
+     */
+    commit(props, { picked: [UNSET_LABEL] });
+  });
+
+  /*
+   * 不画「已选 N 项」。
+   *
+   * 用户原话：
+   *   > 选中了有"已选 1 项"，没选中没有。
+   *   > 这导致是否跳过的文档流高度不一样，会跳一下
+   *
+   * 那一行只在有选中时出现，卡片高度就变了 —— 下面所有内容
+   * 跟着挪，看起来像「跳一下」。
+   *
+   * 而且它也没必要：选了几项，选项行自己就是高亮的，一眼能看出来。
+   * 卡片的任何状态都不该改变它的高度。
+   */
+  return card;
+}
+
+function renderRankComponent(props) {
+  const items = Array.isArray(props.items) ? props.items : [];
+  const box = el('div', {class:'inter'});
+
+  if (props.placeholder) {
+    box.appendChild(el('div', {class:'inter-cap'}, String(props.placeholder)));
+  }
+
+  items.forEach(function (item, index) {
+    const title = typeof item === 'string' ? item : String(item.title || '');
+    const sub = typeof item === 'string' ? '' : String(item.placeholder || '');
+    box.appendChild(el('div', {class:'rank-row'},
+      el('span', {class:'no'}, String(index + 1)),
+      el('span', {class:'rank-body'},
+        el('span', {class:'rank-title'}, title),
+        sub === '' ? null : el('span', {class:'rank-sub'}, sub)),
+      el('span', {class:'rank-btns'},
+        el('button', {type:'button', disabled: index === 0,
+          onclick() { moveItem(props, index, -1); }}, '↑'),
+        el('button', {type:'button', disabled: index === items.length - 1,
+          onclick() { moveItem(props, index, 1); }}, '↓'))));
+  });
+
+  return sectionShell(props, [box]);
+}
+
+function renderDeriveComponent(props) {
+  const templates = Array.isArray(props.templates) ? props.templates : [];
+  const mode = String(props.mode || 'ask');
+  const modeLabel = mode === 'auto' ? '直接建' : mode === 'manual' ? '只能你建' : '问你';
+
+  const box = el('div', {class:'inter'});
+  if (props.placeholder) {
+    box.appendChild(el('div', {class:'inter-cap'}, String(props.placeholder)));
+  }
+
+  const row = el('div', {class:'derive-row'});
+  for (const code of templates) {
+    const tpl = (typeof TEMPLATES !== 'undefined' ? TEMPLATES : []).find(function (x) {
+      return x.code === code;
+    });
+    row.appendChild(el('button', {class:'quick-task', type:'button',
+      onclick() {
+        /*
+         * 派生子任务 —— 父任务自动填成当前这条。
+         *
+         * 用户原话：
+         *   > DEMO-01里面的派发任务按钮，点击以后的新建任务，
+         *   > 他们不是自动选择父任务的。
+         *
+         * 「派生」的意思本来就「从当前这条长出子事项」，
+         * 还要用户自己去选父任务就说不通了。
+         */
+        openCreator({ type: String(code), parent: renderCtx.taskId });
+      }},
+      el('span', {class:'code'}, String(code)),
+      tpl ? tpl.name : '派生任务',
+      el('span', {class:'mode'}, modeLabel)));
+  }
+  box.appendChild(row);
+
+  return sectionShell(props, [box]);
+}
+
+function renderUnknownComponent(props) {
+  const name = String(props.name || '?');
+  return el('div', {class:'sec'},
+    el('div', {class:'unknown'},
+      '未注册的交互类型「' + name + '」',
+      el('pre', null, JSON.stringify(props.value || {}, null, 2))));
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   建 DOM 的小工具
+
+   整个沙盘不用框架，就靠这一个函数。
+   class / style / onclick / 其它属性 / 子节点，一次搞定。
+   ══════════════════════════════════════════════════════════════ */
+
+function el(tag, props, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === 'class') node.className = value;
+    else if (key === 'style' && typeof value === 'object') Object.assign(node.style, value);
+    else if (key.startsWith('on') && typeof value === 'function') {
+      node.addEventListener(key.slice(2), value);
+    } else if (key === 'hidden') {
+      if (value) node.hidden = true;
+    } else if (key === 'value') {
+      node.value = value;
+    } else {
+      node.setAttribute(key, value);
+    }
+  }
+  const append = (child) => {
+    if (child === null || child === undefined || child === false) return;
+    if (Array.isArray(child)) { child.forEach(append); return; }
+    node.appendChild(typeof child === 'object' ? child : document.createTextNode(String(child)));
+  };
+  children.forEach(append);
+  return node;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   正文渲染 —— 按行动分发
+
+   ## 架构
+
+   每个行动带五个公共字段（和 packages/actions 一致）：
+
+     placeholder   灰字（输入框里 / 选项下方）
+     label         这一章上方的标题（可缺省，缺省就用章节 id）
+     row           高度；1 = 单行
+     description   控件下方的详细说明
+     required      必填（画星号）
+
+   外加各自的业务字段：
+
+     text      value
+     markdown  value
+     ask       options[{label, description, recommended}] / max_picks
+     rank      items[{title, placeholder}] / keep
+     derive    templates[] / mode
+
+   ## 为什么五个行动就够了
+
+   用户原话：
+
+     > 你的一个架构，就要描述掉一个渲染里的所有可能。
+
+   所以渲染器只认得行动名，所有可见位置都从 schema 里读，
+   不在渲染器里硬编码任何文案。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 行动 → 渲染函数。别名（textarea / input / choose）也指向这里。 */
+
+
+/**
+ * 渲染正文 —— 走管道。
+ *
+ *   参数（json）
+ *      ↓  compileBody()      （compiler.js）
+ *   mdx 字符串
+ *      ↓  renderMdx()        （mdx-runtime.js）
+ *   界面
+ *
+ * 用户原话：
+ *
+ *   > 参数就是 .cs。然后渲染器给 mdx 就是 IL。
+ *   > 最后外部渲染器渲染 mdx，就是 .net。
+ *
+ * @param {object} task
+ * @returns {HTMLElement|null}
+ */
+function renderBody(task) {
+  const mdx = compileBody(task);
+  if (mdx === '') return null;
+  /*
+   * keys 传空数组 —— 章节身份现在写在 mdx 里（编译器加 key 属性），
+   * 渲染器从标签自己身上读，不再靠位置对齐。
+   *
+   * sectionKeys / renderCtx.keys 整个机制已经不需要了。
+   */
+  return renderMdx(mdx, { taskId: task.id, keys: [] });
+}
+
+/**
+ * 把一条事项的正文编成 mdx（调试用；页面上有个按钮可以看）。
+ *
+ * @param {object} task
+ * @returns {string}
+ */
+function bodyAsMdx(task) {
+  return compileBody(task);
+}
+
+function renderGroups() {
+  const box = document.getElementById('groups');
+  box.innerHTML = '';
+  const groups = [
+    { id:'g-2', name:'开发任务板', members:DB.map((t) => t.id) },
+    { id:'g-3', name:'测试任务板', members:[] }
+  ];
+  for (const g of groups) {
+    const live = g.members.filter((id) => taskOf(id));
+    box.appendChild(el('button', {
+      class:'group' + (g.id === state.group ? ' on' : ''),
+      type:'button',
+      onclick() { state.group = g.id; renderAll(); }
+    }, g.name, el('span', {class:'n'}, String(live.length))));
+  }
+  box.appendChild(el('button', {class:'group', type:'button', title:'新建分组'}, '＋'));
+  box.appendChild(el('span', {class:'grow'}));
+  box.appendChild(el('button', {class:'btn', type:'button', style:{fontSize:'11.5px',padding:'3px 9px'}}, '设为当前'));
+  box.appendChild(el('button', {class:'btn', type:'button', style:{fontSize:'11.5px',padding:'3px 9px'}}, '显示已归档'));
+}
+
+/**
+ * 按当前筛选条件过滤。
+ *
+ * 三个维度可以同时生效：
+ *   status  组 / 具体状态（「搁置」→ 需要补充 / 需要授权）
+ *   kinds   类别（目标 / 设计 / 记录 / 工作）
+ *   domains 领域（代码 / 写作 / 绘画 / 通用）
+ *
+ * 每个维度里选多个是「或」，不同维度之间是「与」。
+ *
+ * @returns {Array}
+ */
+function visibleTasks() {
+  let list = DB.slice();
+
+  /* 状态：选了组就按组，选了具体状态就按状态 */
+  /*
+   * 用 groupsOf（复数）而不是 groupOf —— 一个状态可能同时属于
+   * 多个组（需要补充 = 进行 + 搁置）。用单值判断的话，
+   * 「搁置」这个筛选项永远匹配不到任何一条。
+   */
+  if (state.filterStatus.length > 0) {
+    list = list.filter((t) => {
+      const gs = groupsOf(t.status);
+      for (const want of state.filterStatus) {
+        if (want === t.status) return true;
+        if (gs.includes(want)) return true;
+      }
+      return false;
+    });
+  }
+
+  /* 类别 */
+  if (state.filterKinds.length > 0) {
+    list = list.filter((t) => state.filterKinds.includes(t.kind));
+  }
+
+  /* 领域 */
+  if (state.filterDomains.length > 0) {
+    list = list.filter((t) => state.filterDomains.includes(domainOf(t)));
+  }
+
+  /* 模板（从类别/领域的三级菜单里选的） */
+  if (state.filterTypes.length > 0) {
+    list = list.filter((t) => state.filterTypes.includes(t.type));
+  }
+
+  /* 搜索 */
+  if (state.search.trim() !== '') {
+    const q = state.search.trim().toLowerCase();
+    list = list.filter((t) => (t.id + ' ' + t.title).toLowerCase().includes(q));
+  }
+  return list;
+}
+
+function renderRows() {
+  const box = document.getElementById('rows');
+  const list = visibleTasks();
+  box.innerHTML = '';
+  document.getElementById('count').textContent = '共 ' + list.length + ' 条';
+
+  if (list.length === 0) {
+    box.appendChild(el('div', {style:{padding:'30px 14px',textAlign:'center',color:'var(--text-3)',fontSize:'12px'}},
+      '这一个筛选下没有事项。'));
+    return;
+  }
+  for (const t of list) {
+    const color = KIND_COLOR[t.kind] || 'var(--text-3)';
+    box.appendChild(el('button', {
+      class:'row' + (t.id === state.selected ? ' on' : ''),
+      type:'button',
+      onclick() { state.selected = t.id; state.menuOpen = false; state.relOpen = false; renderAll(); }
+    },
+      el('span', {class:'id', style:{color}}, t.id),
+      el('span', {class:'kind', style:{color, background:KIND_COLOR[t.kind] ? 'rgba(0,0,0,.05)' : 'transparent'}}, KIND_LABEL[t.kind] || t.kind),
+      el('span', {class:'title'}, t.title),
+      el('span', {class:'dot', style:{color:toneOf(t.status)}}, '●')
+    ));
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   渲染详情
+   ══════════════════════════════════════════════════════════════ */
+function renderDetail() {
+  const box = document.getElementById('detail');
+  box.innerHTML = '';
+  const t = taskOf(state.selected);
+  if (!t) { box.appendChild(el('div', {style:{padding:'40px',color:'var(--text-3)',textAlign:'center'}}, '选一条看详情')); return; }
+
+  const color = KIND_COLOR[t.kind] || 'var(--text-3)';
+
+  /* ── 头部 ── */
+  /* 头部：编号在左、标题占右边整块。
+     GU-02   用户任务：剩下没做完的 5 条
+     目标 通用                      ← 编号下面半行放两个标签
+     右下角三个图标
+
+     用户原话：
+       > 让标题大一点。GU-02 小一点。让 GU-02 在标题的左边，他们在一行。
+       > 然后 GU-02 只有半行高度，他的下面半行放「目标」「通用」这两个 label。
+       > 沙盘详情页的 label 写错了。「GU-02」的右边是「目标」。
+       > 再右边应该是「领域」。而他是「GU」。冗余信息。 */
+  /*
+   * 采纳之后 = 锁定。
+   *
+   * 草稿（未指定）和重开后的「提交」都能改；
+   * 一旦用户采纳（提交之后的任何状态），声明就冻结了。
+   */
+  const locked = t.status !== '未指定';
+
+  const head = el('div', {class:'d-head'},
+    el('div', {class:'d-head-grid'},
+      /* 左列：编号 + 两个标签（编号只占半行高） */
+      el('div', {class:'d-head-left'},
+        el('span', {class:'id', style:{color}}, t.id),
+        el('div', {class:'d-head-tags'},
+          el('span', {class:'kind', style:{color, background:'rgba(0,0,0,.05)'}}, KIND_LABEL[t.kind] || t.kind),
+          el('span', {class:'domain'}, DOMAIN_LABEL[domainOf(t)] || domainOf(t)))),
+      /* 右列：标题 + 图标 */
+      el('div', {class:'d-head-right'},
+        el('div', {class:'d-head-title'}, t.title),
+        el('div', {class:'d-head-icons'},
+          /*
+           * 采纳之后不准编辑、不准删除。
+           *
+           * 用户原话（GU-06 第 5 条）：
+           *   > 采纳以后不准编辑。不准删除。
+           *
+           * 这和「采纳后声明冻结」是同一条规则 —— 采纳意味着这份声明
+           * 被用户认可了，此后只能填值，不能改结构。
+           */
+          el('button', {
+            class:'icon-btn' + (locked ? ' off' : ''), type:'button',
+            title: locked ? '已采纳，不能编辑（要改先重开）' : '编辑标题与正文',
+            disabled: locked,
+            onclick(){ if (!locked) openEditor(t); }
+          }, '✎'),
+          el('button', {
+            class:'icon-btn' + (locked ? ' off' : ''), type:'button',
+            title: locked ? '已采纳，不能删除（要删先重开）' : '删除（连子事项）',
+            disabled: locked,
+            onclick(){
+              if (locked) return;
+              if (confirm('删除 ' + t.id + ' 和它下面所有子事项？')) deleteTask(t.id);
+            }
+          }, '🗑'),
+          el('button', {class:'icon-btn', type:'button', title:'关闭',
+            onclick(){ state.selected = ''; renderAll(); }}, '✕'))))
+  );
+
+  /* 状态标签 + 二级菜单 */
+  const meta = el('div', {class:'d-meta'});
+  const pill = el('button', {
+    class:'status-pill', type:'button',
+    style:{color:toneOf(t.status), borderColor: state.menuOpen ? toneOf(t.status) : 'transparent'},
+    onclick(){ state.menuOpen = !state.menuOpen; renderAll(); }
+  },
+    el('span', {style:{fontSize:'8px'}}, '●'),
+    t.status + ' · ' + groupOf(t.status),
+    el('span', {style:{fontSize:'8px',opacity:'.7'}}, '▾'));
+  meta.appendChild(pill);
+  if (t.kind === 'goal') {
+    meta.appendChild(el('span', {style:{padding:'1px 7px',borderRadius:'6px',
+      border:'1px dashed var(--border-2)'}}, '推导：' + deriveGoalStatus(t)));
+  }
+  meta.appendChild(el('span', {style:{opacity:'.85'}}, '状态由用户或 AI 显式设置'));
+  head.appendChild(meta);
+
+  /* 菜单 */
+  if (state.menuOpen) {
+    /*
+     * 目标的状态不能改，菜单改成「说明」。
+     *
+     * 用户原话（GU-06 第 6 条）：
+     *   > "目标"的状态不能更改。点开以后的菜单应该是描述这个的状态只读，
+     *   > 和状态判别依据（当前激活中的那个状态要高亮选中）
+     *
+     * 所以目标点开看到的是：
+     *   · 每个可能的状态 + 它的判别依据
+     *   · 当前处于哪个 —— 高亮
+     *   · 没有任何可点的按钮
+     */
+    if (t.kind === 'goal') {
+      const menu = el('div', {class:'status-menu goal-menu'},
+        el('div', {class:'menu-cap'}, '目标的推导状态（不是手动设的）'));
+
+      const derived = deriveGoalStatus(t);
+      for (const row of GOAL_STATES) {
+        const on = row.key === derived;
+        menu.appendChild(el('div', {class:'goal-row' + (on ? ' on' : '')},
+          el('span', {class:'goal-mark'}, on ? '●' : '○'),
+          el('span', {class:'goal-body'},
+            el('span', {class:'goal-name'}, row.key),
+            el('span', {class:'goal-why'}, row.why))));
+      }
+
+      menu.appendChild(el('div', {class:'menu-note'},
+        '目标的状态由子事项推导。要推进它，去推进子事项 —— 这里不给按钮。'));
+      head.appendChild(menu);
+    } else {
+      const menu = el('div', {class:'status-menu'},
+        el('div', {class:'menu-cap'}, '变更状态'));
+      const actions = TRANSITIONS[t.status] || [];
+      for (const a of actions) {
+        menu.appendChild(el('button', {
+          class:'menu-item' + (a.primary ? ' primary' : '') + (a.bad ? ' bad' : ''),
+          type:'button',
+          onclick(){
+            patchTask(t.id, { status: a.to });
+            state.menuOpen = false;
+            renderAll();
+          }
+        }, el('span', {class:'ic'}, a.primary ? '▶' : a.bad ? '✕' : '·'), a.label));
+      }
+      menu.appendChild(el('div', {class:'menu-note'},
+        '状态变更会影响 AI 能否继续这张单，所以都收在这里。'));
+      head.appendChild(menu);
+    }
+  }
+  box.appendChild(head);
+
+  /* ── 父任务栏 ── */
+  const children = DB.filter((x) => x.parent === t.id).map((x) => x.id);
+  const outLinks = [];
+  const inLinks = DB.filter((x) => x.links && x.links.includes(t.id)).map((x) => x.id);
+  /* 计数只算展开面板里真有的：子任务 + 出边 + 入边。
+     父任务不算 —— 它在上面单独一格，面板里没有它。
+     （之前 + (t.parent ? 1 : 0) 导致 WI-03 只有父节点却显示「关系 1」） */
+  const relCount = children.length + outLinks.length + inLinks.length;
+
+  const parentRow = el('div', {class:'parent-row'},
+    el('button', {
+      class:'rel-toggle', type:'button', 'aria-expanded': state.relOpen ? 'true' : 'false',
+      onclick(){ state.relOpen = !state.relOpen; renderAll(); }
+    },
+      el('span', {class:'chev'}, '▶'), '展开关系', el('span', {class:'n'}, String(relCount))));
+
+  if (t.parent) {
+    parentRow.appendChild(el('span', {class:'vsep'}));
+    parentRow.appendChild(el('span', {class:'pcap'}, '父任务'));
+    parentRow.appendChild(el('button', {
+      class:'pbtn', type:'button',
+      onclick(){ state.selected = t.parent; renderAll(); }
+    }, t.parent));
+  }
+  parentRow.appendChild(el('button', {
+    class:'derive-btn', type:'button',
+    onclick(){ openCreator({ parent: t.id }); }
+  }, el('span', {style:{color:'var(--text-3)'}}, '＋'), '派生子任务'));
+  box.appendChild(parentRow);
+
+  /* ── 关系网 ── */
+  if (state.relOpen) {
+    const relBody = el('div', {class:'rel-body'});
+    if (relCount === 0) {
+      relBody.appendChild(el('div', {style:{fontSize:'11.5px',color:'var(--text-3)',padding:'10px 0'}},
+        '这一条还没有任何关系。'));
+    } else {
+      relBody.appendChild(el('div', {class:'rel-headrow'},
+        el('div', {class:'rel-head active'}, '进行'),
+        el('div', {class:'rel-head held'}, '搁置'),
+        el('div', {class:'rel-head done'}, '完成')));
+
+      const blockOf = (title, ids, color) => {
+        const entries = ids.map((id) => taskOf(id)).filter(Boolean);
+        if (entries.length === 0) return null;
+        const cols = [[], [], []];
+        for (const e of entries) {
+          const g = groupOf(e.status);
+          cols[g === '搁置' ? 1 : g === '完成' ? 2 : 0].push(e);
+        }
+        return el('div', {class:'rel-block'},
+          el('div', {class:'rel-banner', style:{borderLeftColor:color}}, title,
+            el('span', {style:{opacity:'.75'}}, String(entries.length))),
+          el('div', {class:'rel-cells'},
+            ...cols.map((bucket) => el('div', {class:'rel-cell' + (bucket.length === 0 ? ' void' : '')},
+              ...bucket.map((e) => el('button', {
+                class:'rel-item', type:'button',
+                onclick(){ state.selected = e.id; renderAll(); }
+              }, el('span', {style:{color:toneOf(e.status),fontSize:'8px'}}, '●'), e.id))))) );
+      };
+
+      const b1 = blockOf('子任务', children, 'var(--brand)');
+      const b2 = blockOf('被依赖', inLinks, 'var(--warn)');
+      if (b1) relBody.appendChild(b1);
+      if (b2) relBody.appendChild(b2);
+    }
+    box.appendChild(relBody);
+  }
+
+  /*
+   * ── 元数据 ──
+   *
+   * 用户原话（GU-06 第 4 条）：
+   *   > 子工作空间，临时工作目录，权限。这几个元数据还没显示。
+   *
+   * 放成一张小表，两列：名字 / 值。没设的显示「（未指定）」。
+   */
+  const str = function (v) { return v === undefined || v === null ? '' : String(v); };
+  const metaRows = [
+    ['子工作区', str(t.workspace)],
+    ['临时工作区', str(t.tmpWorkspace)],
+    ['额外可读', str(t.workspaces)],
+    ['权限', str(t.permission)],
+    ['再收窄', str(t.deny)],
+    ['标记', Array.isArray(t.tags) && t.tags.length > 0 ? t.tags.join('、') : '']
+  ];
+  /*
+   * 用户原话（GU-06 第 4 条）：
+   *   > 子工作空间，临时工作目录，权限。这几个元数据还没显示。
+   *
+   * 注意是「没显示」——不是「没有」。所以没设也要画出来，
+   * 值写「（未指定）」。全藏起来的话，用户根本不知道有这几个字段。
+   */
+
+  let metaBox = null;
+  if (metaRows.length > 0) {
+    metaBox = el('div', {class:'d-meta-block'});
+    for (const [name, value] of metaRows) {
+      metaBox.appendChild(el('div', {class:'d-meta-row'},
+        el('span', {class:'d-meta-name'}, name),
+        el('span', {class:'d-meta-value' + (String(value).trim() === '' ? ' none' : '')},
+          String(value).trim() === '' ? '（未指定）' : String(value))));
+    }
+  }
+
+  /* ── 正文（滚动区）──
+   *
+   * 用户原话：
+   *   > 参数就是 .cs。然后渲染器给 mdx 就是 IL。
+   *
+   * 所以这里加一个「看 mdx」开关 —— 直接看到这条事项被编译成什么，
+   * 不用开 devtools。 */
+  const body = el('div', {class:'d-body'});
+  if (metaBox !== null) body.appendChild(metaBox);
+  body.appendChild(el('div', {class:'sec'},
+    el('div', {class:'sec-title'},
+      '正文',
+      el('button', {
+        class:'link-btn', type:'button', style:{marginLeft:'auto'},
+        onclick() {
+          state.showMdx = !state.showMdx;
+          renderAll();
+        }
+      }, state.showMdx ? '看渲染' : '看 mdx')),
+    state.showMdx
+      ? (function () {
+          const mdx = bodyAsMdx(t);
+          const pre = el('pre', {class:'mdx-source'});
+          pre.textContent = mdx === '' ? '（空）' : mdx;
+          return pre;
+        })()
+      : (renderBody(t) || el('div', {class:'prose', style:{color:'var(--text-3)'}}, '（没有正文）'))));
+
+  /* 备注只在有内容时作为只读文字显示。
+     编辑用的是底部固定栏那个输入框，不在这里重复。 */
+  if (String(t.note || '').trim() !== '') {
+    body.appendChild(el('div', {class:'sec'},
+      el('div', {class:'sec-title'}, '备注'),
+      el('div', {class:'prose', style:{color:'var(--text-2)'}}, t.note)));
+  }
+  box.appendChild(body);
+
+  /* ── 固定底部备注 ── */
+  box.appendChild(el('div', {class:'d-foot'},
+    el('textarea', {
+      class:'ta',
+      placeholder:'备注 / 搁置理由（随时写，不跟着内容滚）',
+      value: t.note || '',
+      onchange(e){ patchTask(t.id, { note: e.target.value }); }
+    })));
+}
+
+/**
+ * 目标的四种推导态 + 判别依据。
+ *
+ * 用户原话：
+ *   > 点开以后的菜单应该是描述这个的状态只读，和状态判别依据
+ *   > （当前激活中的那个状态要高亮选中）
+ */
+const GOAL_STATES = [
+  { key: '未开始', why: '还没有子事项，或者子事项全是草稿' },
+  { key: '进行中', why: '有子事项在「进行」组（提交 / 处理中）' },
+  { key: '停滞', why: '没有进行中的，但有子事项卡在等待（需要补充 / 需要授权）' },
+  { key: '收尾', why: '所有子事项都在「完成」组' }
+];
+
+function deriveGoalStatus(t) {
+  const kids = DB.filter((x) => x.parent === t.id);
+  if (kids.length === 0) return '未开始';
+  const groups = kids.map((k) => groupOf(k.status));
+  /* 全部完成态 → 收尾；有进行 → 进行中；有搁置 → 停滞；否则未开始 */
+  if (groups.every((g) => g === '已结束')) return '收尾';
+  if (groups.some((g) => g === '进行')) return '进行中';
+  if (groups.some((g) => g === '搁置')) return '停滞';
+  return '未开始';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   计划区
+   ══════════════════════════════════════════════════════════════ */
+
+/*
+ * 只重绘「内容」——列表 + 详情 + 图例。
+ *
+ * ## 为什么要有这个
+ *
+ * 搜索框每敲一个字都调 renderAll，而 renderAll 第一步是 renderFilters()，
+ * 那个函数开头 box.innerHTML = '' 会把搜索框连同焦点一起销毁。
+ * 表现是「搜索框里只能打进去第一个字」。
+ *
+ * 所以把「过滤器」拆出来：内容变了（搜索/筛选）只调这个函数。
+ */
+function renderContent() {
+  renderLegend();
+  renderGroups();
+  const listBox = document.getElementById('rows');
+  const treeBox = document.getElementById('treeview');
+  const isTree = state.view === 'tree';
+  listBox.hidden = isTree;
+  treeBox.hidden = !isTree;
+  const legend = document.getElementById('legend');
+  if (legend) legend.hidden = !isTree;
+  if (isTree) {
+    document.getElementById('count').textContent = '共 ' + visibleTasks().length + ' 条';
+    renderTree(treeBox, visibleTasks());
+  } else {
+    renderRows();
+  }
+  renderDetail();
+}
+
+/*
+ * 全量重绘 —— 过滤器 + 内容。
+ *
+ * 用在：切视图、改数据、初始化这些「过滤器本身也可能要变」的场合。
+ */
+function renderAll() {
+  renderFilters();
+  renderLegend();
+  renderGroups();
+  const listBox = document.getElementById('rows');
+  const treeBox = document.getElementById('treeview');
+  const isTree = state.view === 'tree';
+  listBox.hidden = isTree;
+  treeBox.hidden = !isTree;
+  const legend = document.getElementById('legend');
+  if (legend) legend.hidden = !isTree;
+  if (isTree) {
+    document.getElementById('count').textContent = '共 ' + visibleTasks().length + ' 条';
+    renderTree(treeBox, visibleTasks());
+  } else {
+    renderRows();
+  }
+  renderDetail();
+}
+
+
+function escClose(e) { if (e.key === 'Escape') closeModal(); }
+function closeModal() {
+  const old = document.querySelector('.mask');
+  if (old) old.remove();
+  document.removeEventListener('keydown', escClose);
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   新建 / 编辑浮层 —— 照「新建计划-原型.html」的建议版
+
+     左栏：标题 * / 模板（弹出三列）/ 父任务 / 子工作空间 / 额外工作区 / 权限 / 关联
+     右栏：正文
+     底部：取消 | 提交（都在右下 —— 原型批评了「提交在左下」）
+
+   模板选择器点开是三列：领域 / 类别 / 模板。
+   编号 = 类别字母 + 模板字母；空模板只有类别字母（G-01）。
+   ══════════════════════════════════════════════════════════════ */
+
+const TEMPLATES = [
+  { code:'GU', letter:'U', kind:'goal',   name:'用户任务',   domain:'general', desc:'用户甩过来的一堆要求或问题；AI 拆成下面的事项去做。' },
+  { code:'GO', letter:'O', kind:'goal',   name:'目标·优化',  domain:'general', desc:'觉得哪里不好但说不出怎么改；先立目标，再拆。' },
+  { code:'GA', letter:'A', kind:'goal',   name:'目标·澄清',  domain:'general', desc:'用户说得含糊，先把要什么问清。' },
+  { code:'GV', letter:'V', kind:'goal',   name:'目标·验证',  domain:'general', desc:'为了验证一个假设而立的临时目标。' },
+  { code:'DP', letter:'P', kind:'design', name:'方案',       domain:'general', desc:'给一个问题的可选解法，含代价与风险。' },
+  { code:'DB', letter:'B', kind:'design', name:'选型',       domain:'code',    desc:'几个方案里挑一个，说清为什么。' },
+  { code:'DC', letter:'C', kind:'design', name:'决策',       domain:'general', desc:'要用户拍板的事，列选项给他选。' },
+  { code:'DI', letter:'I', kind:'design', name:'接口设计',   domain:'code',    desc:'定下对外形状：函数签名、协议、数据结构。' },
+  { code:'DQ', letter:'Q', kind:'design', name:'提问',       domain:'general', desc:'一句话问用户；得到答复就完成。' },
+  { code:'DT', letter:'T', kind:'design', name:'探索',       domain:'art',     desc:'不知道该往哪个方向走，先铺几种可能。' },
+  { code:'RR', letter:'R', kind:'record', name:'汇报',       domain:'general', desc:'把一段工作或调查的结果写下来。' },
+  { code:'RB', letter:'B', kind:'record', name:'阻碍',       domain:'general', desc:'卡住了，写清卡在哪、为什么、怎么绕。' },
+  { code:'RD', letter:'D', kind:'record', name:'缺陷',       domain:'code',    desc:'东西坏了：复现、预期、实际。' },
+  { code:'RF', letter:'F', kind:'record', name:'复盘',       domain:'general', desc:'事情做完或失败之后，回看为什么。' },
+  { code:'WI', letter:'I', kind:'work',   name:'实现',       domain:'code',    desc:'动手改东西：改什么、怎么验。' },
+  { code:'WF', letter:'F', kind:'work',   name:'修复',       domain:'code',    desc:'专门修一个 bug：复现、根因、修法、回归。' },
+  { code:'WR', letter:'R', kind:'work',   name:'调研',       domain:'general', desc:'去查清一件事：结论、依据、局限。' },
+  { code:'WX', letter:'X', kind:'work',   name:'文档',       domain:'writing', desc:'写给人看的东西：读者是谁、怎么读。' },
+  { code:'WD', letter:'D', kind:'work',   name:'绘画',       domain:'art',     desc:'画一张图：目标、手法、场景。' },
+  { code:'WC', letter:'C', kind:'work',   name:'写作',       domain:'writing', desc:'写一段文字：前置、顺序、检查点。' }
+];
+
+const KIND_ROWS = [
+  { key:'goal',   letter:'G', label:'目标' },
+  { key:'design', letter:'D', label:'设计' },
+  { key:'record', letter:'R', label:'记录' },
+  { key:'work',   letter:'W', label:'工作' }
+];
+
+const DOMAIN_ROWS = [
+  { key:'code',    label:'代码' },
+  { key:'writing', label:'写作' },
+  { key:'art',     label:'绘画' },
+  { key:'general', label:'通用' }
+];
+
+/** 浮层里当前选中的三项。 */
+/*
+ * 第三个字段 preview 是「正在看但还没采用」的模板。
+ *
+ * 原型的设计：
+ *   > 第三列是模板列表（也是单选），但**点一下只是预览**，
+ *   > 要看右侧说明再决定，双击/回车才确认。
+ *
+ * 所以 tpl 是已采用的，preview 是鼠标下那个。
+ * 点一下就采用太容易误触 —— 尤其是列表里相邻模板名字很像。
+ */
+const picker = { domain: 'general', kind: 'goal', tpl: 'GU', preview: 'GU' };
+
+/** 一个带 label 的字段。 */
+function field(label, control, required) {
+  return el('div', {class:'field'},
+    el('label', {class:'lbl'}, label, required ? el('span', {class:'req'}, ' *') : null),
+    control);
+}
+
+/** 打开新建浮层。 */
+function openCreator(init) {
+  closeModal();
+  const draft = {
+    title: '',
+    parent: (init && init.parent) || '',
+    workspace: '',
+    workspaces: '',
+    tmpWorkspace: '',
+    permission: '',
+    deny: '',
+    tags: '',
+    body: ''
+  };
+  picker.domain = 'general';
+  picker.kind = 'goal';
+  picker.tpl = init && init.type ? init.type : 'GU';
+  const initial = TEMPLATES.find((t) => t.code === picker.tpl);
+  if (initial) { picker.kind = initial.kind; picker.domain = initial.domain; }
+
+  const mask = el('div', {class:'mask'});
+  const box = el('div', {class:'modal'});
+
+  box.appendChild(el('div', {class:'modal-head'},
+    el('b', null, '新建事项'),
+    el('span', {style:{flex:'1'}}),
+    el('button', {class:'icon-btn', type:'button', onclick: closeModal}, '✕')));
+
+  const bodyBox = el('div', {class:'modal-body two-col'});
+  const left = el('div', {style:{display:'grid', gap:'11px', alignContent:'start'}});
+  const right = el('div', {style:{display:'grid', gap:'8px', alignContent:'start'}});
+
+  /* 标题 */
+  left.appendChild(field('标题', el('input', {
+    type:'text', placeholder:'例如：修好任务板分组为空时的提示',
+    oninput(e) { draft.title = e.target.value; }
+  }), true));
+
+  /* 模板选择器 */
+  const tplBtn = el('button', {class:'tpl-btn', type:'button', id:'tplBtn'});
+  const tplPop = el('div', {class:'tpl-pop', id:'tplPop', hidden:true});
+
+  const refreshTplBtn = () => {
+    const t = TEMPLATES.find((x) => x.code === picker.tpl);
+    tplBtn.innerHTML = '';
+    tplBtn.appendChild(el('span', {class:'code'}, t ? t.code : '—'));
+    tplBtn.appendChild(el('span', null, t ? t.name : '空模板'));
+    tplBtn.appendChild(el('span', {class:'chev'}, '▾'));
+  };
+
+  const closePop = () => { tplPop.hidden = true; refreshTplBtn(); };
+
+  const refreshPop = () => {
+    tplPop.innerHTML = '';
+    const grid = el('div', {class:'tpl-grid'});
+
+    const col1 = el('div', {class:'tpl-col'}, el('div', {class:'tpl-col-head'}, '领域'));
+    for (const d of DOMAIN_ROWS) {
+      col1.appendChild(el('button', {
+        class:'tpl-item' + (picker.domain === d.key ? ' on' : ''),
+        type:'button',
+        onclick() { picker.domain = d.key; refreshPop(); }
+      }, el('span', {class:'radio'}), d.label));
+    }
+
+    const col2 = el('div', {class:'tpl-col'}, el('div', {class:'tpl-col-head'}, '类别'));
+    for (const k of KIND_ROWS) {
+      col2.appendChild(el('button', {
+        class:'tpl-item' + (picker.kind === k.key ? ' on' : ''),
+        type:'button',
+        onclick() {
+          picker.kind = k.key;
+          const cur = TEMPLATES.find((x) => x.code === picker.tpl);
+          if (cur && cur.kind !== k.key) picker.tpl = '';
+          refreshPop();
+          refreshTplBtn();
+        }
+      }, el('span', {class:'radio'}),
+         el('span', {class:'k-letter'}, k.letter), k.label));
+    }
+
+    const col3 = el('div', {class:'tpl-col'}, el('div', {class:'tpl-col-head'}, '模板'));
+    col3.appendChild(el('button', {
+      class:'tpl-item' + (picker.tpl === '' ? ' on' : ''),
+      type:'button',
+      onclick() { picker.tpl = ''; picker.preview = ''; refreshPop(); refreshTplBtn(); refreshSections(); }
+    }, el('span', {class:'tpl-code'}, '—'), el('span', {class:'tpl-name'}, '空模板')));
+
+    const list = TEMPLATES.filter((t) => t.kind === picker.kind
+      && (t.domain === picker.domain || t.domain === 'general'));
+    /*
+     * 模板列：点一下 = 选定 + 换说明，**不收起弹层**。
+     *
+     * 原型原话：
+     *   > 模板列：点一下 = 选定 + 换说明。
+     *   > **不收起弹层** —— 用户还要接着比几个模板。
+     *   > 收起靠「点面板外面」。
+     *
+     * 所以这里没有「采用」按钮，也没有两阶段确认 —— 点即选定。
+     */
+    for (const t of list) {
+      col3.appendChild(el('button', {
+        class:'tpl-item' + (picker.tpl === t.code ? ' on' : ''),
+        type:'button', title: t.desc,
+        onclick() {
+          picker.tpl = t.code;
+          picker.preview = t.code;
+          refreshPop();
+          refreshTplBtn();
+          refreshSections();
+        }
+      },
+        el('span', {class:'tpl-code'}, t.letter || '—'),
+        el('span', {class:'tpl-name'}, t.name)));
+    }
+
+    grid.appendChild(col1);
+    grid.appendChild(col2);
+    grid.appendChild(col3);
+    tplPop.appendChild(grid);
+
+    /*
+     * 说明面板 —— 预览哪个就显示哪个的说明。
+     *
+     * 原型：
+     *   > 要看右侧说明再决定
+     *
+     * 所以选中之前得能读到它讲什么。空模板也有一条说明。
+     */
+    const shown = TEMPLATES.find((t) => t.code === picker.preview);
+    const desc = el('div', {class:'tpl-desc'});
+    if (shown) {
+      desc.appendChild(el('div', {class:'d-title'}, shown.name));
+      desc.appendChild(el('div', null, shown.desc || '（这个模板还没有说明）'));
+      if (Array.isArray(shown.sections) && shown.sections.length > 0) {
+        desc.appendChild(el('div', {class:'d-secs'},
+          '章节：' + shown.sections.map((x) => x.label).join(' · ')));
+      }
+      desc.appendChild(el('div', {class:'d-hint'}, '点模板看说明，点面板外面收起'));
+    } else {
+      desc.appendChild(el('div', {class:'d-title'}, '空模板'));
+      desc.appendChild(el('div', null, '只有正文，不加任何字段。想自己写结构时用它。'));
+      desc.appendChild(el('div', {class:'d-hint'}, '点模板看说明，点面板外面收起'));
+    }
+    tplPop.appendChild(desc);
+
+    const kindLetter = (KIND_ROWS.find((k) => k.key === picker.kind) || {}).letter || 'X';
+    const prefix = picker.tpl || kindLetter;
+    tplPop.appendChild(el('div', {class:'tpl-preview'},
+      '编号前缀 ', el('b', null, prefix),
+      '　最终编号形如 ', el('b', null, prefix + '-01')));
+
+
+  };
+
+  /*
+   * 模板按钮：开 / 关。
+   *
+   * 照原型用 pointerdown 而不是 click —— click 要等 mouseup，
+   * 用户点面板外面时弹层会多存在一瞬，看起来像「点不掉」。
+   *
+   * 必须 stopPropagation，否则会被下面那个全局 pointerdown
+   * 当成「点在外面」，一次点击开了又关。
+   */
+  tplBtn.addEventListener('pointerdown', (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    tplPop.hidden = !tplPop.hidden;
+    if (!tplPop.hidden) {
+      refreshPop();
+      placePop();
+    }
+  });
+
+  /*
+   * 放置弹层 —— 用 fixed 相对**视口**定位。
+   *
+   * ## 为什么不用 absolute
+   *
+   * 用户截图里弹层底部被裁掉一块（「编号前缀 GO 最终编号形如 GO-01」
+   * 压在边界上）。
+   *
+   * 原因是 absolute 的祖先里有 .modal-body（overflow:auto），
+   * 它会把超出的部分裁掉；而弹层比按钮高得多，底部就没了。
+   *
+   * fixed 不受任何祖先裁剪，位置按视口算。
+   */
+  function placePop() {
+    const btn = tplBtn.getBoundingClientRect();
+    const gap = 6;
+    const margin = 12;
+
+    /* 先按内容量出想要的高度（top 归零，不限制高度） */
+    tplPop.style.position = 'fixed';
+    tplPop.style.left = Math.round(btn.left) + 'px';
+    tplPop.style.width = Math.round(btn.width) + 'px';
+    tplPop.style.top = '0px';
+    tplPop.style.maxHeight = 'none';
+
+    const wanted = tplPop.getBoundingClientRect().height;
+
+    /* 默认放下方 */
+    let top = btn.bottom + gap;
+    let maxH = window.innerHeight - top - margin;
+
+    /* 下方放不下、且上方空间更大 → 翻到上方 */
+    const above = btn.top - gap - margin;
+    if (wanted > maxH && above > maxH) {
+      maxH = above;
+      top = Math.max(margin, btn.top - gap - Math.min(wanted, above));
+    }
+
+    tplPop.style.top = Math.round(top) + 'px';
+    tplPop.style.maxHeight = Math.max(160, Math.floor(maxH)) + 'px';
+  }
+
+  /*
+   * 点面板外面 → 收起模板弹层。
+   *
+   * 挂在 document 上而不是 mask 上：弹层在 mask 里面，
+   * 点弹层的空白处也会触发 mask 的 click，导致「点说明也收起」。
+   * 用 document + 检查 target 才能分清里外。
+   */
+  document.addEventListener('pointerdown', (event) => {
+    if (tplPop.hidden) return;
+    if (tplPop.contains(event.target) || tplBtn.contains(event.target)) return;
+    tplPop.hidden = true;
+  });
+
+  refreshTplBtn();
+  /*
+   * 模板字段。
+   *
+   * 弹层下方那句提示是原型里就有的：
+   *   > 选模板决定正文的字段结构。领域和类别只用来筛，不用分开选。
+   *
+   * 它回答了「为什么要选模板」—— 不然用户只当是给这条打个标签。
+   */
+  left.appendChild(el('div', {class:'field tpl-field'},
+    el('label', {class:'lbl'}, '模板'), tplBtn, tplPop,
+    el('div', {class:'hint', style:{marginTop:'5px'}},
+      '选模板决定正文的字段结构。领域和类别只用来筛，不用分开选。')));
+
+  left.appendChild(field('父任务', el('input', {
+    type:'text', placeholder:'（无，顶层）', value: draft.parent,
+    oninput(e) { draft.parent = e.target.value; }
+  })));
+
+  /* ── 两个可激活的选项卡 ──────────────────────────────────
+   *
+   * 用户原话：
+   *   > 只有标题，模板，父任务是在外面的。关系，和更多，是收纳的。
+   *
+   * 所以首屏只有三件事。这两个都可以不激活 —— 都不点的时候，
+   * 对话框就是「标题 / 模板 / 父任务 / 正文」，最干净。
+   * 点已激活的那个可以取消；点另一个则切换过去（互斥）。
+   */
+  const tabRel = el('button', {class:'tab', type:'button', 'aria-pressed':'false'},
+    '关系 ', el('span', {class:'cnt', id:'relCount'}, '0'));
+  const tabAdv = el('button', {class:'tab', type:'button', 'aria-pressed':'false'}, '高级设置');
+  const tabs = el('div', {class:'tabs'}, tabRel, tabAdv);
+
+  /* 关系面板 */
+  const relList = el('div', {class:'rel-list'});
+  const panelRel = el('div', {class:'tab-panel', hidden:true},
+    relList,
+    el('button', {class:'btn', type:'button', style:{padding:'5px 11px'},
+      onclick() { addRelRow(); }}, '＋ 添加关联'),
+    el('div', {class:'hint'}, '箭头从先决指向依赖方。「依赖」= 它不做完，这件事不能开始'));
+
+  /** 加一行关联。 */
+  function addRelRow() {
+    const row = el('div', {class:'rel-row'},
+      el('select', {class:'select rel-kind'},
+        el('option', null, '依赖'), el('option', null, '相关'),
+        el('option', null, '约束'), el('option', null, '参考')),
+      el('input', {class:'input rel-target', placeholder:'事项编号或标题，如 GU-01'}),
+      el('span', {class:'rel-dir'}, '← 它先于这件事'),
+      el('button', {class:'rel-del', type:'button', title:'删除',
+        onclick() { row.remove(); syncRelCount(); }}, '✕'));
+    relList.appendChild(row);
+    syncRelCount();
+  }
+  function syncRelCount() {
+    const n = relList.querySelectorAll('.rel-row').length;
+    const box = tabs.querySelector('#relCount');
+    if (box) box.textContent = String(n);
+  }
+
+  /* 高级设置面板 ──
+   * 用户原话：
+   *   > 这个 ui 要继续想。例如，权限，子工作区，临时工作区，还有一些元数据没放出来
+   */
+  const panelAdv = el('div', {class:'tab-panel', hidden:true},
+    field('子工作区', el('input', {type:'text', placeholder:'绝对路径，空 = 会话目录',
+      oninput(e) { draft.workspace = e.target.value; }})),
+    field('临时工作区', el('input', {type:'text', placeholder:'本次会话临时可写的目录，逗号分隔',
+      oninput(e) { draft.tmpWorkspace = e.target.value; }})),
+    field('额外可读目录', el('input', {type:'text', placeholder:'逗号分隔的绝对路径，可空',
+      oninput(e) { draft.workspaces = e.target.value; }})),
+    field('权限', el('select', {onchange(e) { draft.permission = e.target.value; }},
+      el('option', {value:''}, '（不指定，按会话档位）'),
+      el('option', {value:'仅可查看'}, '仅可查看'),
+      el('option', {value:'工作区内修改'}, '工作区内修改'),
+      el('option', {value:'完全权限'}, '完全权限'),
+      el('option', {value:'工具全关'}, '工具全关'))),
+    field('再收窄（deny）', el('input', {type:'text', placeholder:'逗号分隔：write / destructive / external / idempotent',
+      oninput(e) { draft.deny = e.target.value; }})),
+    field('标记', el('input', {type:'text', placeholder:'逗号分隔，如：待我处理, 待我审',
+      oninput(e) { draft.tags = e.target.value; }})),
+    el('div', {class:'hint'}, '这些只有会话处于「按计划」档位时才生效'));
+
+  /** 同步两个面板的显示。 */
+  function syncTabs() {
+    panelRel.hidden = tabRel.getAttribute('aria-pressed') !== 'true';
+    panelAdv.hidden = tabAdv.getAttribute('aria-pressed') !== 'true';
+  }
+
+  /** 点选项卡：已激活则取消，未激活则激活并取消另一个。 */
+  function press(tab, other) {
+    const on = tab.getAttribute('aria-pressed') === 'true';
+    if (on) {
+      tab.setAttribute('aria-pressed', 'false');
+    } else {
+      tab.setAttribute('aria-pressed', 'true');
+      other.setAttribute('aria-pressed', 'false');
+    }
+    syncTabs();
+  }
+
+  tabRel.addEventListener('click', () => press(tabRel, tabAdv));
+  tabAdv.addEventListener('click', () => press(tabAdv, tabRel));
+
+  /* ── 这个模板的正文会问你要什么 ──
+   *
+   * 用户原话：
+   *   > 展示，用户操作创建怎么在模板里面选择行动的
+   *
+   * 模板决定章节，章节决定行动。选中模板之后应该直接看到
+   * 「正文会长什么样、每章用什么行动」——不用点开面板去找。
+   * 所以放在左栏常驻，跟着模板切换实时更新。 */
+  const sectionsBox = el('div', {class:'tpl-sections inline'});
+  function refreshSections() {
+    sectionsBox.innerHTML = '';
+    const sections = sectionsOf(picker.tpl);
+    if (sections.length === 0) {
+      sectionsBox.appendChild(el('div', {class:'tpl-sec-empty'},
+        picker.tpl === '' ? '空模板：正文只有一整块自由文本，不加任何章节。' : '（这个模板还没配章节）'));
+      return;
+    }
+    sectionsBox.appendChild(el('div', {class:'tpl-sec-head'},
+      '正文会问这些', el('span', {class:'tpl-sec-count'}, String(sections.length) + ' 章')));
+    for (const s of sections) {
+      sectionsBox.appendChild(el('div', {class:'tpl-sec'},
+        el('span', {class:'tpl-sec-act', 'data-act': s.action}, ACTION_LABEL[s.action] || s.action),
+        el('span', {class:'tpl-sec-label'}, s.label),
+        s.required ? el('span', {class:'req'}, '*') : null,
+        s.placeholder ? el('span', {class:'tpl-sec-ph'}, s.placeholder) : null));
+    }
+    const used = actionsOf(picker.tpl);
+    sectionsBox.appendChild(el('div', {class:'tpl-sec-foot'},
+      '用到 ' + used.length + ' 个行动：',
+      used.map((a) => el('span', {class:'tpl-act-chip', 'data-act': a}, ACTION_LABEL[a] || a))));
+  }
+  refreshSections();
+  left.appendChild(sectionsBox);
+
+  left.appendChild(tabs);
+  left.appendChild(panelRel);
+  left.appendChild(panelAdv);
+
+  right.appendChild(el('div', {class:'lbl'}, '正文'));
+  right.appendChild(el('textarea', {
+    class:'ta', style:{minHeight:'330px', height:'330px'},
+    placeholder:'Markdown，或 JSON（对象形态）',
+    oninput(e) { draft.body = e.target.value; }
+  }));
+  right.appendChild(el('div', {class:'hint'},
+    '对象形态示例：{"want":{"type":"textarea","value":"…"}}'));
+
+  bodyBox.appendChild(left);
+  bodyBox.appendChild(right);
+  box.appendChild(bodyBox);
+
+  box.appendChild(el('div', {class:'modal-foot'},
+    el('span', {style:{flex:'1'}}),
+    el('button', {class:'btn', type:'button', onclick: closeModal}, '取消'),
+    el('button', {class:'btn primary', type:'button', onclick() {
+      if (String(draft.title).trim() === '') { alert('标题必填'); return; }
+      let body = draft.body;
+      const trimmed = String(body || '').trim();
+      if (trimmed.startsWith('{')) { try { body = JSON.parse(trimmed); } catch (e) {} }
+      createTask({
+        title: draft.title,
+        type: picker.tpl,
+        kind: picker.kind,
+        parent: draft.parent,
+        body,
+        workspace: draft.workspace,
+        workspaces: draft.workspaces,
+        tmpWorkspace: draft.tmpWorkspace,
+        permission: draft.permission,
+        deny: draft.deny,
+        tags: draft.tags
+      });
+      closeModal();
+    }}, '提交')));
+
+  mask.appendChild(box);
+  document.body.appendChild(mask);
+  document.addEventListener('keydown', escClose);
+  setTimeout(() => {
+    const input = box.querySelector('input[type="text"]');
+    if (input) input.focus();
+  }, 30);
+}
+
+/** 编辑浮层：只改标题、状态、类别、正文。 */
+function openEditor(t) {
+  closeModal();
+  const draft = {
+    title: t.title,
+    status: t.status,
+    kind: t.kind,
+    body: typeof t.body === 'string' ? t.body : JSON.stringify(t.body, null, 2)
+  };
+
+  const mask = el('div', {class:'mask'});
+  const box = el('div', {class:'modal', style:{width:'min(840px,100%)'}});
+  box.appendChild(el('div', {class:'modal-head'},
+    el('b', null, '编辑 ' + t.id),
+    el('span', {style:{flex:'1'}}),
+    el('button', {class:'icon-btn', type:'button', onclick: closeModal}, '✕')));
+
+  const bodyBox = el('div', {class:'modal-body two-col'});
+  const left = el('div', {style:{display:'grid', gap:'11px', alignContent:'start'}});
+  const right = el('div', {style:{display:'grid', gap:'8px', alignContent:'start'}});
+
+  left.appendChild(field('标题', el('input', {
+    type:'text', value: draft.title,
+    oninput(e) { draft.title = e.target.value; }
+  }), true));
+
+  left.appendChild(field('状态', el('select', {onchange(e) { draft.status = e.target.value; }},
+    ...['未指定','提交','处理中','需要补充','需要授权','完成','失败','取消','拒绝']
+      .map((s) => el('option', {value:s, selected: s === draft.status ? true : null}, s)))));
+
+  left.appendChild(field('类别', el('select', {onchange(e) { draft.kind = e.target.value; }},
+    ...KIND_ROWS.map((k) => el('option', {value:k.key, selected: k.key === draft.kind ? true : null}, k.label)))));
+
+  left.appendChild(el('div', {class:'hint'}, '改类别不会改已有编号'));
+
+  right.appendChild(el('div', {class:'lbl'}, '正文'));
+  right.appendChild(el('textarea', {
+    class:'ta', style:{minHeight:'340px', height:'340px'}, value: draft.body,
+    oninput(e) { draft.body = e.target.value; }
+  }));
+
+  bodyBox.appendChild(left);
+  bodyBox.appendChild(right);
+  box.appendChild(bodyBox);
+
+  box.appendChild(el('div', {class:'modal-foot'},
+    el('span', {style:{flex:'1'}}),
+    el('button', {class:'btn', type:'button', onclick: closeModal}, '取消'),
+    el('button', {class:'btn primary', type:'button', onclick() {
+      let body = draft.body;
+      const trimmed = String(body || '').trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try { body = JSON.parse(trimmed); } catch (e) {}
+      }
+      patchTask(t.id, { title: draft.title, status: draft.status, kind: draft.kind, body });
+      closeModal();
+    }}, '保存')));
+
+  mask.appendChild(box);
+  document.body.appendChild(mask);
+  document.addEventListener('keydown', escClose);
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   过滤栏 —— 两级单选
+
+   用户原话（GU-07）：
+
+     > 搁置可以点，点了展开的"需要授权""需要信息"，应该是子按钮，
+     > 可以继续点击的。并且，这个"进行""搁置""完成"，应该是单选。
+     > 而点击以后里面展开的，里面也是单选，不是纯文本。
+
+   ## 三态
+
+     ① 收起         [状态 ▸]  [类别 ▸]  [领域 ▸]
+     ② 展开一级     [状态 ▾] [进行] [搁置] [已结束] [草稿]
+     ③ 展开二级     [状态 ▾] [进行] [搁置] [已结束] [草稿]
+                              └─[需要补充] [需要授权]  ← 真按钮
+
+   ## 两条规则
+
+   ① 一级单选：四个组同时只能选一个
+   ② 二级单选：子项是真按钮，也是同时只能选一个
+
+   选了二级之后，一级显示 `搁置·需要补充`，一级也高亮 ——
+   这样用户一眼看出「筛的是搁置里的需要补充」。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 三个过滤维度的定义。 */
+const FILTER_DEFS = [
+	{
+		key: 'status',
+		label: '状态',
+		groups: [
+			{ key: '进行', children: ['提交', '处理中'] },
+			{ key: '搁置', children: ['需要补充', '需要授权'] },
+			{ key: '已结束', children: ['完成', '失败', '取消', '拒绝'] },
+			{ key: '草稿', children: [] }
+		]
+	},
+	{
+		key: 'kind',
+		label: '类别',
+		groups: [
+			{ key: 'goal', label: '目标', children: [] },
+			{ key: 'design', label: '设计', children: [] },
+			{ key: 'record', label: '记录', children: [] },
+			{ key: 'work', label: '工作', children: [] }
+		]
+	},
+	{
+		key: 'domain',
+		label: '领域',
+		groups: [
+			{ key: 'code', label: '代码', children: [] },
+			{ key: 'writing', label: '写作', children: [] },
+			{ key: 'art', label: '绘画', children: [] },
+			{ key: 'general', label: '通用', children: [] }
+		]
+	}
+];
+
+/**
+ * 渲染过滤栏。
+ *
+ * state 里用到：
+ *   filterOpen    哪个维度在展开（'' = 全收起）
+ *   filterSub     哪个组展开了子项
+ *   filterStatus / filterKinds / filterDomains  选中的值（单选，最多一个）
+ */
+function renderFilters() {
+	const box = document.getElementById('filters');
+	if (box === null) return;
+	box.innerHTML = '';
+
+	const bar = el('div', { class: 'fb' });
+
+	for (const def of FILTER_DEFS) {
+		const picked = pickedOf(def.key);
+		const open = state.filterOpen === def.key;
+
+		const group = el('div', {
+			class: 'fb-group' + (open ? ' open' : '') + (picked.length > 0 ? ' has' : '')
+		});
+
+		/* ── 维度名。点它展开 / 收回 ── */
+		group.appendChild(el('button', {
+			class: 'fb-name',
+			type: 'button',
+			onclick(event) {
+				event.stopPropagation();
+				state.filterOpen = open ? '' : def.key;
+				state.filterSub = '';
+				renderFilters();
+				renderContent();
+			}
+		},
+			el('span', { class: 'fb-chev' }, open ? '▾' : '▸'),
+			def.label));
+
+		if (!open) { bar.appendChild(group); continue; }
+
+		/* ── 一级：组，单选 ── */
+		for (const g of def.groups) {
+			const label = g.label || g.key;
+			const hasSub = g.children.length > 0;
+			const subOpen = state.filterSub === g.key;
+
+			/*
+			 * 一级的选中态有三种：
+			 *   组被选中、没展开子项         → on
+			 *   组被选中、展开了子项         → on + 显示「搁置·需要补充」
+			 *   组没选中                     → 不亮
+			 */
+			const subPicked = picked.find(function (v) { return g.children.includes(v); }) || '';
+			const groupOn = picked.includes(g.key);
+			const shownLabel = subPicked !== '' ? label + '·' + subPicked : label;
+
+			const item = el('button', {
+				class: 'fb-item-name' + (groupOn || subPicked !== '' ? ' on' : ''),
+				type: 'button',
+				onclick(event) {
+					event.stopPropagation();
+					/*
+					 * 点一级：
+					 *   · 还没选这个组   → 选中它，并展开子项
+					 *   · 已经选了       → 取消选中，收起子项
+					 *
+					 * 一级是单选 —— 选新的就清掉旧的。
+					 */
+					if (groupOn || subPicked !== '') {
+						pickedOf(def.key).length = 0;
+						state.filterSub = '';
+					} else {
+						pickedOf(def.key).length = 0;
+						pickedOf(def.key).push(g.key);
+						state.filterSub = hasSub ? g.key : '';
+					}
+					renderFilters();
+					renderContent();
+				}
+			}, shownLabel);
+
+			/*
+			 * 一级那一格 + 它的子项，装进同一个容器。
+			 *
+			 * 子项必须**在结构上**从属于这一格，不能只是排在后面 ——
+			 * 否则看起来像「进行 / 搁置 / 需要补充 / 需要授权 / 已结束」
+			 * 五个平级的东西。
+			 */
+			const cell = el('span', { class: 'fb-cell' + (subOpen && hasSub ? ' spread' : '') }, item);
+
+			if (subOpen && hasSub) {
+				for (const child of g.children) {
+					const childOn = picked.includes(child);
+					cell.appendChild(el('button', {
+						class: 'fb-sub' + (childOn ? ' on' : ''),
+						type: 'button',
+						onclick(event) {
+							event.stopPropagation();
+							/*
+							 * 点二级：只选中这个具体状态，一级那格跟着亮。
+							 * 二级是单选 —— 选新的就清掉旧的。
+							 */
+							pickedOf(def.key).length = 0;
+							if (!childOn) pickedOf(def.key).push(child);
+							renderFilters();
+							renderContent();
+						}
+					}, child));
+				}
+			}
+
+			group.appendChild(cell);
+		}
+
+		bar.appendChild(group);
+	}
+
+	/* ── 清空。只说清的是这一维，避免误清搜索词 ── */
+	const total = state.filterStatus.length + state.filterKinds.length + state.filterDomains.length;
+	if (total > 0) {
+		bar.appendChild(el('button', {
+			class: 'fb-clear',
+			type: 'button',
+			onclick() {
+				state.filterStatus.length = 0;
+				state.filterKinds.length = 0;
+				state.filterDomains.length = 0;
+				state.filterOpen = '';
+				state.filterSub = '';
+				renderFilters();
+				renderContent();
+			}
+		}, '清空筛选'));
+	}
+
+	/*
+	 * 搜索框。
+	 *
+	 * 不能调 renderAll —— renderAll 第一步是 renderFilters()，
+	 * 那会把这个 DOM 节点连同焦点一起销毁，表现为只能打进去第一个字。
+	 */
+	bar.appendChild(el('input', {
+		class: 'search',
+		type: 'search',
+		placeholder: '搜编号或标题…',
+		value: state.search,
+		oninput(e) {
+			state.search = e.target.value;
+			renderContent();
+		}
+	}));
+
+	box.appendChild(bar);
+
+	/* 点空白处收回：只收起，不清空已选 */
+	if (state.filterOpen !== '') {
+		setTimeout(function () {
+			const handler = function (event) {
+				/* 先无条件摘掉，避免提前 return 时留下悬挂监听 */
+				document.removeEventListener('pointerdown', handler);
+				if (box.contains(event.target)) return;
+				/* 选了东西就别收回 —— 用户要看得见自己筛了什么 */
+				if (pickedOf(state.filterOpen).length > 0) return;
+				state.filterOpen = '';
+				state.filterSub = '';
+				renderFilters();
+			};
+			document.addEventListener('pointerdown', handler);
+		}, 0);
+	}
+}
+
+/**
+ * 某个维度已选的值。
+ *
+ * @param {string} key
+ * @returns {string[]}
+ */
+function pickedOf(key) {
+	if (key === 'status') return state.filterStatus;
+	if (key === 'kind') return state.filterKinds;
+	return state.filterDomains;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   图例 —— 每种关系一种颜色
+   ══════════════════════════════════════════════════════════════ */
+function renderLegend() {
+	const box = document.getElementById('legend');
+	if (box === null) return;
+	box.innerHTML = '';
+	for (const kind of LINK_KINDS) {
+		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+		svg.setAttribute('width', '16');
+		svg.setAttribute('height', '8');
+		const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+		line.setAttribute('x1', '0');
+		line.setAttribute('y1', '4');
+		line.setAttribute('x2', '16');
+		line.setAttribute('y2', '4');
+		line.setAttribute('stroke', kind.color);
+		line.setAttribute('stroke-width', '1.6');
+		if (kind.dashed) line.setAttribute('stroke-dasharray', '4 3');
+		svg.appendChild(line);
+		box.appendChild(el('span', { class: 'lg', title: kind.label }, svg, kind.label));
+	}
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   启动与事件绑定
+
+   ## 为什么单独一段
+
+   基线里是同步启动（`renderAll(); loadDraft();`），因为数据在 localStorage，
+   当场就有。现在数据要**先从服务端取**，所以启动变成异步：
+
+     连服务 → 拿到数据 → 选中第一项 → 渲染 → 读草稿
+
+   如果中途服务没起，loadFromServer 会退回内置样本并提示「本地模式」。
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 顶部按钮 ── */
+const newBtn = document.getElementById('newBtn');
+if (newBtn) newBtn.addEventListener('click', () => openCreator({}));
+
+const resetBtn = document.getElementById('resetBtn');
+if (resetBtn) {
+  resetBtn.addEventListener('click', () => {
+    if (confirm('重置成最初的样本？当前改动会丢。')) resetDB();
+  });
+}
+
+/* ── 视图切换：科技树 / 列表 ── */
+document.querySelectorAll('.vw').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.vw').forEach((b) => b.classList.remove('on'));
+    btn.classList.add('on');
+    state.view = btn.dataset.view;
+    renderAll();
+  });
+});
+
+/* ── 底部自由文本 ── */
+const exportBtn = document.getElementById('exportBtn');
+if (exportBtn) exportBtn.addEventListener('click', () => { saveDraft(); });
+
+const clearBtn = document.getElementById('clearBtn');
+if (clearBtn) {
+  clearBtn.addEventListener('click', () => {
+    if (!confirm('清空这段自由文本？')) return;
+    const ta = document.getElementById('draft');
+    if (ta) ta.value = '';
+    saveDraft();
+    updateHint();
+  });
+}
+
+/* ── 启动 ── */
+(async function boot() {
+  setSyncState('正在连接…', false);
+  const ok = await loadFromServer();
+  if (ok) setSyncState('已连上服务 · ' + DB.length + ' 条', false);
+  if (!DB.some((t) => t.id === state.selected)) {
+    state.selected = DB[0] ? DB[0].id : '';
+  }
+  renderAll();
+  await loadDraft();
+})();
+
+
+/* ══════════════════════════════════════════════════════════════
+   版本检测 —— 服务端页面比本页新就自动重载
+
+   用户原话：
+
+     > 我关闭标签复制网址以后好了。ctrlf5并不成功。
+
+   Ctrl+F5 对 127.0.0.1 的页面不可靠：Edge 有时只重新验证主文档，
+   内联 <style>/<script> 跟着主文档走，不刷新就没变化。
+
+   与其让用户记着「关标签再打开」，不如让页面自己发现过期。
+
+   ## 做法
+
+     · 页面启动时记下服务端给的 page mtime
+     · 每 3 秒轮询 /api/ping
+     · 一旦 page mtime 变了 → 顶部弹一条「有新版本，正在刷新」
+     · 600ms 后 location.reload()
+
+   为什么给 600ms：改到一半的输入还在 debounce 里（600ms），
+   先让 scheduleSave 落盘，再刷新，避免丢掉刚打的字。
+   ══════════════════════════════════════════════════════════════ */
+
+/** 本页对应的服务端页面版本号。0 表示拿不到（本地模式）。 */
+let pageStamp = 0;
+
+/**
+ * 查一次服务端的页面版本。
+ *
+ * @returns {Promise<void>}
+ */
+async function checkPageVersion() {
+  try {
+    const response = await fetch(API.replace(/\/api\/.*$/u, '/api/ping'), { cache: 'no-store' });
+    if (!response.ok) return;
+    const data = await response.json();
+    const next = Number(data.page || 0);
+    if (next === 0) return;
+
+    /* 第一次拿到：只记下来，不触发 */
+    if (pageStamp === 0) { pageStamp = next; return; }
+
+    if (next !== pageStamp) {
+      pageStamp = next;
+      showReloadBanner();
+    }
+  } catch {
+    /* 服务没起就别管了 */
+  }
+}
+
+/** 顶部提示条：正在刷新。 */
+function showReloadBanner() {
+  const old = document.getElementById('reloadBar');
+  if (old !== null) return;
+
+  const bar = document.createElement('div');
+  bar.id = 'reloadBar';
+  bar.style.cssText = [
+    'position:fixed', 'left:50%', 'top:12px', 'transform:translateX(-50%)',
+    'z-index:9999', 'padding:7px 14px', 'border-radius:20px',
+    'background:#191b1f', 'color:#fff', 'font-size:12px',
+    'box-shadow:0 6px 20px rgba(0,0,0,.25)', 'font-family:inherit'
+  ].join(';');
+  bar.textContent = '页面已更新，正在刷新…';
+  document.body.appendChild(bar);
+
+  /* 等 debounce 落盘再刷 */
+  setTimeout(() => { location.reload(); }, 600);
+}
+
+/* 启动时查一次，之后每 3 秒一次 */
+checkPageVersion();
+setInterval(checkPageVersion, 3000);
+
+</script>
+</body>
+</html>

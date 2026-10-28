@@ -6464,14 +6464,14 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           art: document.art !== false
         };
       }
-      let liveUi = { drawer: true, sidebar: true, extras: true };
+      let liveUi = { drawer: true, sidebar: true, extras: true, prototype: false };
       let templatesReset = null;
       const uiListeners = /* @__PURE__ */ new Set();
       function readLiveUi() {
         return liveUi;
       }
       function setLiveUi(next) {
-        const changed = next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar || next.extras !== liveUi.extras;
+        const changed = next.drawer !== liveUi.drawer || next.sidebar !== liveUi.sidebar || next.extras !== liveUi.extras || next.prototype !== liveUi.prototype;
         if (!changed) return;
         liveUi = next;
         for (const listener of [...uiListeners]) {
@@ -6618,6 +6618,83 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           },
           open ? h(TaskBoard, { sessionId: props.sessionId }) : null
         );
+      }
+      /*
+       * 原型预览：把研究沙盘里那套界面整个塞进 iframe。
+       *
+       * ## 用途
+       *
+       * 对照。改 mod 的时候开着它，一眼看出"线上这个"和"沙盘那个"差在哪。
+       *
+       * ## 为什么用命令取 HTML
+       *
+       * 客户端插件拿不到自己的资源 URL（打包后的模块没有 import.meta.url），
+       * 唯一能跟宿主说话的路是 remote.commands.execute。
+       * 所以 HTML 由 \`taskboard-prototype\` 命令返回，这里用 srcDoc 灌进 iframe。
+       *
+       * ## 为什么 iframe
+       *
+       * 沙盘那套 CSS 是全局的（body/html/\* 都动），直接渲染会污染整个控制台。
+       * iframe 天然隔离。
+       */
+      function PrototypePanel(props) {
+        const contentState = React.useState("");
+        const content = contentState[0];
+        const setContent = contentState[1];
+        const errorState = React.useState("");
+        const error = errorState[0];
+        const setError = errorState[1];
+        React.useEffect(function() {
+          let alive = true;
+          const remote = ctx.get("remote");
+          if (!remote || !remote.commands || typeof remote.commands.execute !== "function") {
+            setError("\u8FDE\u4E0D\u4E0A\u540E\u7AEF\uFF08remote \u670D\u52A1\u7F3A\u5931\uFF09");
+            return function() {
+            };
+          }
+          Promise.resolve(
+            remote.commands.execute(props.sessionId || "", "taskboard-prototype", [])
+          ).then(function(result) {
+            if (!alive) return;
+            const text = result && typeof result === "object" ? result.text : String(result || "");
+            if (text && text.indexOf("<html") >= 0) setContent(text);
+            else setError(text || "\u539F\u578B\u5FEB\u7167\u662F\u7A7A\u7684");
+          }).catch(function(failure) {
+            if (alive) setError(String((failure && failure.message) || failure));
+          });
+          return function() {
+            alive = false;
+          };
+        }, [props.sessionId]);
+        if (error !== "") {
+          return h("div", {
+            style: {
+              padding: "24px",
+              color: "var(--dsw-alias-fg-3)",
+              fontSize: "13px",
+              lineHeight: 1.7
+            }
+          }, error, h("div", {
+            style: { marginTop: "12px", opacity: 0.7 }
+          }, "\u5F00\u5173\u5728\uFF1A\u8BBE\u7F6E \u2192 \u63D2\u4EF6 \u2192 \u4EFB\u52A1\u9762\u677F \u2192 \u539F\u578B\u9884\u89C8"));
+        }
+        if (content === "") {
+          return h("div", {
+            style: { padding: "24px", color: "var(--dsw-alias-fg-3)", fontSize: "13px" }
+          }, "\u6B63\u5728\u8BFB\u539F\u578B\u5FEB\u7167\u2026");
+        }
+        return h("iframe", {
+          srcDoc: content,
+          style: {
+            width: "100%",
+            height: "100%",
+            border: "0",
+            display: "block",
+            background: "#fff"
+          },
+          sandbox: "allow-same-origin allow-scripts allow-popups allow-forms",
+          title: "\u539F\u578B\u9884\u89C8"
+        });
       }
       function TaskboardSettingsCard(props) {
         const view = props.view;
@@ -6830,6 +6907,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           const wantDrawer = settings.drawer !== false;
           const wantSidebar = settings.sidebar !== false;
           const wantExtras = true;
+          const wantPrototype = settings.prototype === true;
           try {
             registerBuiltinRenderers({
               h: React.createElement,
@@ -6893,7 +6971,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               return {
                 drawer: typeof value.drawer === "boolean" ? value.drawer : void 0,
                 sidebar: typeof value.sidebar === "boolean" ? value.sidebar : void 0,
-                extras: typeof value.extras === "boolean" ? value.extras : void 0
+                extras: typeof value.extras === "boolean" ? value.extras : void 0,
+                prototype: typeof value.prototype === "boolean" ? value.prototype : void 0
               };
             };
             try {
@@ -6908,7 +6987,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 return {
                   drawer: fromMirror.drawer === void 0 ? wantDrawer : fromMirror.drawer,
                   sidebar: fromMirror.sidebar === void 0 ? wantSidebar : fromMirror.sidebar,
-                  extras: readExtrasFromMirror(namespaces)
+                  extras: readExtrasFromMirror(namespaces),
+                  prototype: fromMirror.prototype === void 0 ? false : fromMirror.prototype
                 };
               }
             } catch (failure) {
@@ -6920,12 +7000,13 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 return {
                   drawer: fromForm.drawer === void 0 ? wantDrawer : fromForm.drawer,
                   sidebar: fromForm.sidebar === void 0 ? wantSidebar : fromForm.sidebar,
-                  extras: readExtrasFromForm()
+                  extras: readExtrasFromForm(),
+                  prototype: fromForm.prototype === void 0 ? false : fromForm.prototype
                 };
               }
             } catch (failure) {
             }
-            return { drawer: wantDrawer, sidebar: wantSidebar, extras: wantExtras };
+            return { drawer: wantDrawer, sidebar: wantSidebar, extras: wantExtras, prototype: wantPrototype };
           };
           ctx.slots.inject("conversation.input.dock", function() {
             return ctx.slots.register(
@@ -6977,6 +7058,49 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 });
               })
             );
+            /*
+             * 原型预览 tab。
+             *
+             * 只有开关打开时才注册 —— 关着的时候连 tab 都不出现，
+             * 不给用户一个点了没用的入口。
+             */
+            if (readLiveUi().prototype) {
+              offs.push(
+                ctx.effect(function() {
+                  return ctx.sidebarRightTabs.register({
+                    id: "taskboard-prototype",
+                    kind: "taskboard-prototype",
+                    title: function() {
+                      return "\u539F\u578B";
+                    },
+                    guide: [
+                      {
+                        id: "taskboard-prototype",
+                        order: 61,
+                        title: function() {
+                          return "\u539F\u578B\u9884\u89C8";
+                        },
+                        description: function() {
+                          return "\u5185\u5D4C\u7814\u7A76\u6C99\u76D8\u7684\u754C\u9762\uFF0C\u7528\u4E8E\u5BF9\u7167";
+                        }
+                      }
+                    ]
+                  });
+                }, "taskboard: \u6CE8\u518C\u539F\u578B tab \u7C7B\u578B")
+              );
+              offs.push(
+                ctx.slots.inject("sidebar.right.pane.tab", function() {
+                  return ctx.slots.register({ name: "sidebar.right.pane.tab", key: "taskboard-prototype" }, PrototypePanel);
+                })
+              );
+              offs.push(
+                ctx.slots.inject("sidebar.right.pane.tab.title", function() {
+                  return ctx.slots.register({ name: "sidebar.right.pane.tab.title", key: "taskboard-prototype" }, function() {
+                    return h("span", null, "\u539F\u578B");
+                  });
+                })
+              );
+            }
             return function() {
               for (const off of offs) {
                 try {
@@ -6986,14 +7110,35 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               }
             };
           };
+          /*
+           * 侧栏挂载 / 卸载。
+           *
+           * ## 为什么要记 mountedProto
+           *
+           * 原型预览 tab 是**按开关决定注册不注册**的，而注册是挂在
+           * sidebarOff 上的。所以开关变了必须整个重挂一次，否则
+           * 打开了原型、tab 也不会出现（要刷新页面才行）。
+           */
+          let mountedProto = null;
           const syncSidebar = function() {
-            if (readLiveUi().sidebar && sidebarOff === null) sidebarOff = mountSidebar();
-            else if (!readLiveUi().sidebar && sidebarOff !== null) {
+            const want = readLiveUi();
+            const protoNow = want.prototype === true;
+            if (want.sidebar && (sidebarOff === null || mountedProto !== protoNow)) {
+              if (sidebarOff !== null) {
+                try {
+                  sidebarOff();
+                } catch (failure) {
+                }
+              }
+              sidebarOff = mountSidebar();
+              mountedProto = protoNow;
+            } else if (!want.sidebar && sidebarOff !== null) {
               try {
                 sidebarOff();
               } catch (failure) {
               }
               sidebarOff = null;
+              mountedProto = null;
             }
           };
           setLiveUi(readUiFlags());
