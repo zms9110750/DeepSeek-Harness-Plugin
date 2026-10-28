@@ -646,7 +646,7 @@
    * 所以给一个最小宽度，并允许向右伸出（right: auto）。
    * 原型里弹层是跨到右栏那边的。
    */
-  .tpl-pop{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;overscroll-behavior:contain;
+  .tpl-pop{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;overscroll-behavior:contain;overflow:hidden;
     border:1px solid var(--border-2);border-radius:8px;background:#fff;
     box-shadow:0 4px 10px rgba(16,18,22,.08), 0 16px 40px rgba(16,18,22,.14);
     overflow:hidden}
@@ -654,7 +654,7 @@
   .field.tpl-field{position:relative}
 
   .tpl-grid{display:grid;grid-template-columns:92px 92px minmax(0,1fr);align-items:stretch}
-  .tpl-col{padding:6px 0 8px;max-height:236px;overflow:auto;border-right:1px solid var(--border);overscroll-behavior:contain}
+  .tpl-col{padding:6px 0 8px;height:180px;box-sizing:border-box;overflow:auto;border-right:1px solid var(--border);overscroll-behavior:contain}
   .tpl-col:nth-child(1),.tpl-col:nth-child(2){background:#fbfbfc}
   .tpl-col:nth-child(3){border-right:0;background:#fff}
   .tpl-col-head{font-size:10px;font-weight:700;color:var(--text-3);
@@ -686,17 +686,30 @@
   .tpl-item.preview .adopt{opacity:1}
   .tpl-item .adopt:hover{background:#000}
 
-  .tpl-desc{padding:10px 13px;font-size:11.5px;line-height:1.6;color:var(--text-2);
-    border-top:1px solid var(--border);background:#fbfbfc;min-height:54px}
-  .tpl-desc .d-title{color:var(--text);font-weight:600;margin-bottom:3px}
-  .tpl-desc .d-secs{margin-top:4px;font-size:11px;color:var(--text-3)}
+  /*
+   * 说明面板：**固定高度**。
+   *
+   * 用户原话：
+   *   > 高度不一致。
+   *
+   * 之前用 min-height，说明长短不同时弹层整体高度就变 ——
+   * 空模板没有「章节：…」那行，比别的矮一截。
+   *
+   * 固定成 4 行的高度，内容超了自己滚。弹层高度就恒定了。
+   */
+  .tpl-desc{padding:9px 13px;font-size:11.5px;line-height:1.5;color:var(--text-2);
+    border-top:1px solid var(--border);background:#fbfbfc;
+    height:92px;box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain}
+  .tpl-desc .d-title{color:var(--text);font-weight:600;margin-bottom:2px}
+  .tpl-desc .d-secs{margin-top:2px;font-size:11px;color:var(--text-3)}
 
   .tpl-preview{padding:7px 13px;font-size:10.5px;color:var(--text-3);
-    border-top:1px solid var(--border);background:#fff}
+    border-top:1px solid var(--border);background:#fff;
+    height:32px;box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tpl-preview b{color:var(--brand)}
   .tpl-empty{padding:16px 12px;font-size:11.5px;color:var(--text-3);text-align:center}
 
-  .tpl-desc .d-hint{margin-top:5px;font-size:10.5px;color:var(--text-3)}
+  .tpl-desc .d-hint{margin-top:3px;font-size:10.5px;color:var(--text-3)}
 
 </style>
 </head>
@@ -3858,8 +3871,50 @@ function openCreator(init) {
     event.stopPropagation();
     event.preventDefault();
     tplPop.hidden = !tplPop.hidden;
-    if (!tplPop.hidden) refreshPop();
+    if (!tplPop.hidden) {
+      refreshPop();
+      placePop();
+    }
   });
+
+  /*
+   * 放置弹层。
+   *
+   * 用户截图里弹层底部被对话框裁掉了 —— 因为它是绝对定位，
+   * 不知道下面还剩多少空间。
+   *
+   * 这里算一下：下面放不下就翻到按钮上方。
+   */
+  function placePop() {
+    /* 先复位，否则测量用的是上一次的偏移 */
+    tplPop.style.top = '';
+    tplPop.style.bottom = '';
+    tplPop.style.maxHeight = '';
+
+    const btn = tplBtn.getBoundingClientRect();
+    const body = document.querySelector('.modal-body');
+    if (body === null) return;
+    const bodyRect = body.getBoundingClientRect();
+
+    /* 弹层想要的高度：先让它自己量 */
+    const wanted = tplPop.getBoundingClientRect().height;
+    /* 按钮下方到 body 底边的距离 */
+    const below = bodyRect.bottom - btn.bottom - 8;
+
+    if (wanted > below) {
+      /* 下面放不下 —— 看上面够不够 */
+      const above = btn.top - bodyRect.top - 8;
+      if (above > below) {
+        /* 翻到上方 */
+        tplPop.style.top = 'auto';
+        tplPop.style.bottom = 'calc(100% + 6px)';
+        tplPop.style.maxHeight = Math.max(160, above) + 'px';
+      } else {
+        /* 上面也不够 —— 留在下面，限制高度让它自己滚 */
+        tplPop.style.maxHeight = Math.max(160, below) + 'px';
+      }
+    }
+  }
 
   /*
    * 点面板外面 → 收起模板弹层。

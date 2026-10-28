@@ -242,8 +242,50 @@ function openCreator(init) {
     event.stopPropagation();
     event.preventDefault();
     tplPop.hidden = !tplPop.hidden;
-    if (!tplPop.hidden) refreshPop();
+    if (!tplPop.hidden) {
+      refreshPop();
+      placePop();
+    }
   });
+
+  /*
+   * 放置弹层。
+   *
+   * 用户截图里弹层底部被对话框裁掉了 —— 因为它是绝对定位，
+   * 不知道下面还剩多少空间。
+   *
+   * 这里算一下：下面放不下就翻到按钮上方。
+   */
+  function placePop() {
+    /* 先复位，否则测量用的是上一次的偏移 */
+    tplPop.style.top = '';
+    tplPop.style.bottom = '';
+    tplPop.style.maxHeight = '';
+
+    const btn = tplBtn.getBoundingClientRect();
+    const body = document.querySelector('.modal-body');
+    if (body === null) return;
+    const bodyRect = body.getBoundingClientRect();
+
+    /* 弹层想要的高度：先让它自己量 */
+    const wanted = tplPop.getBoundingClientRect().height;
+    /* 按钮下方到 body 底边的距离 */
+    const below = bodyRect.bottom - btn.bottom - 8;
+
+    if (wanted > below) {
+      /* 下面放不下 —— 看上面够不够 */
+      const above = btn.top - bodyRect.top - 8;
+      if (above > below) {
+        /* 翻到上方 */
+        tplPop.style.top = 'auto';
+        tplPop.style.bottom = 'calc(100% + 6px)';
+        tplPop.style.maxHeight = Math.max(160, above) + 'px';
+      } else {
+        /* 上面也不够 —— 留在下面，限制高度让它自己滚 */
+        tplPop.style.maxHeight = Math.max(160, below) + 'px';
+      }
+    }
+  }
 
   /*
    * 点面板外面 → 收起模板弹层。
