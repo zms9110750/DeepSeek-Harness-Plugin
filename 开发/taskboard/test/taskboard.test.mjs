@@ -478,7 +478,7 @@ after(() => {
 
 /* ── 7. 用例 ───────────────────────────────────────────────────────────── */
 
-test('apply 注册十四个工具、十九条面板命令、「按计划」预设、守卫和 planClaims', () => {
+test('apply 注册十四个工具、二十条面板命令、「按计划」预设、守卫和 planClaims', () => {
 	assert.deepEqual([...tools.keys()].sort(), [
 		'task_answer',
 		'task_claim',
@@ -514,6 +514,7 @@ test('apply 注册十四个工具、十九条面板命令、「按计划」预�
 		'task-state',
 		'task-templates',
 		'task-update',
+		'taskboard-prototype',
 		'tasks',
 	]);
 	assert.equal(ctx.permissionPresets.presets.plan?.name, '按计划');
