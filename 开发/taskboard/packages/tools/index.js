@@ -533,11 +533,27 @@ function registerTools(ctx) {
 				if (!bodyCheck.ok) {
 					throw new Error(`task_submit: 正文不合法 —— ${bodyCheck.reason}`);
 				}
+				/*
+				 * 初始状态按类别定（GU-08 2.1 / 3.1 / 4.1）。
+				 *
+				 *   目标  未指定     ← 要人「采纳」才进推导（1.1）
+				 *   工作  未指定     ← 要人「采纳」才能领（3.1）
+				 *   设计  需要授权   ← AI 无权改，必须人拍板（2.1）
+				 *   记录  需要授权   ← 等人看过才作数（4.1）
+				 *
+				 * 用户原话（为什么设计初始不是「需要信息」）：
+				 *   > 授权，意味着这个东西必须由用户拍板。ai无权从需要授权
+				 *   > 转变状态。而信息是ai可以操作的
+				 *
+				 * 所以「提问」这种听起来像"要信息"的东西，初始也是「需要授权」——
+				 * 因为答案是**人**给的，AI 不能自己填上然后标成功。
+				 */
+				const initialStatus = kind === 'design' || kind === 'record' ? '需要授权' : '未指定';
 				const id = await createNew({
 					title,
 					type,
 					kind,
-					status: '未指定',
+					status: initialStatus,
 					parent: text(args.parent),
 					links: normalizeLinks(args.links),
 					workspace: text(args.workspace),

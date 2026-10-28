@@ -1232,9 +1232,11 @@ test('采纳「取代」：旧计划转拒绝、依赖转移到新计划、派�
 });
 
 test('task_update 只允许「未指定」的计划改内容，且不改状态', async () => {
+	/* GU-08 2.1：设计类初始「需要授权」，不算草稿、改不了。
+	   这条测试要的是"草稿可改"，所以用工作类（初始「未指定」）。 */
 	const id = await submit({
 		title: '原始标题',
-		type: 'DB',
+		type: 'WI',
 		body: '旧正文',
 		links: '依赖:T-003, 依赖:t-003',
 	});
@@ -1252,7 +1254,7 @@ test('task_update 只允许「未指定」的计划改内容，且不改状态',
 	assert.equal(stored.body, '新正文');
 	assert.equal(stored.links, '依赖:T-003, 派生:T-004', 'links 应去重');
 	assert.equal(stored.workspace, 'X:\\temp\\dsh\\探针\\upd');
-	assert.equal(stored.type, 'DB', '未提供的字段保持原值');
+	assert.equal(stored.type, 'WI', '未提供的字段保持原值');
 	assert.equal(stored.status, '未指定');
 	assert.equal(stored.claimed_by, '');
 
@@ -1508,38 +1510,48 @@ test('/tasks 只给计划头、/task-get 给全文、/task-state 命令路径改
 	assert.equal((await command('task-state').handler({ rawInput: `${id} 草稿` })).kind, 'error');
 });
 
-test('上行：子计划还有进行态时不许完成父计划；草稿与完成态不阻挡', async () => {
-	/* 父计划用工作类（要测上行阻挡），子计划只能用设计/记录类 ——
-	   工作不能派工作（原子任务）。 */
+test('上行：子计划还有进行态时不许成功父计划', async () => {
+	/*
+	 * 父计划用**工作类**（才能手动标成功）；
+	 * 子计划只能用设计/记录类 —— 工作不能派工作（原子任务）。
+	 *
+	 * GU-08 之后设计/记录初始「需要授权」，不再是草稿，
+	 * 所以「草稿不阻挡」这一档没法在这个测试里造 —— 单独用工作类测（见下一条）。
+	 */
 	const parent = await submit({ title: '父计划', type: 'WI', body: '父正文' });
 	await approve(parent);
-	/* 子计划用记录类：设计类只能由用户改状态（2.3），
-	   而这里要用 AI 路径造出「需要信息」。 */
+
+	/* 子计划造「需要信息」：记录类可以由 AI 转（只有成功/失败锁给用户）。 */
 	const pending = await submit({ title: '缺信息的子计划', type: 'RR', parent });
 	await changeState(pending, '需要信息');
+	await assert.rejects(() => changeState(parent, '成功'), undefined, '子计划「需要信息」时父计划不能成功');
 
-	/* 这里可能先撞 3.6 交付守卫（AI 转成功要先有交付），
-	   两条都是拒绝，所以只断言"被拒"。 */
-	await assert.rejects(
-		() => changeState(parent, '成功'),
-		undefined,
-		'子计划处于「需要信息」时父计划不能完成',
-	);
+	/* 子计划造「需要授权」：设计类初始就是它。 */
+	const shelved = await submit({ title: '等授权的子计划', type: 'DQ', parent });
+	await assert.rejects(() => changeState(parent, '成功'), undefined, '子计划「需要授权」时父计划不能成功');
 	assert.equal(taskOf(parent).status, '提交', '被拒后父计划状态不变（已采纳、还没领）');
 
-	/* 进行态里的四种都挡：提交 / 处理中 / 需要信息 / 需要授权 */
-	const submitted = await submit({ title: '还没领取的子计划', type: 'GO', parent });
-	await approve(submitted);
-	await assert.rejects(() => changeState(parent, '成功'), undefined);
-
-	/* 草稿（未指定）不作数、完成态（取消）不阻挡 → 可以完成 */
-	const draft = await submit({ title: '草稿子计划', type: 'RR', parent });
-	await changeState(pending, '取消');
-	await changeState(submitted, '取消');
+	/* 收掉两条子计划，再加一条成功的交付 → 父计划可以成功 */
+	const rb = await command('task-state').handler({ rawInput: pending + ' 成功' });
+	assert.equal(rb.kind, 'success', rb.text);
+	const dq = await command('task-state').handler({ rawInput: shelved + ' 成功' });
+	assert.equal(dq.kind, 'success', dq.text);
 	await deliver(parent, '成功');
 	await changeState(parent, '成功');
 	assert.equal(taskOf(parent).status, '成功');
-	assert.equal(taskOf(draft).status, '未指定', '草稿子计划不该被父计划的完成改写');
+});
+
+test('上行：草稿子计划不阻挡父计划成功', async () => {
+	/* 草稿 = 工作类的「未指定」（唯一一种仍是草稿的类别）。 */
+	const parent = await submit({ title: '父计划', type: 'WI' });
+	await approve(parent);
+	const draft = await submit({ title: '草稿子计划', type: 'WR', parent });
+	assert.equal(taskOf(draft).status, '未指定', '工作类新建是草稿');
+
+	await deliver(parent, '成功');
+	await changeState(parent, '成功');
+	assert.equal(taskOf(parent).status, '成功');
+	assert.equal(taskOf(draft).status, '未指定', '草稿子计划不该被父计划的成功改写');
 });
 
 test('下行：父计划终止（成功/失败/取消/拒绝）时，进行态的子计划全部取消（递归），草稿与完成态不动', async () => {
