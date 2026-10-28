@@ -79,7 +79,7 @@ async function scanTemplates() {
 			type: code,
 			name: String(meta.name ?? code),
 			kind: String(meta.default_kind ?? 'work'),
-			domain: String(meta.domain ?? 'general'),
+			domain: String(meta.domain ?? 'core'),
 			description: String(meta.description ?? ''),
 			/* 领域模板不带状态规则 —— 这个字段恒为 false，写在数据里是为了
 			   让读的人一眼看出"它们和核心模板的差别在哪"。 */

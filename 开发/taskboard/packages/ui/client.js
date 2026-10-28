@@ -2653,7 +2653,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           id: "01",
           title: "\u5DE5\u4F5C\u533A\u7ED3\u6784",
           kind: "\u9700\u6C42",
-          status: "\u5B8C\u6210",
+          status: "\u6210\u529F",
           on: true,
           parent: "",
           summary: "\u516D\u683C\u76EE\u5F55 + git \u4ED3\u5E93",
@@ -2703,7 +2703,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           id: "01/D-01-01-01",
           title: "D-01-01-01 \xB7 \u76EE\u5F55\u4E0E git \u521D\u59CB\u5316",
           kind: "\u5B9E\u73B0",
-          status: "\u5B8C\u6210",
+          status: "\u6210\u529F",
           on: true,
           parent: "01/C-01-01",
           summary: "\u5355\u4ED3\u5E93\u3001\u4E3B\u5E72\u5355\u4E00\u5386\u53F2",
@@ -2753,7 +2753,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           id: "15/C-\u5F85\u8BAE",
           title: "\u5F85\u8BAE\uFF1A\u4E09\u6B21\u5426\u51B3\u4EE5\u540E\u600E\u4E48\u529E",
           kind: "\u5F85\u8BAE",
-          status: "\u9700\u8981\u8865\u5145",
+          status: "\u9700\u8981\u4FE1\u606F",
           on: true,
           parent: "15",
           summary: "\u53EF\u80FD\u56E0\u6B64\u6D3E\u751F\u51FA\u4E00\u6761\u65B0\u9700\u6C42",
@@ -2791,12 +2791,12 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         "\u672A\u6307\u5B9A": [],
         "\u63D0\u4EA4": ["\u8FDB\u884C"],
         "\u5904\u7406\u4E2D": ["\u8FDB\u884C"],
-        "\u9700\u8981\u8865\u5145": ["\u8FDB\u884C", "\u6401\u7F6E"],
+        "\u9700\u8981\u4FE1\u606F": ["\u8FDB\u884C", "\u6401\u7F6E"],
         "\u9700\u8981\u6388\u6743": ["\u8FDB\u884C", "\u6401\u7F6E"],
-        "\u5B8C\u6210": ["\u5B8C\u6210"],
-        "\u5931\u8D25": ["\u5B8C\u6210"],
-        "\u53D6\u6D88": ["\u5B8C\u6210"],
-        "\u62D2\u7EDD": ["\u5B8C\u6210"]
+        "\u6210\u529F": ["\u7ED3\u675F"],
+        "\u5931\u8D25": ["\u7ED3\u675F"],
+        "\u53D6\u6D88": ["\u7ED3\u675F"],
+        "\u62D2\u7EDD": ["\u7ED3\u675F"]
       };
       const A2A_STATES = {
         "\u672A\u6307\u5B9A": {
@@ -2814,7 +2814,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           tone: "state-warn-primary",
           desc: "\u5DF2\u63A5\u53D6\uFF0C\u6B63\u5728\u505A\u3002"
         },
-        "\u9700\u8981\u8865\u5145": {
+        "\u9700\u8981\u4FE1\u606F": {
           code: "INPUT_REQUIRED",
           tone: "state-warn-primary",
           desc: "\u6401\u7F6E\uFF1A\u9700\u8981\u7814\u7A76\uFF0C\u6216\u8005\u9700\u8981\u66F4\u591A\u4FE1\u606F\u624D\u80FD\u7EE7\u7EED\u3002"
@@ -2824,7 +2824,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           tone: "state-warn-primary",
           desc: "\u6401\u7F6E\uFF1A\u4EE3\u4EF7\u6BD4\u8F83\u5927\u3001\u4E0D\u4E00\u5B9A\u5408\u9002\u3002\u5148\u786E\u8BA4\u522B\u7684\u8BA1\u5212\uFF0C\u6216\u786E\u8BA4\u5C31\u8D70\u8FD9\u6761\u8DEF\uFF1B\u7B49\u786E\u8BA4\u671F\u95F4\u9700\u8981\u6388\u6743\uFF0C\u4E5F\u53EF\u4EE5\u5148\u8F6C\u53BB\u505A\u522B\u7684\u3002"
         },
-        "\u5B8C\u6210": {
+        "\u6210\u529F": {
           code: "COMPLETED",
           tone: "state-success-primary",
           desc: "\u4EA4\u4ED8\u5B8C\u6210\u3002"
@@ -3174,7 +3174,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const byGroup = [
           { id: "\u8FDB\u884C", label: "\u8FDB\u884C" },
           { id: "\u6401\u7F6E", label: "\u6401\u7F6E" },
-          { id: "\u5B8C\u6210", label: "\u5B8C\u6210" },
+          { id: "\u6210\u529F", label: "\u6210\u529F" },
           { id: "", label: "\u8349\u7A3F" }
         ];
         const bucket = function(node) {
@@ -3182,7 +3182,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           const groups = groupsOf(node.status);
           if (groups.indexOf("\u6401\u7F6E") !== -1) return "\u6401\u7F6E";
           if (groups.indexOf("\u8FDB\u884C") !== -1) return "\u8FDB\u884C";
-          return "\u5B8C\u6210";
+          return "\u6210\u529F";
         };
         return h(
           "div",
@@ -3379,7 +3379,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const state = statusA2A(node.status);
         const [menuOpen, setMenuOpen] = React.useState(false);
         const [relOpen, setRelOpen] = React.useState(false);
-        const decidable = props.behavior === "decide" && ["\u672A\u6307\u5B9A", "\u63D0\u4EA4", "\u9700\u8981\u8865\u5145", "\u9700\u8981\u6388\u6743"].includes(node.status);
+        const decidable = props.behavior === "decide" && ["\u672A\u6307\u5B9A", "\u63D0\u4EA4", "\u9700\u8981\u4FE1\u606F", "\u9700\u8981\u6388\u6743"].includes(node.status);
         const choices = decidable ? optionsOf(props.body) : [];
         const children = props.tasks.filter(function(item) {
           return item.parent === node.id;
@@ -3399,18 +3399,18 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           "\u672A\u6307\u5B9A": [{ to: "\u63D0\u4EA4", label: "\u91C7\u7EB3", primary: true }, { to: "\u62D2\u7EDD", label: "\u62D2\u7EDD" }],
           "\u63D0\u4EA4": [
             { to: "\u5904\u7406\u4E2D", label: "\u9886\u53D6", primary: true },
-            { to: "\u5B8C\u6210", label: "\u76F4\u63A5\u5B8C\u6210" },
+            { to: "\u6210\u529F", label: "\u76F4\u63A5\u5B8C\u6210" },
             { to: "\u53D6\u6D88", label: "\u53D6\u6D88" },
             { to: "\u62D2\u7EDD", label: "\u62D2\u7EDD" }
           ],
           "\u5904\u7406\u4E2D": [
-            { to: "\u5B8C\u6210", label: "\u5B8C\u6210", primary: true },
+            { to: "\u6210\u529F", label: "\u6210\u529F", primary: true },
             { to: "\u5931\u8D25", label: "\u5931\u8D25" },
             { to: "\u53D6\u6D88", label: "\u53D6\u6D88" },
-            { to: "\u9700\u8981\u8865\u5145", label: "\u9700\u8981\u8865\u5145" },
+            { to: "\u9700\u8981\u4FE1\u606F", label: "\u9700\u8981\u4FE1\u606F" },
             { to: "\u9700\u8981\u6388\u6743", label: "\u9700\u8981\u6388\u6743" }
           ],
-          "\u9700\u8981\u8865\u5145": [
+          "\u9700\u8981\u4FE1\u606F": [
             { to: "\u5904\u7406\u4E2D", label: "\u7EE7\u7EED", primary: true },
             { to: "\u53D6\u6D88", label: "\u53D6\u6D88" },
             { to: "\u62D2\u7EDD", label: "\u62D2\u7EDD" }
@@ -3421,7 +3421,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             { to: "\u62D2\u7EDD", label: "\u62D2\u7EDD" }
           ],
           /* 终态：只有「重开」一条路（T-030）。重开回到「提交」，要重新领。 */
-          "\u5B8C\u6210": [{ to: "\u63D0\u4EA4", label: "\u91CD\u5F00", primary: true }],
+          "\u6210\u529F": [{ to: "\u63D0\u4EA4", label: "\u91CD\u5F00", primary: true }],
           "\u5931\u8D25": [{ to: "\u63D0\u4EA4", label: "\u91CD\u5F00", primary: true }],
           "\u53D6\u6D88": [{ to: "\u63D0\u4EA4", label: "\u91CD\u5F00", primary: true }],
           "\u62D2\u7EDD": [{ to: "\u63D0\u4EA4", label: "\u91CD\u5F00", primary: true }]
@@ -3885,14 +3885,14 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               const heads = [
                 { key: "active", label: "\u8FDB\u884C", color: "var(--dsw-alias-brand-primary)" },
                 { key: "held", label: "\u6401\u7F6E", color: "#c98a20" },
-                { key: "done", label: "\u5B8C\u6210", color: "#2e9e6b" }
+                { key: "done", label: "\u6210\u529F", color: "#2e9e6b" }
               ];
               const groupOf = function(title, color, entries) {
                 if (entries.length === 0) return null;
                 const cols = [[], [], []];
                 for (const entry of entries) {
                   const group = groupLabel(entry.status);
-                  cols[group === "\u6401\u7F6E" ? 1 : group === "\u5B8C\u6210" ? 2 : 0].push(entry);
+                  cols[group === "\u6401\u7F6E" ? 1 : group === "\u6210\u529F" ? 2 : 0].push(entry);
                 }
                 return h(
                   "div",
@@ -4207,7 +4207,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 },
                 node.note || "\uFF08\u8FD8\u6CA1\u6709\u5907\u6CE8\uFF09"
               ),
-              !node.note && (node.status === "\u9700\u8981\u6388\u6743" || node.status === "\u9700\u8981\u8865\u5145") ? h(
+              !node.note && (node.status === "\u9700\u8981\u6388\u6743" || node.status === "\u9700\u8981\u4FE1\u606F") ? h(
                 "div",
                 { style: { fontSize: 11, color: "var(--dsw-alias-state-warn-primary)" } },
                 "\u8FD9\u5F20\u8BA1\u5212\u505C\u5728\u300C" + node.status + "\u300D\uFF0C\u4F46\u6CA1\u6709\u5199\u4E3A\u4EC0\u4E48\u2014\u2014\u5EFA\u8BAE\u8865\u4E00\u53E5\u3002"
@@ -4820,7 +4820,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       }
       function templateDomain(yaml) {
         const match = /^domain:\s*(\w+)$/mu.exec(String(yaml || ""));
-        return match ? match[1] : "general";
+        return match ? match[1] : "core";
       }
       function behaviorOf(yaml) {
         const match = /^behavior:\s*(\w+)$/mu.exec(String(yaml || ""));
@@ -4854,7 +4854,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         ["code", "\u4EE3\u7801"],
         ["art", "\u7ED8\u753B"],
         ["writing", "\u5199\u4F5C"],
-        ["general", "\u901A\u7528"],
+        ["core", "\u6838\u5FC3"],
         ["", "\u5168\u90E8\u9886\u57DF"]
       ];
       let REMEMBERED_DOMAIN = "code";
@@ -5122,7 +5122,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                   [["", "\u7A7A\u6A21\u677F"]].concat(
                     templateLabelSet(templates).filter(function(pair) {
                       const own = templateDomain(templates[pair[0]]);
-                      if (domain !== "" && own !== domain && own !== "general") return false;
+                      if (domain !== "" && own !== domain && own !== "core") return false;
                       if (kind === "") return true;
                       return kindOfTemplate(templates[pair[0]]) === kind;
                     })
@@ -5625,8 +5625,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             let dropped = 0;
             (list || []).forEach(function(item) {
               if (!item || typeof item.type !== "string" || item.type === "" || !item.yaml) return;
-              const domain = typeof item.domain === "string" ? item.domain : "general";
-              if (domain !== "general" && flags[domain] === false) {
+              const domain = typeof item.domain === "string" ? item.domain : "core";
+              if (domain !== "core" && flags[domain] === false) {
                 dropped += 1;
                 return;
               }
@@ -6194,7 +6194,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           h(
             "div",
             { style: { display: "flex", alignItems: "center", gap: 6 } },
-            ["", "\u8FDB\u884C", "\u6401\u7F6E", "\u5B8C\u6210", "\u8349\u7A3F"].map(function(key) {
+            ["", "\u8FDB\u884C", "\u6401\u7F6E", "\u6210\u529F", "\u8349\u7A3F"].map(function(key) {
               const label = key === "" ? "\u5168\u90E8" : key;
               const active = groupFilter === key;
               return h(
@@ -6299,7 +6299,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             onChoose: function(choice) {
               if (!choice || String(choice).trim() === "") return;
               runCommand("/task-note " + activeNode.id + " \u9009\u5B9A\uFF1A" + String(choice), sessionId).then(function() {
-                return runCommand("/task-state " + activeNode.id + " \u5B8C\u6210", sessionId);
+                return runCommand("/task-state " + activeNode.id + " \u6210\u529F", sessionId);
               }).then(function() {
                 load();
               }).catch(function(error) {
@@ -6308,7 +6308,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             },
             /* 要更多信息：状态推到「需要信息」，它会转向用户。 */
             onMoreInfo: function() {
-              runState("\u9700\u8981\u8865\u5145");
+              runState("\u9700\u8981\u4FE1\u606F");
             },
             /* 拒绝这个决策：拒绝是终态，表示"这个问法不对/不做了"。 */
             onRejectChoice: function() {

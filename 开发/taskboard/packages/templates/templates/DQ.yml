@@ -2,7 +2,7 @@ name: DQ · 提问
 default_kind: design
 behavior: answer
 description: 一句话问用户；得到答复就完成
-domain: general
+domain: core
 framed: true
 dispatch: [goal, design, record, work]
 hints:

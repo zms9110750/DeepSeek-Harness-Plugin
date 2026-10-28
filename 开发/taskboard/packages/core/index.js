@@ -1347,18 +1347,51 @@ async function availableTypes() {
 	return [...known, ...unknown];
 }
 
+/**
+ * 在目录（含子目录）里找 `XX.yml`，返回完整路径。
+ *
+ * 领域模板按领域分了子目录，所以要递归。
+ *
+ * @param {string} dir
+ * @param {string} wanted 大写编号
+ * @returns {Promise<string|undefined>}
+ */
+async function findTemplateFile(dir, wanted) {
+	let entries;
+	try {
+		entries = await readdir(dir, { withFileTypes: true });
+	} catch {
+		return undefined;
+	}
+	for (const entry of entries) {
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			const hit = await findTemplateFile(full, wanted);
+			if (hit !== undefined) return hit;
+		} else if (entry.name.toUpperCase() === wanted + '.YML') {
+			return full;
+		}
+	}
+	return undefined;
+}
+
 /** 三个模板目录里实际有哪些编号（每次现扫，不缓存 —— 开发时改文件要生效）。 */
 async function TEMPLATE_TYPES_ON_DISK() {
 	const found = new Set();
-	for (const dir of TEMPLATE_DIRS) {
+	const walk = async (dir) => {
+		let entries;
 		try {
-			for (const file of await readdir(dir)) {
-				if (file.endsWith('.yml')) found.add(file.replace(/\.yml$/u, '').toUpperCase());
-			}
+			entries = await readdir(dir, { withFileTypes: true });
 		} catch {
-			/* 目录不存在就跳过 */
+			return;
 		}
-	}
+		for (const entry of entries) {
+			const full = join(dir, entry.name);
+			if (entry.isDirectory()) await walk(full);
+			else if (entry.name.endsWith('.yml')) found.add(entry.name.replace(/\.yml$/u, '').toUpperCase());
+		}
+	};
+	for (const dir of TEMPLATE_DIRS) await walk(dir);
 	return [...found];
 }
 
@@ -1393,11 +1426,8 @@ async function loadTemplate(type) {
 	}
 	/* 附加来源没给 → 自己按三个目录挨个找。 */
 	for (const dir of TEMPLATE_DIRS) {
-		try {
-			return await readFile(join(dir, `${wanted}.yml`), 'utf8');
-		} catch (failure) {
-			if (failure?.code !== 'ENOENT') throw failure;
-		}
+		const found = await findTemplateFile(dir, wanted);
+		if (found !== undefined) return await readFile(found, 'utf8');
 	}
 	throw new Error(`模板 ${wanted} 的文件找不到（找过 ${TEMPLATE_DIRS.length} 个目录）`);
 }
@@ -2476,6 +2506,7 @@ function coreService(ctx) {
 		storeFilePath: () => storeFilePath(),
 		/** 内置模板目录（core/templates）。面板要在这里写 INDEX.json 之外的清单，先拿路径。 */
 		templateDir: () => TEMPLATE_DIR,
+	TYPE_NAMES: () => TYPE_NAMES,
 		resolveDshHome: (c) => resolveDshHome(c),
 		splitWorkspaces: (raw) => splitWorkspaces(raw),
 

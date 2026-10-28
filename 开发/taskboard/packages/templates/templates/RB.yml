@@ -2,7 +2,7 @@ name: RB · 阻碍
 default_kind: record
 behavior: block
 description: 卡住了；父工作会被踢出「处理中」，转入「需要信息」
-domain: general
+domain: core
 framed: true
 dispatch: [goal, design, record, work]
 hints:

@@ -2,7 +2,7 @@ name: RW · 交付
 default_kind: record
 behavior: write
 description: 工作做完了，这份说明交出去了什么；用户在上面点成功就是验收
-domain: general
+domain: core
 framed: true
 dispatch: [goal, design, record, work]
 hints:

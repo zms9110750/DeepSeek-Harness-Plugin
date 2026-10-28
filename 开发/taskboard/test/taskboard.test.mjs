@@ -17,7 +17,7 @@
  */
 import { after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire, registerHooks } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
@@ -105,19 +105,22 @@ const TEMPLATE_DIRS = [
 	join(PLUGIN_DIR, 'packages', 'templates', 'templates'),
 	join(PLUGIN_DIR, 'packages', 'extra-templates', 'templates'),
 ];
-const EXTRA_TYPES = [
-	...new Set(
-		TEMPLATE_DIRS.flatMap((dir) => {
-			try {
-				return readdirSync(dir)
-					.filter((f) => f.endsWith('.yml'))
-					.map((f) => f.replace(/\.yml$/u, '').toUpperCase());
-			} catch {
-				return [];
-			}
-		}),
-	),
-].sort();
+function scanDir(dir) {
+	const out = [];
+	let entries;
+	try {
+		entries = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return out;
+	}
+	for (const entry of entries) {
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) out.push(...scanDir(full));
+		else if (entry.name.endsWith('.yml')) out.push(entry.name.replace(/\.yml$/u, '').toUpperCase());
+	}
+	return out;
+}
+const EXTRA_TYPES = [...new Set(TEMPLATE_DIRS.flatMap((dir) => scanDir(dir)))].sort();
 const TMP_ROOT = mkdtempSync(join(tmpdir(), 'taskboard-test-'));
 process.env.TASKBOARD_ROOT = TMP_ROOT;
 process.env.TASKBOARD_STORE = join(TMP_ROOT, 'plans.jsonl');
@@ -212,12 +215,28 @@ function makeCtx() {
 	services.set('taskboardTemplates', {
 		types: () => EXTRA_TYPES.slice(),
 		read: async (type) => {
-			for (const dir of TEMPLATE_DIRS) {
+			const wanted = String(type).toUpperCase();
+			const walk = async (dir) => {
+				let entries;
 				try {
-					return await readFile(join(dir, `${type}.yml`), 'utf8');
-				} catch (failure) {
-					if (failure?.code !== 'ENOENT') throw failure;
+					entries = await readdir(dir, { withFileTypes: true });
+				} catch {
+					return undefined;
 				}
+				for (const entry of entries) {
+					const full = join(dir, entry.name);
+					if (entry.isDirectory()) {
+						const hit = await walk(full);
+						if (hit !== undefined) return hit;
+					} else if (entry.name.toUpperCase() === wanted + '.YML') {
+						return full;
+					}
+				}
+				return undefined;
+			};
+			for (const dir of TEMPLATE_DIRS) {
+				const hit = await walk(dir);
+				if (hit !== undefined) return readFile(hit, 'utf8');
 			}
 			throw new Error(`没有这个模板：${type}`);
 		},
@@ -1324,12 +1343,18 @@ test('全部模板都能读，且每个都声明了 kind 与 behavior', async ()
 		join(PLUGIN_DIR, 'packages', 'templates', 'templates'),
 		join(PLUGIN_DIR, 'packages', 'extra-templates', 'templates'),
 	];
+	/* 领域模板按领域分了子目录，所以要递归找。 */
 	const all = [];
-	for (const dir of dirs) {
-		for (const file of readdirSync(dir).filter((f) => f.endsWith('.yml'))) {
-			all.push({ type: file.replace(/\.yml$/u, ''), dir: dir + '/' + file });
+	const walk = (dir) => {
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			const full = join(dir, entry.name);
+			if (entry.isDirectory()) walk(full);
+			else if (entry.name.endsWith('.yml')) {
+				all.push({ type: entry.name.replace(/\.yml$/u, ''), dir: full });
+			}
 		}
-	}
+	};
+	for (const dir of dirs) walk(dir);
 	assert.ok(all.length >= 20, '模板数量不对：' + all.length);
 	for (const { type, dir } of all) {
 		const text = readFileSync(dir, 'utf8');

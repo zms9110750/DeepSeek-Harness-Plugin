@@ -2,7 +2,7 @@ name: GU · 用户任务
 default_kind: goal
 behavior: answer
 description: 用户甩过来的一堆要求或问题；AI 拆成下面的事项去做
-domain: general
+domain: core
 framed: false
 dispatch: [goal, design, record, work]
 hints:

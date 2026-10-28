@@ -197,7 +197,8 @@ const KINDS = {
 	work: { name: '工作' },
 };
 const KIND_ORDER = ['goal', 'design', 'record', 'work'];
-const TYPE_NAMES = {};
+/* 模板名从 core 取 —— 两边各写一份必然漂移（core 有 37 项，这里曾经是空表）。 */
+const TYPE_NAMES = coreFn('TYPE_NAMES');
 const ENTITY_TYPES = new Set(['WT', 'WF', 'WI', 'WD', 'WE', 'WC', 'WP']);
 const NOTE_LIMIT = 4000;
 /*
@@ -221,7 +222,7 @@ function summarize(task) {
 	const groups = groupsOf(task.status);
 	const kind = kindOf(task);
 	const bits = [
-		`${task.id} [${KINDS[kind]?.name ?? kind}/${task.type || '?'} ${TYPE_NAMES[task.type] || ''}] ${task.title}`,
+		`${task.id} [${KINDS[kind]?.name ?? kind}/${task.type || '?'} ${TYPE_NAMES()[task.type] || ''}] ${task.title}`,
 		`状态=${task.status}` + (groups.length > 0 ? `（${groups.join('/')}）` : '（草稿）'),
 	];
 	if (task.parent) bits.push(`父=${task.parent}`);
@@ -550,7 +551,7 @@ function registerTools(ctx) {
 				/* 走唯一的改状态入口：这里拿到写锁（并发双领会被串行化），
 				   并且 CLAIMS / 级联 / 转移校验全部由 setStateInner 一处维护。 */
 				const task = await setState(args.id, '处理中', agent, false);
-				const lines = [`已领取 ${task.id}：${task.title}`, `类型：${task.type} ${TYPE_NAMES[task.type] || ''}`];
+				const lines = [`已领取 ${task.id}：${task.title}`, `类型：${task.type} ${TYPE_NAMES()[task.type] || ''}`];
 				lines.push(`子工作空间：${task.workspace || '（计划没写，按会话当前工作目录）'}`);
 				lines.push(`额外工作区：${task.workspaces || '（无）'}`);
 				lines.push(`权限档位：${task.permission || '（计划没写，按会话当前档位）'}`);
@@ -1152,10 +1153,10 @@ function registerExtraCommands(ctx) {
 						.split('\n')
 						.slice(0, 20)
 						.find((line) => line.startsWith('domain:'));
-					const domain = hit === undefined ? 'general' : hit.slice('domain:'.length).trim();
+					const domain = hit === undefined ? 'core' : hit.slice('domain:'.length).trim();
 					out.push({ type, domain, yaml });
 				} catch (error) {
-					out.push({ type, domain: 'general', yaml: '' });
+					out.push({ type, domain: 'core', yaml: '' });
 				}
 			}
 			/*

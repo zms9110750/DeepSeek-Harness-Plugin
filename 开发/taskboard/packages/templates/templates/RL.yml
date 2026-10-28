@@ -2,7 +2,7 @@ name: RL · 留档
 default_kind: record
 behavior: write
 description: 踩过的坑记一笔；写出来等人过目，不是给人解决
-domain: general
+domain: core
 framed: false
 dispatch: [goal, design, record, work]
 hints:

@@ -79,6 +79,36 @@ const EXTRA_DIR = join(
 	'templates',
 );
 
+/**
+ * 在目录里递归找 `XX.yml`。
+ *
+ * ## 为什么递归
+ *
+ * 领域模板按领域分了子目录（code/ writing/ art/ general/），
+ * 一眼能看出哪个模板属于哪个开关。但扫描不能只扫一层。
+ *
+ * @param {string} dir
+ * @returns {Promise<{code: string, path: string}[]>}
+ */
+async function scanTemplateDir(dir) {
+	const out = [];
+	let entries;
+	try {
+		entries = await readdir(dir, { withFileTypes: true });
+	} catch {
+		return out;
+	}
+	for (const entry of entries) {
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			out.push(...(await scanTemplateDir(full)));
+		} else if (entry.name.endsWith('.yml')) {
+			out.push({ code: entry.name.replace(/\.yml$/u, '').toUpperCase(), path: full });
+		}
+	}
+	return out;
+}
+
 /** 当前可用的模板编号（扫描目录得到，不是硬编码）。 */
 let TYPES = [];
 
@@ -87,10 +117,8 @@ async function readTemplate(type) {
 	const wanted = String(type ?? '').trim().toUpperCase();
 	if (wanted === '') throw new Error('模板类型不能为空');
 	for (const dir of [TEMPLATE_DIR, EXTRA_DIR]) {
-		try {
-			return await readFile(join(dir, `${wanted}.yml`), 'utf8');
-		} catch (failure) {
-			if (failure?.code !== 'ENOENT') throw failure;
+		for (const hit of await scanTemplateDir(dir)) {
+			if (hit.code === wanted) return await readFile(hit.path, 'utf8');
 		}
 	}
 	throw new Error(`没有这个模板：${wanted}`);
@@ -192,17 +220,12 @@ export function apply(ctx, config) {
 			};
 		}
 		try {
-			/* 两个目录：核心（本包）+ 领域（扩展包）。 */
+			/* 两个目录：核心（本包）+ 领域（扩展包，按领域分子目录）。 */
 			const sets = [];
 			for (const dir of [TEMPLATE_DIR, EXTRA_DIR]) {
-				try {
-					const files = await readdir(dir);
-					sets.push({ dir, codes: files.filter((f) => f.endsWith('.yml')).map((f) => f.replace(/\.yml$/u, '').toUpperCase()) });
-				} catch {
-					/* 扩展包没装就跳过 */
-				}
+				sets.push({ dir, hits: await scanTemplateDir(dir) });
 			}
-			const all = [...new Set(sets.flatMap((s) => s.codes))].sort();
+			const all = [...new Set(sets.flatMap((s) => s.hits.map((h) => h.code)))].sort();
 			/*
 			 * **不在这里按开关过滤。**
 			 *
@@ -228,16 +251,12 @@ export function apply(ctx, config) {
 			 */
 			const kept = [];
 			for (const type of all) {
-				/* 核心优先：先试本包，再试扩展包。 */
+				/* 核心优先：本包能找到就不去扩展包找。 */
 				for (const set of sets) {
-					if (!set.codes.includes(type)) continue;
-					try {
-						await readFile(join(set.dir, `${type}.yml`), 'utf8');
-						kept.push(type);
-						break;
-					} catch {
-						/* 读不出来就跳过 */
-					}
+					const hit = set.hits.find((h) => h.code === type);
+					if (hit === undefined) continue;
+					kept.push(type);
+					break;
 				}
 			}
 			TYPES = kept;
