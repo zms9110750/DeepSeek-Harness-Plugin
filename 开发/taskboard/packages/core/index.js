@@ -192,13 +192,16 @@ const HEAD_FIELDS = [
  */
 const TYPES = [
 	// 目标 Goal
-	'GU', 'GO', 'GA', 'GV',
+	'GU',
 	// 设计 Design
-	'DC', 'DP', 'DQ', 'DI', 'DB', 'DT',
+	'DC', 'DQ',
 	// 记录 Record
-	'RB', 'RR', 'RF', 'RS', 'RD', 'RE', 'WX', 'RW', 'RL',
+	'RB', 'RW', 'RF', 'RL', 'RR',
 	// 工作 Work
-	'WR', 'WI', 'WT', 'WF', 'WV', 'WL', 'WC', 'WD', 'WE', 'WP',
+	'WR', 'WV', 'WI',
+	// code 域（templates 扩展包提供）
+	'MM', 'FN', 'OP', 'TS',
+	'DI', 'IM', 'WT',
 ];
 /** 旧类型：只用于读老数据（第一代单字母 + 第二代拼音前缀）。 */
 const LEGACY_TYPES = [
@@ -268,7 +271,11 @@ function normalizeType(raw) {
 
 const TYPE_NAMES = {
 	/* 目标 Goal */
-	GU: '用户任务',
+	GU: '用户需求',
+	MM: '预期不符',
+	FN: '新增功能',
+	OP: '项目优化',
+	TS: '项目测试',
 	GO: '优化',
 	GA: '画作',
 	GV: '小说',
@@ -276,7 +283,8 @@ const TYPE_NAMES = {
 	DC: '决策',
 	DP: '方案',
 	DQ: '提问',
-	DI: '接口',
+	DI: '接口界面',
+	IM: '底层实现',
 	DB: '问题',
 	DT: '定调',
 	/* 记录 Record */
@@ -365,6 +373,10 @@ const KIND_ORDER = ['goal', 'design', 'record', 'work'];
 const TYPE_TO_KIND = {
 	/* 目标 Goal */
 	GU: 'goal',
+	MM: 'goal',
+	FN: 'goal',
+	OP: 'goal',
+	TS: 'goal',
 	GO: 'goal',
 	GA: 'goal',
 	GV: 'goal',
@@ -373,6 +385,7 @@ const TYPE_TO_KIND = {
 	DP: 'design',
 	DQ: 'design',
 	DI: 'design',
+	IM: 'design',
 	DB: 'design',
 	DT: 'design',
 	/* 记录 Record */

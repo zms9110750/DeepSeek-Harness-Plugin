@@ -1,0 +1,162 @@
+name: MM · 预期不符
+default_kind: goal
+behavior: answer
+description: 有什么跟想的不一样；不预设是 bug，依据可能不成立
+domain: code
+framed: true
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    ## 这里不预设是 bug
+
+    "预期不符"里，"预期"是**主观的**。
+
+    你可能：
+      · 真发现了一个缺陷
+      · 没读文档，约定本来就是这样（乌龙）
+      · 理解了但不同意（那是设计讨论，不是 bug）
+
+    所以先写清「我预期什么」和「依据是什么」。
+    依据只能来自：文档、既有约定、同类功能的做法、用户明确说过。
+
+    "我觉得应该"不是依据。
+
+    ## 为什么它不适用于绘画
+
+    绘画没有"预期"，只有"感觉"。
+    所以这一条只在代码域有 —— 那里有约定、有文档、有可验证的行为。
+
+    ## 这一条是目标，不是记录
+
+    它会自己推导状态：下面挂了什么，它就是什么。
+    所以不要在这里写修法 —— 修法是子事项的事。
+
+  fail: |
+    目标不会失败。它只会被「取消」。
+    如果查完发现根本不是问题，把 disposition 写成「不是问题」，
+    然后取消这一条。
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这一份只写「看到什么」，不预设是 bug。
+        怎么处理下面有单独一章。
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 什么和预期不符
+      description: |
+        写成"做了什么 → 本来应该怎样 → 结果怎样"。
+
+        "列表页有问题"不算；
+        "翻到第 3 页再点筛选，列表变空"才算。
+
+        如果这句话里出现"和"字，说明是两个问题 —— 拆成两条分别登记。
+        合在一条里的问题，解决掉一半就会被当成完了。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expect
+    attributes:
+      label: 我预期什么
+      description: |
+        你预期它应该怎样。一句话。
+
+        注意：这是**你的**预期，可能不对。
+    validations:
+      required: true
+
+  - type: textarea
+    id: basis
+    attributes:
+      label: 这个预期的依据是什么
+      description: |
+        **必须有依据。** 只有四种来源：
+
+          文档里写着
+          既有约定（同类功能都这么做）
+          用户的明确说法
+          可验证的规范（RFC / 标准 / 类型定义）
+
+        "我觉得应该"不是依据。
+        没有依据的"预期不符"很可能只是你不知道原有约定 —— 那就是乌龙。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际看到什么
+      description: |
+        贴原始证据：报错原文、实际输出、截图路径、日志行号。
+
+        不要转述成"它崩了"，也不要只写结论 ——
+        证据要能让下一个人独立复核。
+    validations:
+      required: true
+
+  - type: [ask, textarea]
+    id: repro
+    attributes:
+      label: 能复现吗
+      max_picks: 1
+      options:
+        - 能稳定重现：写最小复现
+        - 偶发：写出现频率
+        - 复现不了：只为出现过一次
+      description: |
+        **先判断属于哪一种，只写那一半。**
+
+        ▸ 能稳定重现 → 写「最小复现」
+          从最少的步骤开始，每删一步都试一次，直到删掉任何一步就不再坏。
+
+        ▸ 偶发 → 写「出现频率」
+          给一个可数的窗口：十次里几次、一天几次。
+          "偶现"不是频率，是不可验证。
+
+        ▸ 复现不了 → 写清"只出现过一次，没有可复现路径"
+          这一档也要留着 —— 下次再出现时能对上就是证据。
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 影响面
+      description: |
+        三件事：谁会被这件事挡住、有没有绕过办法、绕过要付什么代价。
+
+        影响面决定优先级，但**不要在这里写优先级** ——
+        那是排期的事，而且写下"P1"之后没人会回来改它。
+
+  - type: [ask, textarea]
+    id: disposition
+    attributes:
+      label: 怎么处理
+      max_picks: 1
+      options:
+        - 修：根因消掉
+        - 绕：能用，根子还在
+        - 搁置：现在不处理，记着
+        - 不是问题：意图如此，是乌龙
+      description: |
+        **这一栏决定后面派什么。**
+
+        ▸ 修    派 DC 决策（怎么修，2-4 个方案）→ 派 WT 实现项
+        ▸ 绕    派 DC 决策（绕法 + 代价）→ 派 WT 实现项
+                 另派一条 RL 留档：这个坑记一笔，以后谁会再踩
+        ▸ 搁置  本条目标转「取消」，理由写进正文
+        ▸ 不是问题  转「取消」，把这当成一次学习
+
+        为什么"绕"也要 DC 决策：绕过不是一种实现，是一种取舍。
+        放弃了什么、什么时候会再犯 —— 这个判断要用户认。
+    validations:
+      required: true
+
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节。

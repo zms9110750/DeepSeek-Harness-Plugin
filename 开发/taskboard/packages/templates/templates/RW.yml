@@ -1,7 +1,7 @@
 name: RW · 交付
 default_kind: record
 behavior: write
-description: 工作做完了，这份说明交出去了什么；用户在上面点成功就是验收
+description: 交出去了什么；用户在上面点成功就是验收
 domain: core
 framed: true
 dispatch: [goal, design, record, work]
@@ -9,8 +9,8 @@ hints:
   create: |
     这一条是**给人看的交付单**，不是工作日志。
 
-    工作卡（WI）是 AI 的草稿本，用户不读。所以做完之后要单独写这一条：
-    我交付了什么、在哪、你怎么验。
+    工作卡是 AI 的草稿本，用户不读。所以做完之后要单独写这一条：
+    我交付了什么、在哪、你怎么用。
 
     写不出来「用户拿它能做什么」，说明还没做完 —— 回去继续做，
     别在这里写"已完成"。
@@ -24,27 +24,32 @@ hints:
 
   fail: |
     交付不会失败 —— 做不出来就是工作失败，不是交付失败。
-    如果这条被标成失败，说明产物最终没交出去，那要在「阻碍」里
-    写清为什么，别在这条里解释。
 
 body:
   - type: markdown
     attributes:
       value: |
         这一条的价值全在「用户能拿走用什么」。
-        写完自己读一遍：如果我是用户，读完知道下一步做什么吗？
+        写完自己读一遍：如果我是用户，读完知道怎么用吗？
 
   - type: textarea
     id: what
     attributes:
-      label: 交出去了什么
+      label: 交付了什么
       description: |
-        一句话说清产物。不要写过程、不要写"我做了 X 然后 Y"。
+        写**是什么东西**，不是"我做了什么"。
 
-        ▸ 好：「新的状态推导函数在 core/index.js 的 derivedStatus」
-        ▸ 坏：「完成了状态推导的重构工作」
+        好：
+          core/index.js 里的 derivedStatus 函数
+          一个 mcp 服务，地址 http://127.0.0.1:52311
+          一个 cli 程序，入口 bin/taskboard
+          一份 20 页的接口说明文档
 
-        差别在于：前者是一个**东西**，后者是一句**话**。
+        坏：
+          完成了状态推导的重构
+          做完了
+
+        判断标准：这个东西**能不能被单独拿走用**。
     validations:
       required: true
 
@@ -53,37 +58,62 @@ body:
     attributes:
       label: 在哪
       description: |
-        路径 / 链接 / 命令。让人能**直接摸到**。
+        路径 / 链接 / 端口 / 命令。让人能**直接摸到**。
 
-        代码给文件路径 + 函数名；文档给路径；结论给原话引用。
+        代码给文件路径 + 函数名；程序给端口或入口；
+        文档给路径；结论给原话引用。
+
         写"在仓库里"等于没写。
+    validations:
+      required: true
+
+  - type: textarea
+    id: how
+    attributes:
+      label: 怎么用
+    attributes_note: 交付物类型不同，这一步差别很大
+    description: |
+      调用它 / 运行它 / 打开它，具体怎么做。
+
+      mcp 服务：   在哪个配置里加哪一行，然后能调什么
+      cli 程序：   敲什么命令，参数是什么
+      函数：       怎么引入，签名是什么
+      文档：       按什么顺序读
+
+      这一栏是用户第一次用它时的全部依据。写不出就是没做完。
+    validations:
+      required: true
+
+  - type: [ask, textarea]
+    id: for
+    attributes:
+      label: 因为什么交付
+      max_picks: 1
+      options:
+        - 工作：某条工作的产物
+        - 目标：这个目标本身要交的东西
+      description: |
+        写清由头：这个交付是为了结掉哪件事。
+
+        为什么要有：一条交付挂在工作 A 下面，但用户看到时可能在目标层。
+        没有由头，他不知道自己为什么在看这个。
+
+        选了之后在正文里写出那张卡的单号。
     validations:
       required: true
 
   - type: textarea
     id: verify
     attributes:
-      label: 你怎么验
+      label: 你怎么验过
       description: |
         给出**可执行**的验证方式，不是"看一下就行"。
 
-        ▸ 跑什么命令、看到什么输出算对
-        ▸ 点哪里、看到什么算对
-        ▸ 读哪一段、判断标准是什么
+        跑什么命令、看到什么输出算对
+        点哪里、看到什么算对
+        读哪一段、判断标准是什么
 
         写不出验证方式，说明这份交付还不能验收。
-    validations:
-      required: true
-
-  - type: textarea
-    id: stale
-    attributes:
-      label: 什么时候它就过时了
-      description: |
-        改了什么之后，这份交付就不准了？
-
-        这一栏是为了让后来的人知道：这条记录还能不能信。
-        写"永久有效"通常是在骗自己 —— 总有什么会让它过时。
     validations:
       required: true
 

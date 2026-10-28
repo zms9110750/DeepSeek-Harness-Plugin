@@ -727,13 +727,13 @@ test('正文校验：对象形态按模板章节校验，不合法就拒绝提�
 	});
 	assert.match(ok.text, /已提交/u);
 
-	/* ② 缺必填章节：GU 的「要什么」「什么算做到了」都是 required。 */
+	/* ② 缺必填章节：GU 现在只有 want 一章，且必填。 */
 	await assert.rejects(
 		() =>
 			tool('task_submit').execute({
 				title: '缺章节',
 				type: 'GU',
-				body: { want: { action: 'textarea', value: '只给一半' } },
+				body: {},
 				group,
 			}),
 		/正文不合法/u,
@@ -1357,7 +1357,7 @@ test('全部模板都能读，且每个都声明了 kind 与 behavior', async ()
 		}
 	};
 	for (const dir of dirs) walk(dir);
-	assert.ok(all.length >= 20, '模板数量不对：' + all.length);
+	assert.ok(all.length >= 16, '模板数量不对：' + all.length);
 	for (const { type, dir } of all) {
 		const text = readFileSync(dir, 'utf8');
 		assert.match(text, /^name: /mu, `${type}.yml 缺 name`);
@@ -1408,8 +1408,11 @@ test('阻碍模板（B）在「失败」提示里禁止穷举', async () => {
 	/* 用户明确要求：失败/信息不足的提示语里必须防止穷举。
 	   这是"列清单"式偷懒的防线，要钉死在测试里。 */
 	const yaml = (await tool('task_template').execute({ type: 'RB' })).text;
-	assert.match(yaml, /不要穷举/u, 'B.yml 的 hints 必须写明不要穷举');
-	assert.match(yaml, /一个原因|只写一个/u, 'B.yml 必须要求只写一个原因');
+	/* GU-08 之后 RB 的核心约束换了：不再是"别穷举原因"，而是
+	   "阻碍 = 我无权决定" + "不写解决方式"。 */
+	assert.match(yaml, /我无权决定/u, 'RB 的 hints 必须写明阻碍的判据');
+	assert.match(yaml, /你不写解决方式/u, 'RB 必须禁止 AI 自己写解决方式');
+	assert.match(yaml, /不解决会怎么样/u, 'RB 必须有 consequence 这一章');
 });
 
 test('旧模板 H1..H8 已降级为停止原因，可读但不在一等模板列表里', async () => {
@@ -2570,9 +2573,12 @@ test('task_dispatch：工作不能派「要做的事」，但能派调研/记录
 	assert.match(text, /RB · 阻碍/u, '工作应能派记录');
 	assert.match(text, /DC · 决策/u, '工作应能派设计');
 
-	assert.match(text, /WT · 实现项/u, '工作不能派实现项');
-	assert.match(text, /WF · 缺陷/u, '工作不能派缺陷');
-	assert.match(text, /不能再派另一件要做的事/u, '要给原因');
+	/* 「不能派」的判定只看 ❌ 那一段 —— 整段里 ✅ 也有 WT，
+	   直接 /WT · 实现项/ 会误命中可用列表。 */
+	const blockedPart = text.slice(text.indexOf('不能派发的'));
+	assert.match(blockedPart, /WT · 实现项/u, '工作不能派实现项');
+	assert.match(blockedPart, /不能再派另一件要做的事/u, '要给原因');
+	assert.equal(/✅/.test(blockedPart), false, '被拒的不该带 ✅');
 
 	/* 目标下面什么都能派 */
 	const goal = await submit({ title: '一个目标', type: 'GU' });

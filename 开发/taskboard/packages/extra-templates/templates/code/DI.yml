@@ -1,60 +1,148 @@
-name: DI · 接口
+name: DI · 接口界面
 default_kind: design
 behavior: propose
-description: 对外长什么样：契约、边界、错误行为
+description: 封装：给使用者看什么；要望文生义，也包括 UX 与行为
 domain: code
 framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |
-    接口约定的本质是"以后不许随便改的东西"。
-    所以重点是**不变的部分**，不是功能列表。
+    ## 这里不写实现
+
+    接口和界面是**外观契约**，不是实现方案。
+    写"用 React 的 X 组件"是错的，写"点了之后出现二级菜单"是对的。
+
+    实现方案是「底层实现」的事 —— 两件事分开定。
+
+    ## 界面也是接口
+
+       API  → 暴露给调用方
+       界面 → 暴露给最终用户
+
+    共同点：**定了就别随便改**。所以重点是"不变的部分"，不是功能列表。
+
+    ## 危险操作要有行为设计
+
+    "删除"不是画个红色就完了，要写清：
+      什么情况下出现
+      点了之后发生什么（二次确认？可撤销？）
+      撤不撤销得掉
+
   fail: |
     接口设计被打回时，通常不是写错了，是没问清谁在用。
     先确认调用方，再改。
-    被打回时不要重写整份契约，也不要罗列所有改法：写清被拒的是哪一条 + 一个原因 + 下一版只改这一条。
 
+    被打回时不要重写整份契约，也不要罗列所有改法：
+    写清被拒的是哪一条 + 一个原因 + 下一版只改这一条。
 
 body:
   - type: textarea
     id: goal
     attributes:
-      label: 这次要定什么
+      label: 这次定哪个入口 / 哪份契约
       description: |
-        一句话。接口类只定"对外长什么样"，不定内部怎么实现。
+        指到具体的东西：哪个 API、哪个按钮、哪个页面。
+
+        好：任务卡的「删除」入口
+        坏：整个界面的交互
     validations:
       required: true
+
+  - type: [ask, textarea]
+    id: exposed
+    attributes:
+      label: 暴露给谁
+      max_picks: 99
+      options:
+        - 最终用户：界面、文案、交互
+        - 调用方：函数签名、返回结构、错误码
+        - 运维：日志、配置项、监控点
+      description: |
+        **一个入口可以同时暴露给好几方。**
+
+        比如一个"导出"按钮：
+          最终用户看到它
+          调用方拿到它返回的文件
+          运维关心它失败时记了什么日志
+
+        暴露给谁，决定了哪些东西是"不能随便改的"。
+    validations:
+      required: true
+
+  - type: textarea
+    id: naming
+    attributes:
+      label: 望文生义：名字与文案
+      description: |
+        使用者只看名字就能猜到它做什么，才算合格。
+
+        好：`forceDelete`  / 「彻底删除（不可恢复）」
+        坏：`del2`     / 「确定」
+
+        这一栏要写清：改了什么名字、为什么这么改、
+        有没有旧名字要保留（deprecation）。
+    validations:
+      required: true
+
   - type: textarea
     id: contract
     attributes:
       label: 契约
       description: |
-        签名 / 字段 / 事件名 / 文件格式。要精确到能照着写代码。
-        含糊的契约等于没契约。
+        对外承诺什么：输入、输出、边界。
+
+        API：参数类型、返回结构、错误码
+        界面：显示什么、能做什么、状态怎么变
+
+        **只写不变的部分。** 会变的东西写进来就是技术债。
     validations:
       required: true
+
+  - type: [ask, textarea]
+    id: behavior
+    attributes:
+      label: 一个入口，什么情况下做什么
+      max_picks: 99
+      options:
+        - 永远显示
+        - 有条件显示：什么条件
+        - 危险操作：要不要二级确认
+        - 空状态：没数据时显示什么
+        - 加载中：等待时显示什么
+        - 出错：失败时显示什么
+      description: |
+        勾出这个入口会出现的状态，然后在正文里逐个写清。
+
+        这一栏是 UX 的核心：**同一个入口在不同情况下要做不同的事。**
+
+        特别是危险操作：删除按钮点了之后是立刻删、还是弹二级菜单、
+        还是可以撤销 —— 这三种是完全不同的设计。
+    validations:
+      required: true
+
   - type: textarea
     id: errors
     attributes:
       label: 出错时怎么办
       description: |
-        每种失败情形对应什么表现。包括：非法输入、越界、超时、并发。
-        不写这一节，实现时就会各自发挥。
+        写清：什么错对使用者说、什么错只记日志、什么错要重试。
+
+        重点不是错误码列表，是**使用者看到的和实际发生的**之间的映射。
     validations:
       required: true
+
   - type: textarea
     id: breaking
     attributes:
       label: 以后改它会破坏什么
       description: |
-        写清兼容性边界：哪些改动是破坏性的、需要谁同步。
-        这一段是接口类存在的理由。
+        谁在用它、改坏了谁会疼。
+
+        这一栏是为了让后来的人知道：这条能不能动、动了要通知谁。
+
   - type: textarea
     id: other
     attributes:
       label: 其他
       description: |
-        版本策略、废弃计划、和外部系统的对接约定（谁先改、怎么灰度）。
-
-        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
-        回头改模板，别让它一直兜底。
+        这套框架装不下的东西写这里。

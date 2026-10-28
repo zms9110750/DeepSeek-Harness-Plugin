@@ -40,7 +40,20 @@ body:
       label: 我的猜测
       description: |
         给出一个假设答案。用户只要说"对/不对"就省事了。
+    validations:
+      required: true
         这是提问最省力的形式。
+  - type: [ask, textarea]
+    id: options
+    attributes:
+      label: 能给选项就给
+      max_picks: 1
+      description: |
+        如果这个问题的答案能收敛到几个选项，列出来让用户直接点。
+
+        列不出来就留空 —— 自由回答也是一条路。
+        但**能列而不列**，用户就得自己打字，容易答偏。
+
   - type: textarea
     id: other
     attributes:

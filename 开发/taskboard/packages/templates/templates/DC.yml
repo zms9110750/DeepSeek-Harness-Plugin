@@ -32,7 +32,7 @@ body:
         一句话。如果这句话里有"和"字，说明是两个决策，拆开分别问。
     validations:
       required: true
-  - type: [textarea, choose, rank]
+  - type: [ask, textarea, rank]
     id: options
     attributes:
       label: 选项

@@ -30,9 +30,13 @@ body:
         写"整体验一下"等于没验。
     validations:
       required: true
-  - type: textarea
+  - type: [ask, textarea]
     id: how
     attributes:
+      max_picks: 1
+      options:
+        - 能自动验：写跑什么命令
+        - 只能人工验：写看什么
       label: 能自动验 / 只能人工验（二选一）
       description: |
         **先判断是哪一种，只写那一半。** 两种的"可信度"完全不同，混着写会让结论看起来比实际硬。
@@ -55,9 +59,14 @@ body:
         "应该没问题"不是结果。
     validations:
       required: true
-  - type: textarea
+  - type: [ask, textarea]
     id: verdict
     attributes:
+      max_picks: 1
+      options:
+        - 通过
+        - 不通过
+        - 部分通过
       label: 通过 / 不通过 / 部分通过（三选一）
       description: |
         **只选一个，不许写"基本通过"。** 结论要能直接决定下一步：通过 → 交出去，

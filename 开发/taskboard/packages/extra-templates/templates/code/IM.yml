@@ -1,0 +1,113 @@
+name: IM · 底层实现
+default_kind: design
+behavior: propose
+description: 里面怎么搭：用什么库、怎么联系、背压、一拍脑袋定的数
+domain: code
+framed: true
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    ## 这一份和「接口界面」是两件事
+
+      接口界面   外面看是什么（望文生义、UX、行为）
+      底层实现   里面怎么搭（库、背压、魔数）
+
+    **一个接口设计可以有多个底层实现。**
+    它们是可否决、可切换、可替代的 —— 所以分成两张卡。
+
+    ## 一拍脑袋的东西要标出来
+
+    每个数字都要写：值、依据、推翻它要付什么代价。
+
+    "没算过，试出来的"必须写出来 ——
+    后来的人才知道这不是深思熟虑的结果，可以随便改。
+
+  fail: |
+    底层实现被打回，通常是选型不对或者没说清代价。
+    不要重写整份，写清被拒的是哪一条 + 换什么来替代。
+
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 这次定哪部分实现
+      description: |
+        指到具体的模块。
+
+        好：任务卡的持久化层
+        坏：整个后端
+    validations:
+      required: true
+
+  - type: textarea
+    id: deps
+    attributes:
+      label: 用什么库 / 服务，为什么是它们
+      description: |
+        列出依赖，每个写清为什么选它、替代方案是什么。
+
+        好：
+          持久化用 JSONL，因为本地单机、要人能直接看和改
+          替代方案是 SQLite，但那样要引入原生依赖
+
+        坏：
+          用了 JSONL 和 zustand
+    validations:
+      required: true
+
+  - type: textarea
+    id: wiring
+    attributes:
+      label: 它们怎么联系
+      description: |
+        数据怎么流、谁调谁、边界在哪。
+
+        画不了图就写顺序：
+          请求进来 → 鉴权 → 落库 → 触发下游 → 回包
+
+        写不出顺序，说明还没想清。
+    validations:
+      required: true
+
+  - type: [rank, textarea]
+    id: magic
+    attributes:
+      label: 一拍脑袋定的数
+      description: |
+        每个数字写三样：**值、依据、推翻它要付什么代价**。
+
+          缓存 7 天    依据：上游每周更新一次       推翻代价：改一个常量 + 重测
+          超时 3 秒    依据：P99 是 1.2 秒          推翻代价：调大可能掩盖问题
+          并发 8       依据：没算过，试出来的       推翻代价：低，随便改
+
+        为什么单列这一章：这些数字看起来像深思熟虑的结果，
+        实际上常常是随手定的。不标出来，后来的人不敢改。
+    validations:
+      required: true
+
+  - type: textarea
+    id: pressure
+    attributes:
+      label: 背压 / 限流 / 失败重试
+      description: |
+        上游太快怎么办、下游挂了怎么办、重试几次、重试要不要幂等。
+
+        这一栏经常被跳过，然后在生产上出事。
+        如果这次真的不涉及，写"无，因为…"。
+
+  - type: textarea
+    id: swap
+    attributes:
+      label: 以后想换掉它，要动哪里
+      description: |
+        这一套的哪些地方是绑死在当前选型上的？
+
+        写清"换掉它要改几个文件" ——
+        改得越少，说明抽象做得越好。
+
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        这套框架装不下的东西写这里。

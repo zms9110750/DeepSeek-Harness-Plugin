@@ -1,0 +1,106 @@
+name: TS · 项目测试
+default_kind: goal
+behavior: answer
+description: 要验一遍；先定测什么，冒烟 / 边缘 / 性能 / 回归各是一回事
+domain: code
+framed: true
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    冒烟、边缘、性能三种测试合并成这一条，靠 `kind` 那一章区分。
+
+    **必须写清"什么算通过"。**
+    写不出判据的测试跑完也没意义 —— 你不知道该不该放行。
+
+      好：首页加载 P95 < 500ms
+      坏：性能可以接受
+
+    ## 这一条是目标
+
+    一次测试通常要跑好几轮（不同环境、不同数据），
+    拆成工作分头跑，结果汇总到这一条上。
+
+  fail: |
+    目标不会失败。它只会被「取消」。
+    测试做不下去，通常是判据没定清 —— 回去改 `standard`。
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这一份只写"测什么、什么算过"。
+        怎么测是子事项的事。
+
+  - type: [ask, rank, textarea]
+    id: kind
+    attributes:
+      label: 测什么
+      max_picks: 99
+      options:
+        - 冒烟测试：跑一遍主路径，看有没有明显坏
+        - 边缘测试：试边界，空数据 / 超长 / 并发 / 权限不足
+        - 性能测试：量数字，和基线比
+        - 回归测试：改完确认旧的还能用
+        - 兼容测试：旧数据 / 旧客户端还能不能用
+      description: |
+        勾出这次要跑哪几种，**按主次排序**。
+
+        主次决定放行标准：主要的那个必须过，顺带的那个不过可以记下来。
+
+        通常会同时勾两个：主要跑冒烟，顺手试几个边缘。
+    validations:
+      required: true
+
+  - type: textarea
+    id: target
+    attributes:
+      label: 测哪个东西
+      description: |
+        指到具体的东西：哪个功能、哪个接口、哪一版。
+
+        好：新的状态推导函数 derivedStatus
+        坏：整个系统
+    validations:
+      required: true
+
+  - type: textarea
+    id: standard
+    attributes:
+      label: 什么算通过
+      description: |
+        **必须可判断。** 每一条都要能回答"是或否"。
+          首屏 P95 < 500ms
+          连续点 10 次不崩
+          空数据时不报错，显示空状态
+          旧格式的数据还能读
+
+        不要写"没有明显问题" —— 那不是判据，是态度。
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 在什么环境测
+      description: |
+        浏览器 / 操作系统 / 数据量 / 并发数。
+
+        性能和环境强相关：同一份代码在 1 万条和 100 万条数据上
+        是两个结论。不写环境，数字就没法比。
+
+  - type: textarea
+    id: not
+    attributes:
+      label: 不测什么
+      description: |
+        明确划出这次**不覆盖**的范围。
+
+        这一栏防的是：跑完了大家都以为全测过了，
+        结果某个分支从来没人碰。
+
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        这套框架装不下的东西写这里。

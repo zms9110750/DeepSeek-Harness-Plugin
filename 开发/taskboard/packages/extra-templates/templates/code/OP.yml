@@ -1,0 +1,102 @@
+name: OP · 项目优化
+default_kind: goal
+behavior: answer
+description: 觉得哪不好；先定优化什么，因为不同方向的完成标准完全不同
+domain: code
+framed: true
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    ## 先定"优化什么"
+
+    不同优化方向，判断"做完了没有"的标准完全不同：
+
+      性能优化   要有数字（基线 → 目标）
+      语义优化   要有新旧对照 + 迁移方案
+      可读性     要有"改完之后另一个能看懂"的验证
+      扩展性     要有"加一件新事要改几个文件"的对比
+
+    所以第一件事是选定方向。选不出来，说明这不是"优化"，
+    而是"我也不知道哪不对" —— 那先派一条调研。
+
+    ## 这一条是目标
+
+    一条优化通常要拆成好几个工作（改这里、改那里、再测一遍）。
+    不要指望一张工作卡装下。
+
+  fail: |
+    目标不会失败。它只会被「取消」。
+    优化做不下去，通常是方向选错了 —— 换个方向重开，别硬推。
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这一份只写"哪不好、改成什么样"。
+        具体怎么改是子事项的事。
+
+  - type: [ask, rank, textarea]
+    id: aspect
+    attributes:
+      label: 优化什么
+      max_picks: 99
+      options:
+        - 性能优化：更快 / 更省内存
+        - 语义优化：名字和行为对不上，容易用错
+        - 可读性优化：看不懂，改不动
+        - 接口界面优化：对外暴露的东西不合理
+        - 扩展性优化：加一件事要改很多地方
+        - 一致性优化：同一个概念在不同地方叫不同名字
+      description: |
+        勾出这次要动哪些方向，**按主次排序**。
+
+        主次很重要：主要的那个必须达标，顺带的那个不做也可以。
+        所以排序比勾选更要紧。
+
+        勾不出来，先派一条调研去查"到底哪不好"。
+    validations:
+      required: true
+
+  - type: textarea
+    id: where
+    attributes:
+      label: 哪里不好
+      description: |
+        指到具体的东西：哪个文件、哪一段、哪个接口。
+
+        好：core/index.js 的 setStateInner 有 200 行，改一处要看懂全部
+        坏：代码质量不好
+    validations:
+      required: true
+
+  - type: textarea
+    id: target
+    attributes:
+      label: 优化到什么程度算完
+      description: |
+        **必须按 aspect 写，而且要可判断。**
+
+          性能：P95 从 800ms 降到 200ms 以下
+          语义：X 改名为 Y，所有调用点更新，旧的 Y 加 deprecation
+          可读性：core/index.js 拆成 5 个文件，每个不超过 300 行
+          扩展性：加一件新事要改的文件从 7 个降到 2 个
+
+        写"变好一点"等于没写 —— 没人能判断做完没有。
+    validations:
+      required: true
+
+  - type: textarea
+    id: not
+    attributes:
+      label: 这次不动什么
+      description: |
+        优化最容易失控：说好改 A，顺手把 B 也改了，结果 A 没改完。
+
+        明确写清这次**不碰**的东西。
+
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        这套框架装不下的东西写这里。

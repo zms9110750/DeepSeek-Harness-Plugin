@@ -1,50 +1,74 @@
 name: WT · 实现项
 default_kind: work
 behavior: execute
-description: 实现里的一个独立可交付项；小到能一次做完
+description: 独立可交付项；小到能一次做完
 domain: code
 framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |
-    这一条和 D（实现）的区别：D 是"做这件事"，I 是"这件事里的一个可独立交付的块"。
-    如果你发现这一条还要再拆，说明它其实是**目标**——把它升级，别在这层硬拆。
+    这一条要小到**一次能做完**。
+
+    判据：如果做着做着发现要拆开，说明它该是目标，不是工作。
+    工作能领取、占位，一次只能做一个。
+
+    ## 做完不等于完成
+
+    要标成功，得有一条成功的交付（RW）挂在你下面（3.6）。
+    所以做完之后先派一条交付写清：交了什么、在哪、怎么用，
+    等用户点成功，再回来把这条标成功。
+
   fail: |
-    写清：卡在哪、一个原因、下一件该试的事。不要罗列试过的所有东西。
+    做不下去派一条阻碍（RB），写清不解决会怎么样。
+    不要在这条里硬撑 —— 阻碍能让它停下来等人，硬撑只会浪费。
 
 body:
   - type: textarea
     id: deliver
     attributes:
-      label: 交付什么
+      label: 交付
       description: |
-        一句话说清"做完之后多出来什么东西"：一个文件、一个函数、一条配置。
-        说不出具体交付物的，那就还不是工作，是设计。
+        这一条**产出了什么**。写出来的东西本身，不是过程。
+
+        写清三样：
+          · 产物在哪（路径 / 链接 / 结论一句话）
+          · 别人拿它做什么（下一步、判断依据、还是照做）
+          · 它过时了怎么知道（改了什么之后这条就不准了）
+
+        「我把事情做完了」不是交付。交付是一个**别人能拿走用的东西**。
     validations:
       required: true
-  - type: textarea
+
+  - type: [rank, textarea]
     id: change
     attributes:
-      label: 动了哪里
+      label: 改动清单
       description: |
         文件路径 + 改了什么。一行一个。
+
+        没动代码但改了配置/数据，也要列出来。
+
+        **有先后依赖就排个序** —— 先改 schema 再改渲染器，
+        顺序反了中间会崩。
     validations:
       required: true
+
   - type: textarea
     id: verify
     attributes:
-      label: 怎么确认它对了
+      label: 怎么验证的
       description: |
-        实际跑了什么、输出是什么。
-        "应该没问题"不算。
+        跑了什么、看到什么结果。
+
+        "应该没问题"不算验证，写出实际执行的命令和输出。
     validations:
       required: true
+
   - type: textarea
     id: other
     attributes:
       label: 其他
       description: |
-        这个"项"其实是独立目标（那要升级），以及它得等别的项才能验。
+        和已有计划的顺序冲突，以及这次改动要不要同步改文档。
 
-        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
-        回头改模板，别让它一直兜底。
+        这套框架装不下的东西写这里。

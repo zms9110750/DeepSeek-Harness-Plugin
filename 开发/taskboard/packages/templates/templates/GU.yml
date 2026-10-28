@@ -1,63 +1,44 @@
-name: GU · 用户任务
+name: GU · 用户需求
 default_kind: goal
 behavior: answer
-description: 用户甩过来的一堆要求或问题；AI 拆成下面的事项去做
+description: 用户说了什么，原样记下来；拆成哪些事是子事项的事
 domain: core
 framed: false
 dispatch: [goal, design, record, work]
 hints:
   create: |
-    这一条是"用户要什么"，不是"要做什么"。所以正文只写清**目标**和**边界**，
-    别在这里写方案。方案是设计类的事，动手是工作类的事。
-  fail: |
-    目标不会失败。如果下属的事做不成，那是工作的事。
-    目标只在你判断"这些要求本身矛盾"时才停，停下来要写清矛盾在哪。
+    这一条只做一件事：把用户的话**原样**记下来。
 
-    停下来只写：矛盾在哪一句 + 两条可选方向各一句。不要穷举所有可能，那等于把判断推回给用户。
+    不要改写、不要提炼、不要替他总结。
+    他说了好几句就按顺序全部抄下来，一句都不要漏。
+
+    为什么不能提炼：你的提炼会丢掉"他为什么这么说"。
+    而那句理由往往是后面判断"什么算做到了"的唯一依据。
+
+    这一条只是「用户要什么」，不是「要做什么」。
+    拆成哪些事，是下面子事项的事 —— 不要在这里写方案。
+
+  fail: |
+    这一条不会失败。它只会被「取消」或者被「拒绝」。
+    取消 = 用户自己说不要了。
+    拒绝 = 用户看了这条，说这不是他要的。
 
 body:
-  - type: markdown
-    attributes:
-      value: |
-        这一份只写"用户要什么、什么算做到了"。方案和执行都派生出去。
   - type: textarea
     id: want
     attributes:
-      label: 要什么
+      label: 用户任务
       description: |
-        用户原话优先。不要改写、不要提炼、不要替他总结。
-        如果用户说了好几句，就按顺序抄下来。
-    validations:
-      required: true
-  - type: textarea
-    id: done
-    attributes:
-      label: 什么算做到了
-      description: |
-        一句话一个判据，能验证的。
-        写不出判据就说明还没问清——派一个设计去问，不要猜。
-    validations:
-      required: true
-  - type: textarea
-    id: bounds
-    attributes:
-      label: 边界
-      description: |
-        明确不做什么、不能动什么、什么时候必须停下来问。
-        用户没说的，这里要写"未指定"而不是自己填。
-  - type: [textarea, derive]
-    id: split
-    attributes:
-      label: 怎么拆
-      description: |
-        拆成哪些设计 / 工作。拆完就派出去，别在这一条里写方案。
-        如果判断不出怎么拆，先派一个"设计：方案"。
-  - type: textarea
-    id: other
-    attributes:
-      label: 其他
-      description: |
-        用户的要求里可能还含着没拆开的两件事、只有他知道的前提，或者"这条到底算不算要求"。
+        用户说的话，原样抄。
 
-        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
-        回头改模板，别让它一直兜底。
+        好：
+          把这个状态机改掉。现在完成、成功、失败混在一起，
+          用户看不出来一张卡到底做完没有。还有筛选器要能按组筛。
+
+        坏：
+          用户要求重构状态机并优化筛选器交互。
+          （这是提炼，丢掉了"用户看不出来"这个真实痛点）
+
+        判断标准：用户读这段，会不会说"我不是这个意思"？
+    validations:
+      required: true

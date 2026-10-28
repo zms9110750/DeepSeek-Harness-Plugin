@@ -1,50 +1,93 @@
 name: RF · 复盘
 default_kind: record
 behavior: write
-description: 一件事结束后的回顾：根因、教训、下次怎么避
+description: 为什么受阻、我怎么知道该怎么做、我怎么确信下次会成
 domain: core
 framed: true
 dispatch: [goal, design, record, work]
 hints:
   create: |
     复盘不是流水账。只写"下次能用的"东西。
-    如果这次没出问题，不需要复盘。
 
     最关键的：**不要穷举**。
     "我试了 A、B、C 都不行"是流水账，不是复盘。
-    复盘只回答：如果当初知道哪一件事，结果就会不同？
+
+    复盘只回答三件事：
+      · 为什么受阻
+      · 我如何知道要怎么做（依据从哪来）
+      · 我如何确信下一次可能会成功
+
+    第三件事最重要。写不出判据，说明还没想清为什么失败。
+    而想不清就继续做，等于用同一条错路径再试一遍。
+
   fail: |
     复盘是对失败的复盘，它本身不会失败。
-    但复盘不等于流水账：不要罗列做过的事，只写一个根因。
+    但复盘不等于流水账：不要罗列做过的事，只写一个受阻的原因。
+
+    复盘可能开子任务：查文档是一件事（调研），
+    那件事才产交付。复盘自己不需要交付。
 
 body:
   - type: textarea
-    id: outcome
+    id: blocked
     attributes:
-      label: 实际结果
+      label: 为什么受阻
       description: |
-        一句话：成了还是没成。
-        没成就直接说，不要包装成"部分达成"。
-    validations:
-      required: true
-  - type: textarea
-    id: root
-    attributes:
-      label: 根因
-      description: |
-        **一个根因。** 如果你写下三条，说明还没找到那个真的。
+        **一个原因。** 如果你写下三条，说明还没找到那个真的。
+
         判据：如果当初知道这一条，结果会不同吗？答"会"才是根因。
+
+        好：
+          改之前没有可运行的基线，所以改完无法判断快没快
+          接口返回结构和我假设的不一样，而我先写了实现没先看文档
+
+        坏：
+          时间不够
+          需求不明确
+          我试了三种方法都不行（这是过程，不是原因）
     validations:
       required: true
-  - type: textarea
-    id: lesson
+
+  - type: [ask, textarea]
+    id: how_know
     attributes:
-      label: 下次怎么避
+      label: 我如何知道要怎么做
+      max_picks: 1
+      options:
+        - 查文档：有外部依据
+        - 问用户：要人给
+        - 试出来的：没有依据，是实验
+        - 还没想清楚：要开调研
       description: |
-        写成可执行的动作，不要写成感想。
-        "要更小心"不是教训；"改代码前先跑一遍测试"才是。
+        这一次的"依据"从哪来？
+
+        为什么重要：如果你从来没有依据，那"知道怎么做"只是一种感觉。
+        下次换个场景，那种感觉就不管用了。
+
+        选了之后在正文里写具体来源：哪份文档、问了谁、试出了什么。
     validations:
       required: true
+
+  - type: textarea
+    id: confident
+    attributes:
+      label: 我如何确信下一次可能会成功
+      description: |
+        不是"下次注意"。要写出**可以验证的判据**。
+
+        好：
+          下次开工前先跑一遍 X，跑通就说明路径对了
+          如果又出现 Y 现象，说明还是同一个根因
+          这次失败是因为没验证 Z，下次 Z 过了才算成功
+
+        坏：
+          下次会更小心
+          下次先调研
+
+        写不出判据 → 说明还没想清为什么失败。
+    validations:
+      required: true
+
   - type: textarea
     id: apply
     attributes:
@@ -52,27 +95,10 @@ body:
       description: |
         指到具体的东西：某个文件、某条规则、某个模板。
         指不出来的教训会立刻忘掉。
-  - type: textarea
-    id: deliver
-    attributes:
-      label: 交付
-      description: |
-        这一条**产出了什么**。记录的价值全在这里：写出来的东西本身，不是过程。
 
-        写清三样：
-          · 产物在哪（路径 / 链接 / 结论一句话）
-          · 别人拿它做什么（下一步、判断依据、还是照做）
-          · 它**过时了怎么知道**（改了什么之后这条就不准了）
-
-        「我把事情做完了」不是交付。交付是一个**别人能拿走用的东西**。
-    validations:
-      required: true
   - type: textarea
     id: other
     attributes:
       label: 其他
       description: |
         多个根因并存时先修哪个，以及这条教训要不要升级成规则 / 模板改动。
-
-        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
-        回头改模板，别让它一直兜底。

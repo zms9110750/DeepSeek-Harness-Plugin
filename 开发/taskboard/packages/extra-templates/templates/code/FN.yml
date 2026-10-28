@@ -1,0 +1,100 @@
+name: FN · 新增功能
+default_kind: goal
+behavior: answer
+description: 要一个现在没有的东西；要想清实现它必须付什么
+domain: code
+framed: true
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    ## 想清"要实现它必须付什么"
+
+    不是所有功能请求都只有一面。举两个例子：
+
+      用户说"要能发消息"
+        → 立刻有一个安全问题：谁能发、发给谁、发出去收不回怎么办
+
+      用户说"要能存档"
+        → 立刻有三个问题：重复存档会怎样（幂等）
+                         存档到一半崩了会怎样（丢失）
+                         能存几个（存档槽）
+
+    **用户不会说这些。你要替他想。**
+
+    这一条是目标，不是工作。想清楚之后在下面派工作去做。
+
+  fail: |
+    目标不会失败。它只会被「取消」。
+    要放弃就在正文里写清：为什么不做了。
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这一份只写「要什么」和「要考虑什么」。
+        怎么做是子事项的事。
+
+  - type: textarea
+    id: want
+    attributes:
+      label: 要什么
+      description: |
+        一句话说清这个功能做什么。
+
+        好：用户能把一条消息发到指定的地址
+        坏：做个消息系统
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么要它
+      description: |
+        它解决什么问题？谁受影响？
+
+        如果只是"别人都有"，写清"别人有"为什么就成了理由。
+        写不出为什么要，说明这可能是伪需求。
+    validations:
+      required: true
+
+  - type: [ask, rank, textarea]
+    id: concerns
+    attributes:
+      label: 要考虑什么
+      max_picks: 99
+      options:
+        - 安全性：谁能用、能不能撤回、出事了怎么办
+        - 幂等：重复执行会不会多出一份
+        - 数据丢失：中途崩了会丢什么
+        - 并发：两个人同时改会怎样
+        - 权限：谁能用、能用到哪
+        - 性能：数据量大了会怎样
+        - 兼容：旧数据 / 旧调用方还能不能用
+        - 可观测：出问题时怎么知道
+      description: |
+        **这一章是核心。**
+
+        勾出这件事真的会碰到的问题，然后在正文里逐个写清怎么应付。
+
+        勾了就必须写；没勾的可以写"这次不管，因为…"。
+        勾错了不要紧，漏勾才是要命的 —— 漏掉的那一项会在上线后找你。
+    validations:
+      required: true
+
+  - type: textarea
+    id: not
+    attributes:
+      label: 这次不做什么
+      description: |
+        明确划出范围外的东西。
+
+        功能请求最容易失控：用户说 A，做着做着发现还差 B、C。
+        这一栏是你的挡箭牌。
+    
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        这套框架装不下的东西写这里。

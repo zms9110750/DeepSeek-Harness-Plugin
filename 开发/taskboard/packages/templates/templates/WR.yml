@@ -57,6 +57,8 @@ body:
       description: |
         每条结论对应一个可核对的来源：链接、文件路径和行号、命令输出。
         没有证据的结论要标出来。
+    validations:
+      required: true
   - type: textarea
     id: other
     attributes:
