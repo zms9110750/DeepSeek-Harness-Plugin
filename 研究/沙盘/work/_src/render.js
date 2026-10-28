@@ -527,7 +527,41 @@ function deriveGoalStatus(t) {
    计划区
    ══════════════════════════════════════════════════════════════ */
 
-/* 按视图分发：科技树 or 列表。 */
+/*
+ * 只重绘「内容」——列表 + 详情 + 图例。
+ *
+ * ## 为什么要有这个
+ *
+ * 搜索框每敲一个字都调 renderAll，而 renderAll 第一步是 renderFilters()，
+ * 那个函数开头 box.innerHTML = '' 会把搜索框连同焦点一起销毁。
+ * 表现是「搜索框里只能打进去第一个字」。
+ *
+ * 所以把「过滤器」拆出来：内容变了（搜索/筛选）只调这个函数。
+ */
+function renderContent() {
+  renderLegend();
+  renderGroups();
+  const listBox = document.getElementById('rows');
+  const treeBox = document.getElementById('treeview');
+  const isTree = state.view === 'tree';
+  listBox.hidden = isTree;
+  treeBox.hidden = !isTree;
+  const legend = document.getElementById('legend');
+  if (legend) legend.hidden = !isTree;
+  if (isTree) {
+    document.getElementById('count').textContent = '共 ' + visibleTasks().length + ' 条';
+    renderTree(treeBox, visibleTasks());
+  } else {
+    renderRows();
+  }
+  renderDetail();
+}
+
+/*
+ * 全量重绘 —— 过滤器 + 内容。
+ *
+ * 用在：切视图、改数据、初始化这些「过滤器本身也可能要变」的场合。
+ */
 function renderAll() {
   renderFilters();
   renderLegend();

@@ -95,7 +95,7 @@ function renderFilters() {
             state.filterSub = '';
           }
           renderFilters();
-          renderAll();
+          renderContent();
         }
       },
         el('span', {class:'fb-chev'}, open ? '▾' : '▸'),
@@ -121,7 +121,7 @@ function renderFilters() {
               togglePick(pickedOf(def.key), group.key);
               state.filterSub = (subOpen || !hasSub) ? '' : group.key;
               renderFilters();
-              renderAll();
+              renderContent();
             }
           }, text),
 
@@ -143,16 +143,31 @@ function renderFilters() {
         state.filterOpen = '';
         state.filterSub = '';
         renderFilters();
-        renderAll();
+        renderContent();
       }
     }, '清空'));
   }
 
-  /* 搜索 */
+  /*
+   * 搜索框。
+   *
+   * ## 为什么不能调 renderAll
+   *
+   * renderAll 第一步就是 renderFilters()，而那个函数开头是
+   * box.innerHTML = '' —— 搜索框这个 DOM 节点会被销毁，焦点随之丢失。
+   * 表现是「搜索框里只能打进去第一个字」。
+   *
+   * 所以渲染拆成两半：
+   *   renderContent()  只重绘列表和详情
+   *   renderAll()      两者都重绘
+   */
   bar.appendChild(el('input', {
     class:'search', type:'search', placeholder:'搜编号或标题…',
     value: state.search,
-    oninput(e) { state.search = e.target.value; renderAll(); }
+    oninput(e) {
+      state.search = e.target.value;
+      renderContent();
+    }
   }));
 
   box.appendChild(bar);
@@ -166,7 +181,7 @@ function renderFilters() {
           state.filterOpen = '';
           state.filterSub = '';
           renderFilters();
-          renderAll();
+          renderContent();
         }
         document.removeEventListener('pointerdown', handler);
       };
