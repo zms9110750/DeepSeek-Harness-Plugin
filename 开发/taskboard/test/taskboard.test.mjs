@@ -370,7 +370,7 @@ function taskIdOf(parentId, type) {
 }
 
 async function deliver(workId, outcome) {
-	const id = await submit({ title: '交付：' + workId, type: '交付', parent: workId });
+	const id = await submit({ title: '交付：' + workId, type: 'RW', parent: workId });
 	await approve(id);
 	const mine = newSession();
 	await claim(id, mine);

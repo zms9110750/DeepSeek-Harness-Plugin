@@ -1,0 +1,109 @@
+name: RW · 交付
+default_kind: record
+behavior: write
+description: 工作做完了，这份说明交出去了什么；用户在上面点成功就是验收
+domain: general
+framed: true
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    这一条是**给人看的交付单**，不是工作日志。
+
+    工作卡（WI）是 AI 的草稿本，用户不读。所以做完之后要单独写这一条：
+    我交付了什么、在哪、你怎么验。
+
+    写不出来「用户拿它能做什么」，说明还没做完 —— 回去继续做，
+    别在这里写"已完成"。
+
+  reject: |
+    被拒说明交付的东西还不是用户要的。不要重写这一条，
+    先去看用户拒的是哪一部分，然后回到工作卡继续做。
+
+    重写交付之前先确认：产物本身改了没有？没改只是改了说明，
+    那用户还是会拒。
+
+  fail: |
+    交付不会失败 —— 做不出来就是工作失败，不是交付失败。
+    如果这条被标成失败，说明产物最终没交出去，那要在「阻碍」里
+    写清为什么，别在这条里解释。
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这一条的价值全在「用户能拿走用什么」。
+        写完自己读一遍：如果我是用户，读完知道下一步做什么吗？
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 交出去了什么
+      description: |
+        一句话说清产物。不要写过程、不要写"我做了 X 然后 Y"。
+
+        ▸ 好：「新的状态推导函数在 core/index.js 的 derivedStatus」
+        ▸ 坏：「完成了状态推导的重构工作」
+
+        差别在于：前者是一个**东西**，后者是一句**话**。
+    validations:
+      required: true
+
+  - type: textarea
+    id: where
+    attributes:
+      label: 在哪
+      description: |
+        路径 / 链接 / 命令。让人能**直接摸到**。
+
+        代码给文件路径 + 函数名；文档给路径；结论给原话引用。
+        写"在仓库里"等于没写。
+    validations:
+      required: true
+
+  - type: textarea
+    id: verify
+    attributes:
+      label: 你怎么验
+      description: |
+        给出**可执行**的验证方式，不是"看一下就行"。
+
+        ▸ 跑什么命令、看到什么输出算对
+        ▸ 点哪里、看到什么算对
+        ▸ 读哪一段、判断标准是什么
+
+        写不出验证方式，说明这份交付还不能验收。
+    validations:
+      required: true
+
+  - type: textarea
+    id: stale
+    attributes:
+      label: 什么时候它就过时了
+      description: |
+        改了什么之后，这份交付就不准了？
+
+        这一栏是为了让后来的人知道：这条记录还能不能信。
+        写"永久有效"通常是在骗自己 —— 总有什么会让它过时。
+    validations:
+      required: true
+
+  - type: textarea
+    id: not
+    attributes:
+      label: 没做什么
+    attributes_note: 和「做了什么」同样重要
+    description: |
+      明确划出这次**没有**覆盖的范围。
+
+      这一栏防的是：用户以为你做了，结果你没做，而验收时没发现。
+      写"无"之前想一下：真的什么都没想到吗？
+
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        给下一个接手的人留话：哪里最容易改坏、哪段代码看着奇怪但有原因。
+
+        这套框架装不下的东西写这里。如果这里反复被填，说明模板缺了一节 ——
+        回头改模板，别让它一直兜底。

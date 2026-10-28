@@ -1,0 +1,54 @@
+name: RL · 留档
+default_kind: record
+behavior: write
+description: 踩过的坑记一笔；写出来等人过目，不是给人解决
+domain: general
+framed: false
+dispatch: [goal, design, record, work]
+hints:
+  create: |
+    留档和工作日志的区别：留档是**以后还会有人踩的坑**。
+
+    AI 写完的留档不一定对 —— 它可能记错原因、归错类。
+    所以初始状态是「需要授权」：用户要看一眼留了什么才作数。
+
+  reject: |
+    被拒说明这条记的东西不对或者不必要。
+    不要原地改，先想清楚：这个坑真的会有人再踩吗？
+
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 踩到了什么
+      description: |
+        一句话说清现象。不要写"遇到问题"，要写"执行 X 时报 Y"。
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么
+      description: |
+        能说清就说清。说不清就写"没查清，推测是 X" ——
+        **别猜成确定的语气**，后来的人会当真。
+    validations:
+      required: true
+
+  - type: textarea
+    id: avoid
+    attributes:
+      label: 下次怎么避
+      description: |
+        可执行的：改哪一行、别用哪个 API、检查哪一步。
+        写"注意一下"等于没写。
+    validations:
+      required: true
+
+  - type: textarea
+    id: other
+    attributes:
+      label: 其他
+      description: |
+        这套框架装不下的东西写这里。

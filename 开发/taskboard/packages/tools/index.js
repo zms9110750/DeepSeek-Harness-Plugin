@@ -151,7 +151,7 @@ function allTypes() {
 const GROUPS = [
 	{ id: '进行', label: '进行', hint: '还活着：在做，或者停下来等人但没放弃' },
 	{ id: '搁置', label: '搁置', hint: '停下来等人：需要信息 / 需要授权' },
-	{ id: '成功', label: '成功', hint: '终结：成功 / 失败 / 取消 / 拒绝' },
+	{ id: '结束', label: '结束', hint: '终结：成功 / 失败 / 拒绝 / 取消' },
 ];
 /* 注意：必须是**函数**而不是常量。	ypeCatalog() 依赖 coreService，
  * 而模块加载时 CORE 还没绑定（apply 才绑定），常量初始化会直接抛错。 */

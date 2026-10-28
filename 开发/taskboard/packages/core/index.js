@@ -196,7 +196,7 @@ const TYPES = [
 	// 设计 Design
 	'DC', 'DP', 'DQ', 'DI', 'DB', 'DT',
 	// 记录 Record
-	'RB', 'RR', 'RF', 'RS', 'RD', 'RE', 'WX',
+	'RB', 'RR', 'RF', 'RS', 'RD', 'RE', 'WX', 'RW', 'RL',
 	// 工作 Work
 	'WR', 'WI', 'WT', 'WF', 'WV', 'WL', 'WC', 'WD', 'WE', 'WP',
 ];
@@ -281,6 +281,8 @@ const TYPE_NAMES = {
 	DT: '定调',
 	/* 记录 Record */
 	RB: '阻碍',
+	RW: '交付',
+	RL: '留档',
 	RR: '汇报',
 	RF: '复盘',
 	RS: '设定集',
@@ -375,6 +377,8 @@ const TYPE_TO_KIND = {
 	DT: 'design',
 	/* 记录 Record */
 	RB: 'record',
+	RW: 'record',
+	RL: 'record',
 	RR: 'record',
 	RF: 'record',
 	RS: 'record',
