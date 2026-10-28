@@ -955,14 +955,23 @@ function renderAskComponent(props) {
 
       let next;
       if (!multi) {
+        /*
+         * 单选：三选一，**互斥**。
+         *
+         * 点选项就要丢掉自填文字 —— 否则会得到 ['2','abc'] 这种
+         * 长度 2 的数组，把「单选」这个前提打破：
+         * single 会变成 ''，isSkip 因此为真，
+         * 结果未选择 / 选项 / 自填三处同时亮。
+         */
         next = nums.includes(key) ? [] : [key];
       } else {
         next = nums.slice();
         const at = next.indexOf(key);
         if (at >= 0) next.splice(at, 1);
-        else if (next.length < maxPicks) next.push(key);
+        else if (next.length + (text !== '' ? 1 : 0) < maxPicks) next.push(key);
       }
-      if (text !== '') next.push(text);
+      /* 单选不加自填项（互斥）；多选才带上 */
+      if (multi && text !== '') next.push(text);
       commit(props, { picked: next });
     }));
   });
@@ -1024,7 +1033,14 @@ function renderAskComponent(props) {
      *
      * 其实反过来：点了未选择，自定义框就该空 —— 那是「没填」的意思。
      */
-    commit(props, multi ? { picked_multi: [UNSET_LABEL] } : { picked: UNSET_LABEL });
+    /*
+     * 单选多选都写 picked 数组 —— 统一字段。
+     *
+     * 之前多选写的是 picked_multi，而新架构下那个字段不存在：
+     * 编译器不产出它，渲染器读 picked 优先。于是多选里点「未选择」
+     * 后重绘，按钮不亮、选项还亮 —— 这个状态彻底不可达。
+     */
+    commit(props, { picked: [UNSET_LABEL] });
   });
 
   /*

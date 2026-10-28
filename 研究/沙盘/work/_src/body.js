@@ -3,7 +3,32 @@ const STATUS_GROUP = {
   '需要补充':['进行','搁置'], '需要授权':['进行','搁置'],
   '完成':['完成'], '失败':['完成'], '取消':['完成'], '拒绝':['完成']
 };
-const groupOf = (s) => (STATUS_GROUP[s] || [])[0] || '草稿';
+/*
+ * 一个状态可能同时属于多个组。
+ *
+ * 「需要补充」「需要授权」是 ['进行','搁置'] —— 它卡住了（搁置），
+ * 但还在等人的动作（进行）。
+ *
+ * 之前 groupOf 只取 [0]，得到 '进行'，于是：
+ *   · 「搁置」这个筛选项永远匹配不到任何一条
+ *   · 这两个状态被染成品牌蓝而不是警示黄
+ *   · 详情页 pill 显示「需要补充 · 进行」
+ */
+const groupsOf = (s) => STATUS_GROUP[s] || [];
+
+/*
+ * 单一归类，用于取色和展示。
+ *
+ * 优先级：搁置 > 进行 > 完成 > 草稿。
+ * 卡住的东西最该被看见，所以搁置优先。
+ */
+const groupOf = (s) => {
+  const gs = groupsOf(s);
+  if (gs.includes('搁置')) return '搁置';
+  if (gs.includes('进行')) return '进行';
+  if (gs.includes('完成')) return '完成';
+  return '草稿';
+};
 const toneOf = (s) => {
   const g = groupOf(s);
   return g === '完成' ? 'var(--work)' : g === '搁置' ? 'var(--warn)' : g === '进行' ? 'var(--brand)' : 'var(--text-3)';

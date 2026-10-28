@@ -1685,7 +1685,32 @@ const STATUS_GROUP = {
   '需要补充':['进行','搁置'], '需要授权':['进行','搁置'],
   '完成':['完成'], '失败':['完成'], '取消':['完成'], '拒绝':['完成']
 };
-const groupOf = (s) => (STATUS_GROUP[s] || [])[0] || '草稿';
+/*
+ * 一个状态可能同时属于多个组。
+ *
+ * 「需要补充」「需要授权」是 ['进行','搁置'] —— 它卡住了（搁置），
+ * 但还在等人的动作（进行）。
+ *
+ * 之前 groupOf 只取 [0]，得到 '进行'，于是：
+ *   · 「搁置」这个筛选项永远匹配不到任何一条
+ *   · 这两个状态被染成品牌蓝而不是警示黄
+ *   · 详情页 pill 显示「需要补充 · 进行」
+ */
+const groupsOf = (s) => STATUS_GROUP[s] || [];
+
+/*
+ * 单一归类，用于取色和展示。
+ *
+ * 优先级：搁置 > 进行 > 完成 > 草稿。
+ * 卡住的东西最该被看见，所以搁置优先。
+ */
+const groupOf = (s) => {
+  const gs = groupsOf(s);
+  if (gs.includes('搁置')) return '搁置';
+  if (gs.includes('进行')) return '进行';
+  if (gs.includes('完成')) return '完成';
+  return '草稿';
+};
 const toneOf = (s) => {
   const g = groupOf(s);
   return g === '完成' ? 'var(--work)' : g === '搁置' ? 'var(--warn)' : g === '进行' ? 'var(--brand)' : 'var(--text-3)';
@@ -3157,14 +3182,23 @@ function renderAskComponent(props) {
 
       let next;
       if (!multi) {
+        /*
+         * 单选：三选一，**互斥**。
+         *
+         * 点选项就要丢掉自填文字 —— 否则会得到 ['2','abc'] 这种
+         * 长度 2 的数组，把「单选」这个前提打破：
+         * single 会变成 ''，isSkip 因此为真，
+         * 结果未选择 / 选项 / 自填三处同时亮。
+         */
         next = nums.includes(key) ? [] : [key];
       } else {
         next = nums.slice();
         const at = next.indexOf(key);
         if (at >= 0) next.splice(at, 1);
-        else if (next.length < maxPicks) next.push(key);
+        else if (next.length + (text !== '' ? 1 : 0) < maxPicks) next.push(key);
       }
-      if (text !== '') next.push(text);
+      /* 单选不加自填项（互斥）；多选才带上 */
+      if (multi && text !== '') next.push(text);
       commit(props, { picked: next });
     }));
   });
@@ -3226,7 +3260,14 @@ function renderAskComponent(props) {
      *
      * 其实反过来：点了未选择，自定义框就该空 —— 那是「没填」的意思。
      */
-    commit(props, multi ? { picked_multi: [UNSET_LABEL] } : { picked: UNSET_LABEL });
+    /*
+     * 单选多选都写 picked 数组 —— 统一字段。
+     *
+     * 之前多选写的是 picked_multi，而新架构下那个字段不存在：
+     * 编译器不产出它，渲染器读 picked 优先。于是多选里点「未选择」
+     * 后重绘，按钮不亮、选项还亮 —— 这个状态彻底不可达。
+     */
+    commit(props, { picked: [UNSET_LABEL] });
   });
 
   /*
@@ -3478,14 +3519,19 @@ function visibleTasks() {
   let list = DB.slice();
 
   /* 状态：选了组就按组，选了具体状态就按状态 */
+  /*
+   * 用 groupsOf（复数）而不是 groupOf —— 一个状态可能同时属于
+   * 多个组（需要补充 = 进行 + 搁置）。用单值判断的话，
+   * 「搁置」这个筛选项永远匹配不到任何一条。
+   */
   if (state.filterStatus.length > 0) {
     list = list.filter((t) => {
-      if (state.filterStatus.includes('草稿')) {
-        if (t.status === '未指定') return true;
+      const gs = groupsOf(t.status);
+      for (const want of state.filterStatus) {
+        if (want === t.status) return true;
+        if (gs.includes(want)) return true;
       }
-      const group = groupOf(t.status);
-      if (state.filterStatus.includes(group)) return true;
-      return state.filterStatus.includes(t.status);
+      return false;
     });
   }
 

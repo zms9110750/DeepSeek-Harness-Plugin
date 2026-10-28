@@ -158,14 +158,19 @@ function visibleTasks() {
   let list = DB.slice();
 
   /* 状态：选了组就按组，选了具体状态就按状态 */
+  /*
+   * 用 groupsOf（复数）而不是 groupOf —— 一个状态可能同时属于
+   * 多个组（需要补充 = 进行 + 搁置）。用单值判断的话，
+   * 「搁置」这个筛选项永远匹配不到任何一条。
+   */
   if (state.filterStatus.length > 0) {
     list = list.filter((t) => {
-      if (state.filterStatus.includes('草稿')) {
-        if (t.status === '未指定') return true;
+      const gs = groupsOf(t.status);
+      for (const want of state.filterStatus) {
+        if (want === t.status) return true;
+        if (gs.includes(want)) return true;
       }
-      const group = groupOf(t.status);
-      if (state.filterStatus.includes(group)) return true;
-      return state.filterStatus.includes(t.status);
+      return false;
     });
   }
 
