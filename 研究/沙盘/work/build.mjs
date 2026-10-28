@@ -272,7 +272,7 @@ const html = `<!DOCTYPE html>
    * overscroll-behavior: contain 同样是为了不让滚轮传给外层。
    */
   .modal{background:#fff;border-radius:10px;box-shadow:0 24px 60px rgba(16,18,22,.28);
-    width:min(900px,100%);max-height:86vh;display:flex;flex-direction:column;
+    width:min(720px,100%);max-height:86vh;display:flex;flex-direction:column;
     overflow:hidden;overscroll-behavior:contain}
   .modal-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border)}
   .modal-head b{font-size:14px;font-weight:650}

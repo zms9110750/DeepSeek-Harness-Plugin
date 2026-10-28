@@ -259,8 +259,18 @@ function openCreator(init) {
   });
 
   refreshTplBtn();
-  left.appendChild(el('div', {class:'field', style:{position:'relative'}},
-    el('label', {class:'lbl'}, '模板'), tplBtn, tplPop));
+  /*
+   * 模板字段。
+   *
+   * 弹层下方那句提示是原型里就有的：
+   *   > 选模板决定正文的字段结构。领域和类别只用来筛，不用分开选。
+   *
+   * 它回答了「为什么要选模板」—— 不然用户只当是给这条打个标签。
+   */
+  left.appendChild(el('div', {class:'field tpl-field'},
+    el('label', {class:'lbl'}, '模板'), tplBtn, tplPop,
+    el('div', {class:'hint', style:{marginTop:'5px'}},
+      '选模板决定正文的字段结构。领域和类别只用来筛，不用分开选。')));
 
   left.appendChild(field('父任务', el('input', {
     type:'text', placeholder:'（无，顶层）', value: draft.parent,

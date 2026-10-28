@@ -222,7 +222,7 @@
    * overscroll-behavior: contain 同样是为了不让滚轮传给外层。
    */
   .modal{background:#fff;border-radius:10px;box-shadow:0 24px 60px rgba(16,18,22,.28);
-    width:min(900px,100%);max-height:86vh;display:flex;flex-direction:column;
+    width:min(720px,100%);max-height:86vh;display:flex;flex-direction:column;
     overflow:hidden;overscroll-behavior:contain}
   .modal-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border)}
   .modal-head b{font-size:14px;font-weight:650}
@@ -646,14 +646,14 @@
    * 所以给一个最小宽度，并允许向右伸出（right: auto）。
    * 原型里弹层是跨到右栏那边的。
    */
-  .tpl-pop{position:absolute;left:0;right:auto;min-width:430px;top:calc(100% + 6px);z-index:20;overscroll-behavior:contain;
+  .tpl-pop{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;overscroll-behavior:contain;
     border:1px solid var(--border-2);border-radius:8px;background:#fff;
     box-shadow:0 4px 10px rgba(16,18,22,.08), 0 16px 40px rgba(16,18,22,.14);
     overflow:hidden}
   .tpl-pop[hidden]{display:none}
   .field.tpl-field{position:relative}
 
-  .tpl-grid{display:grid;grid-template-columns:108px 108px minmax(170px,1fr);align-items:stretch}
+  .tpl-grid{display:grid;grid-template-columns:92px 92px minmax(0,1fr);align-items:stretch}
   .tpl-col{padding:6px 0 8px;max-height:236px;overflow:auto;border-right:1px solid var(--border);overscroll-behavior:contain}
   .tpl-col:nth-child(1),.tpl-col:nth-child(2){background:#fbfbfc}
   .tpl-col:nth-child(3){border-right:0;background:#fff}
@@ -3875,8 +3875,18 @@ function openCreator(init) {
   });
 
   refreshTplBtn();
-  left.appendChild(el('div', {class:'field', style:{position:'relative'}},
-    el('label', {class:'lbl'}, '模板'), tplBtn, tplPop));
+  /*
+   * 模板字段。
+   *
+   * 弹层下方那句提示是原型里就有的：
+   *   > 选模板决定正文的字段结构。领域和类别只用来筛，不用分开选。
+   *
+   * 它回答了「为什么要选模板」—— 不然用户只当是给这条打个标签。
+   */
+  left.appendChild(el('div', {class:'field tpl-field'},
+    el('label', {class:'lbl'}, '模板'), tplBtn, tplPop,
+    el('div', {class:'hint', style:{marginTop:'5px'}},
+      '选模板决定正文的字段结构。领域和类别只用来筛，不用分开选。')));
 
   left.appendChild(field('父任务', el('input', {
     type:'text', placeholder:'（无，顶层）', value: draft.parent,
