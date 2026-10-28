@@ -318,7 +318,8 @@ function commit(props, patch) {
 
   Object.assign(section, patch);
   scheduleSave();
-  repaintBody();
+  /* 点选项 / 未选择 → 焦点不该留在输入框 */
+  repaintBody(false);
 }
 
 /**
@@ -355,7 +356,14 @@ function commitQuiet(props, patch) {
   scheduleSave();
 }
 
-function repaintBody() {
+/**
+ * 重绘正文（保住滚动位置）。
+ *
+ * @param {boolean} [keepFocus] 要不要把焦点还原回原来的输入框。
+ *   · 输入框失焦、打字后同步 —— 要还原（用户还在里面）
+ *   · 点了「未选择」或别的选项 —— **不要还原**，焦点本就该离开输入框
+ */
+function repaintBody(keepFocus) {
   const holder = document.querySelector('.d-body');
   if (holder === null) { renderAll(); return; }
 
@@ -462,8 +470,18 @@ function repaintBody() {
   setTimeout(restore, 0);
   setTimeout(restore, 32);
 
-  /* ⑤ 还原焦点 */
-  if (focusInfo !== null && focusInfo.index >= 0) {
+  /*
+   * ⑤ 还原焦点。
+   *
+   * 只有 keepFocus 为真才还原。
+   *
+   * 用户原话：
+   *   > 单选的"未选择"可以二次点击。若如此做，焦点会去自定义输入框。
+   *
+   * 原因是这里无条件还原：点「未选择」之前焦点在输入框里，
+   * 重绘后又被送回去 —— 看起来就像点击把焦点抢走了。
+   */
+  if (keepFocus === true && focusInfo !== null && focusInfo.index >= 0) {
     const all = [...holder.querySelectorAll('textarea, input[type="text"]')];
     const el2 = all[focusInfo.index];
     if (el2 !== undefined) {
@@ -662,6 +680,30 @@ function optionRow(opt, index, active, onClick) {
  * @param {boolean} active
  * @returns {HTMLElement}
  */
+/**
+ * 自己填的那一行。
+ *
+ * ## 四条来自用户的 bug（都在这一块里）
+ *
+ *   > 单选的"未选择"可以二次点击。若如此做，焦点会去自定义输入框。
+ *   > 多选的未选择，点击以后，会选中自定义输入框。
+ *   > 并且填充（并覆盖）"未选择"的输入文字
+ *   > 单选点了未选择，会把自定义输入里面文字吃掉。
+ *   > 单选在自定义输入里面键入了以后，原始选项的焦点还在。
+ *   > 要失去焦点才变成选中自定义选择。
+ *
+ * 归成三条规则：
+ *
+ *   ① 点「未选择」不该把焦点送到输入框
+ *   ② 输入框的值不能包含「未选择」这个哨兵文字
+ *   ③ 一打字就立刻变成选中（不用等失焦）
+ *
+ * @param {object} props
+ * @param {string} current   要显示在框里的文字（已滤掉哨兵）
+ * @param {boolean} active
+ * @param {boolean} multi
+ * @returns {HTMLElement}
+ */
 function customRow(props, current, active, multi) {
   const input = el('input', {
     type: 'text',
@@ -669,29 +711,86 @@ function customRow(props, current, active, multi) {
     placeholder: '自己填一个……',
     value: current,
     /*
-     * oninput 而不是 onchange：
-     *   onchange 要等失焦才触发，而失焦会重绘 —— 打字打到一半
-     *   如果点了别处，重绘时 value 还是旧值，刚打的字就吞了。
+     * oninput 而不是 onchange。
      *
-     * 而且这里用 commitQuiet：只存不重绘。
-     * 输入框不用重画（用户正在里面打字），重画反而会打断。
+     * commitQuiet 只存不重绘 —— 用户正在里面打字，重画会打断光标。
+     * 但**选中态的切换要自己手动做**（规则③）：不能等失焦，
+     * 那一下之前的选中还挂在别的行上。
      */
     oninput(e) {
-      commitQuiet(props, multi
-        ? { picked_multi: mergeCustom(props.pickedMulti, e.target.value) }
-        : { picked: e.target.value });
-      /* 打了字就把这行标成选中 */
-      const row = e.target.closest('.oc-row');
-      if (row !== null && e.target.value !== '') row.classList.add('on');
+      const text = String(e.target.value);
+      const trimmed = text.trim();
+
+      if (multi) {
+        /* 多选：序号项保留，自定义项换成这一句 */
+        commitQuiet(props, { picked_multi: mergeCustom(props.pickedMulti, text) });
+      } else {
+        /*
+         * 单选：输入框里的字就是 picked。
+         * 空字符串表示「还没填」，保留原状态不覆盖。
+         */
+        if (trimmed !== '') commitQuiet(props, { picked: trimmed });
+      }
+
+      paintSelection(props, multi, trimmed !== '');
     },
-    onblur(e) {
-      /* 失焦时把「跳过」和其它选项的选中态刷新一下 */
-      repaintBody();
+    onblur() {
+      /*
+       * 失焦才重绘一次，把「未选择」和选项行的选中态同步好。
+       *
+       * 这时用户是真的离开了输入框，所以不还原焦点。
+       */
+      repaintBody(false);
     }
   });
+
+  /*
+   * 点这一行的空白处（不是输入框）→ 聚焦到输入框。
+   * 但**只有用户真的点输入框那一块**才聚焦，不要在这里主动 focus()，
+   * 否则点「未选择」时焦点会被抢过来。
+   */
   return el('div', {class:'oc-row oc-custom' + (active ? ' on' : '')},
     el('span', {class:'oc-no'}, '✎'),
     input);
+}
+
+/**
+ * 立刻重画「哪一行是选中的」（不重建 DOM）。
+ *
+ * 用于输入框打字时切换选中态 —— 重建会让输入框失焦。
+ *
+ * @param {object} props
+ * @param {boolean} multi
+ * @param {boolean} customOn
+ */
+function paintSelection(props, multi, customOn) {
+  const sec = document.querySelector('.sec[data-sec="' + props.__key + '"]');
+  if (sec === null) return;
+
+  const rows = [...sec.querySelectorAll('.oc-row')];
+  const custom = sec.querySelector('.oc-row.oc-custom');
+  const options = rows.filter(function (row) {
+    return !row.classList.contains('oc-custom') && !row.classList.contains('oc-skipbtn');
+  });
+
+  if (multi) {
+    /*
+     * 多选：自定义行只是「有没有内容」，别的行按 picked_multi 里有没有序号。
+     * 打字不会清掉序号项，所以别的行不用动。
+     */
+    if (custom !== null) custom.classList.toggle('on', customOn);
+    return;
+  }
+
+  /*
+   * 单选：三选一 —— 某个选项 / 自定义 / 未选择。
+   * 输入框有字就是自定义选中，其余全清。
+   */
+  for (const row of options) row.classList.remove('on');
+  if (custom !== null) custom.classList.toggle('on', customOn);
+
+  const skip = sec.querySelector('.oc-skipbtn');
+  if (skip !== null) skip.classList.toggle('on', !customOn && String(props.picked || '') === '未选择');
 }
 
 /**
@@ -702,8 +801,19 @@ function customRow(props, current, active, multi) {
  * @returns {string[]}
  */
 function mergeCustom(picked, text) {
+  /*
+   * 只保留序号项。
+   *
+   * 用户原话：
+   *   > 多选的未选择，点击以后，会选中自定义输入框。
+   *   > 并且填充（并覆盖）"未选择"的输入文字
+   *
+   * 原因是 picked_multi 里的 '未选择' 被当成了自定义文字塞进输入框。
+   * 哨兵值不是内容，必须滤掉。
+   */
   const list = Array.isArray(picked) ? picked.filter(function (x) {
-    return /^\d+$/u.test(String(x));
+    const v = String(x);
+    return /^\d+$/u.test(v);
   }) : [];
   const trimmed = String(text || '').trim();
   if (trimmed !== '') list.push(trimmed);
@@ -776,7 +886,14 @@ function renderAskComponent(props) {
 
   /* 单选时：序号 / 自定义文字 */
   const pickedIndex = !multi && /^\d+$/u.test(single) ? Number(single) : -1;
-  const isCustom = !multi && !isSkip && pickedIndex < 0;
+  /*
+   * 自定义 = **真的有值**、不是序号、也不是哨兵。
+   *
+   * 空串要排除 —— 空串的意思是「没填」，不是「填了一个空的」。
+   * 之前漏了这一条，取消「未选择」之后自定义行还亮着。
+   */
+  const isCustom = !multi && !isSkip && pickedIndex < 0
+    && single !== UNSET_LABEL && single.trim() !== '';
 
   const listBox = el('div', {class:'oc-list'});
 
@@ -790,11 +907,21 @@ function renderAskComponent(props) {
   });
 
   /* 自定义行 */
+  /*
+   * 自定义行的文字。
+   *
+   * 注意滤掉 '未选择' —— 它是哨兵值，不是用户填的内容。
+   *
+   * 用户原话：
+   *   > 多选的未选择，点击以后，会选中自定义输入框。
+   *   > 并且填充（并覆盖）"未选择"的输入文字
+   */
+  const isSentinel = function (x) { return /^\d+$/u.test(String(x)) || String(x) === UNSET_LABEL; };
   const customText = multi
-    ? list.filter(function (x) { return !/^\d+$/u.test(x); }).join('、')
+    ? list.filter(function (x) { return !isSentinel(x); }).join('、')
     : (isCustom ? single : '');
   const hasCustom = multi
-    ? list.some(function (x) { return !/^\d+$/u.test(x); })
+    ? list.some(function (x) { return !isSentinel(x); })
     : isCustom;
 
   if (props.allowCustom !== false) {
@@ -807,8 +934,18 @@ function renderAskComponent(props) {
       commit(props, multi ? { picked_multi: [] } : { picked: '' });
       return;
     }
-    /* 选中「未选择」：多选要清掉其它选择 */
-    commit(props, multi ? { picked_multi: ['未选择'] } : { picked: '未选择' });
+    /*
+     * 选中「未选择」。
+     *
+     * 单选写哨兵值就行 —— 但**不能保留旧的 picked 文字**，
+     * 否则自定义框里还显示着上次填的，看起来像「未选择」把它吃掉了。
+     *
+     * 用户原话：
+     *   > 单选点了未选择，会把自定义输入里面文字吃掉。
+     *
+     * 其实反过来：点了未选择，自定义框就该空 —— 那是「没填」的意思。
+     */
+    commit(props, multi ? { picked_multi: [UNSET_LABEL] } : { picked: UNSET_LABEL });
   });
 
   /*
