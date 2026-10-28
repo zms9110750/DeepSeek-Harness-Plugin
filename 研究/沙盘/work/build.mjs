@@ -272,7 +272,16 @@ const html = `<!DOCTYPE html>
    * overscroll-behavior: contain 同样是为了不让滚轮传给外层。
    */
   .modal{background:#fff;border-radius:10px;box-shadow:0 24px 60px rgba(16,18,22,.28);
-    width:min(720px,100%);max-height:86vh;display:flex;flex-direction:column;
+    /*
+   * 对话框**固定高度**。
+   *
+   * 用户原话：
+   *   > 首先你要把他固定大小啊。
+   *
+   * 高度不跟着内容走 —— 换模板、展开/收起选项卡都不该让它变。
+   * 内容多了在 .modal-body 里滚。
+   */
+  width:min(720px,100%);height:min(600px,86vh);display:flex;flex-direction:column;
     overflow:hidden;overscroll-behavior:contain}
   .modal-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border)}
   .modal-head b{font-size:14px;font-weight:650}

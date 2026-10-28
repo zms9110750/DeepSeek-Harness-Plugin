@@ -1040,7 +1040,19 @@ function renderDeriveComponent(props) {
       return x.code === code;
     });
     row.appendChild(el('button', {class:'quick-task', type:'button',
-      onclick() { openCreator({ type: String(code) }); }},
+      onclick() {
+        /*
+         * 派生子任务 —— 父任务自动填成当前这条。
+         *
+         * 用户原话：
+         *   > DEMO-01里面的派发任务按钮，点击以后的新建任务，
+         *   > 他们不是自动选择父任务的。
+         *
+         * 「派生」的意思本来就「从当前这条长出子事项」，
+         * 还要用户自己去选父任务就说不通了。
+         */
+        openCreator({ type: String(code), parent: renderCtx.taskId });
+      }},
       el('span', {class:'code'}, String(code)),
       tpl ? tpl.name : '派生任务',
       el('span', {class:'mode'}, modeLabel)));

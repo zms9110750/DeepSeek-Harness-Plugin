@@ -479,3 +479,19 @@
   .tpl-empty{padding:16px 12px;font-size:11.5px;color:var(--text-3);text-align:center}
 
   .tpl-desc .d-hint{margin-top:3px;font-size:10.5px;color:var(--text-3)}
+
+  /*
+   * 「正文会问这些」那个章节预览。
+   *
+   * 用户原话：
+   *   > 你真的固定了吗？我点击还是会变高度。
+   *
+   * 这里是真的原因：不同模板的章节数不一样（空模板 0 章、
+   * 用户任务 5 章、目标·验证 6 章），这个块的高度跟着变，
+   * 把整个对话框撑起来。
+   *
+   * 固定高度 + 内部滚动。
+   */
+  .tpl-sections.inline{height:132px;box-sizing:border-box;overflow-y:auto;
+    overscroll-behavior:contain;padding:9px 11px;
+    border:1px dashed var(--border-2);border-radius:7px;background:#fcfcfd}

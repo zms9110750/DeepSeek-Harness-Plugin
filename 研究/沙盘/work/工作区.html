@@ -222,7 +222,16 @@
    * overscroll-behavior: contain 同样是为了不让滚轮传给外层。
    */
   .modal{background:#fff;border-radius:10px;box-shadow:0 24px 60px rgba(16,18,22,.28);
-    width:min(720px,100%);max-height:86vh;display:flex;flex-direction:column;
+    /*
+   * 对话框**固定高度**。
+   *
+   * 用户原话：
+   *   > 首先你要把他固定大小啊。
+   *
+   * 高度不跟着内容走 —— 换模板、展开/收起选项卡都不该让它变。
+   * 内容多了在 .modal-body 里滚。
+   */
+  width:min(720px,100%);height:min(600px,86vh);display:flex;flex-direction:column;
     overflow:hidden;overscroll-behavior:contain}
   .modal-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border)}
   .modal-head b{font-size:14px;font-weight:650}
@@ -711,6 +720,22 @@
   .tpl-empty{padding:16px 12px;font-size:11.5px;color:var(--text-3);text-align:center}
 
   .tpl-desc .d-hint{margin-top:3px;font-size:10.5px;color:var(--text-3)}
+
+  /*
+   * 「正文会问这些」那个章节预览。
+   *
+   * 用户原话：
+   *   > 你真的固定了吗？我点击还是会变高度。
+   *
+   * 这里是真的原因：不同模板的章节数不一样（空模板 0 章、
+   * 用户任务 5 章、目标·验证 6 章），这个块的高度跟着变，
+   * 把整个对话框撑起来。
+   *
+   * 固定高度 + 内部滚动。
+   */
+  .tpl-sections.inline{height:132px;box-sizing:border-box;overflow-y:auto;
+    overscroll-behavior:contain;padding:9px 11px;
+    border:1px dashed var(--border-2);border-radius:7px;background:#fcfcfd}
 
 </style>
 </head>
@@ -3201,7 +3226,19 @@ function renderDeriveComponent(props) {
       return x.code === code;
     });
     row.appendChild(el('button', {class:'quick-task', type:'button',
-      onclick() { openCreator({ type: String(code) }); }},
+      onclick() {
+        /*
+         * 派生子任务 —— 父任务自动填成当前这条。
+         *
+         * 用户原话：
+         *   > DEMO-01里面的派发任务按钮，点击以后的新建任务，
+         *   > 他们不是自动选择父任务的。
+         *
+         * 「派生」的意思本来就「从当前这条长出子事项」，
+         * 还要用户自己去选父任务就说不通了。
+         */
+        openCreator({ type: String(code), parent: renderCtx.taskId });
+      }},
       el('span', {class:'code'}, String(code)),
       tpl ? tpl.name : '派生任务',
       el('span', {class:'mode'}, modeLabel)));
