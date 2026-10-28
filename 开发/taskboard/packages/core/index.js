@@ -1730,9 +1730,16 @@ async function setStateInner(id, next, agent, byUser, note) {
 			}
 		}
 
+		/*
+		 * 记录本身就是**理由的载体**，不该再要求它自己带一个理由载体。
+		 *
+		 * 之前这条守卫对所有类别生效，于是「阻碍」想标失败时
+		 * 反被要求"先派一条阻碍" —— 递归了。
+		 */
 		const hasRecord = children.some((item) => kindOf(item) === 'record');
 		const wroteNote = text(note) !== '' || text(task.note) !== '';
-		if (!hasRecord && !wroteNote) {
+		const selfIsReason = kindOf(task) === 'record';
+		if (!selfIsReason && !hasRecord && !wroteNote) {
 			throw new Error(
 				`${task.id} 要转「失败」，得先说明失败的原因。两个办法：\n` +
 					'  1. 派一条记录（推荐 RB 阻碍）把它写清楚：task_submit 时 parent 填这个 id、type 填 RB\n' +

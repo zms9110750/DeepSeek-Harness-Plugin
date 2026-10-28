@@ -370,11 +370,10 @@ function taskIdOf(parentId, type) {
 }
 
 async function deliver(workId, outcome) {
+	/* GU-08 4.1：记录只能由用户转 成功/失败，所以走命令路径。 */
 	const id = await submit({ title: '交付：' + workId, type: 'RW', parent: workId });
-	await approve(id);
-	const mine = newSession();
-	await claim(id, mine);
-	await changeState(id, outcome);
+	const result = await command('task-state').handler({ rawInput: id + ' ' + outcome });
+	assert.equal(result.kind, 'success', '交付记录转状态失败：' + result.text);
 	return id;
 }
 
@@ -583,8 +582,8 @@ test('GU-08 3.5：工作转失败，AI 必须有失败的阻碍', async () => {
 
 	/* 把阻碍标成失败 → 放行 */
 	const rb = taskIdOf(id, 'RB');
-	await approve(rb);
-	await tool('task_state').execute({ id: rb, status: '失败' });
+	const rbResult = await command('task-state').handler({ rawInput: rb + ' 失败' });
+	assert.equal(rbResult.kind, 'success', '记录只能由用户转：' + rbResult.text);
 	await tool('task_state').execute({ id, status: '失败' });
 	assert.equal(taskOf(id).status, '失败');
 });
@@ -1474,7 +1473,7 @@ test('/tasks 只给计划头、/task-get 给全文、/task-state 命令路径改
 
 test('上行：子计划还有进行态时不许完成父计划；草稿与完成态不阻挡', async () => {
 	const parent = await submit({ title: '父计划', type: 'RB', body: '父正文' });
-	const pending = await submit({ title: '缺信息的子计划', type: 'C', parent });
+	const pending = await submit({ title: '缺信息的子计划', type: 'WI', parent });
 	await changeState(pending, '需要信息');
 
 	await assert.rejects(
@@ -1485,12 +1484,12 @@ test('上行：子计划还有进行态时不许完成父计划；草稿与完�
 	assert.equal(taskOf(parent).status, '未指定', '被拒后父计划状态不变');
 
 	/* 进行态里的四种都挡：提交 / 处理中 / 需要信息 / 需要授权 */
-	const submitted = await submit({ title: '还没领取的子计划', type: 'C', parent });
+	const submitted = await submit({ title: '还没领取的子计划', type: 'WI', parent });
 	await approve(submitted);
 	await assert.rejects(() => changeState(parent, '成功'), /子计划还在进行中/u);
 
 	/* 草稿（未指定）不作数、完成态（取消）不阻挡 → 可以完成 */
-	const draft = await submit({ title: '草稿子计划', type: 'C', parent });
+	const draft = await submit({ title: '草稿子计划', type: 'WI', parent });
 	await changeState(pending, '取消');
 	await changeState(submitted, '取消');
 	await changeState(parent, '成功');
@@ -1501,14 +1500,14 @@ test('上行：子计划还有进行态时不许完成父计划；草稿与完�
 test('下行：父计划终止（成功/失败/取消/拒绝）时，进行态的子计划全部取消（递归），草稿与完成态不动', async () => {
 	/* 失败这条最典型：父计划走不下去，还活着的派生任务不该继续挂着 */
 	const parent = await submit({ title: '父计划', type: 'RB', body: '父正文' });
-	const active = await submit({ title: '待领取的子计划', type: 'C', parent });
+	const active = await submit({ title: '待领取的子计划', type: 'WI', parent });
 	await approve(active);
-	const shelved = await submit({ title: '搁置的子计划', type: 'C', parent });
+	const shelved = await submit({ title: '搁置的子计划', type: 'WI', parent });
 	await changeState(shelved, '需要授权');
 	const grandchild = await submit({ title: '孙计划', type: 'WI', parent: active });
 	await approve(grandchild);
-	const draft = await submit({ title: '草稿子计划', type: 'C', parent });
-	const delivered = await submit({ title: '已交付的子计划', type: 'C', parent });
+	const draft = await submit({ title: '草稿子计划', type: 'WI', parent });
+	const delivered = await submit({ title: '已交付的子计划', type: 'WI', parent });
 	await changeState(delivered, '成功');
 
 	await changeState(parent, '失败');
@@ -1524,7 +1523,7 @@ test('下行：父计划终止（成功/失败/取消/拒绝）时，进行态�
 
 test('下行：父计划「完成」时派生下游同样是空操作（子计划本来就都终结了）', async () => {
 	const parent = await submit({ title: '父计划', type: 'RB' });
-	const done = await submit({ title: '做完的子计划', type: 'C', parent });
+	const done = await submit({ title: '做完的子计划', type: 'WI', parent });
 	await deliver(done, '成功');
 	await changeState(done, '成功');
 	await changeState(parent, '成功');
