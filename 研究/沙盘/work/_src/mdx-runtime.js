@@ -492,31 +492,6 @@ function repaintBody(keepFocus) {
 }
 
 /**
- * 单选：选中/取消。
- *
- * @param {object} props
- * @param {string} title
- */
-function toggleAsk(props, title) {
-  const current = String(props.picked || '');
-  commit(props, { picked: current === title ? '' : title });
-}
-
-/**
- * 多选：加/删一项。
- *
- * @param {object} props
- * @param {string} title
- */
-function toggleMulti(props, title) {
-  const current = Array.isArray(props.picked) ? props.picked.slice() : [];
-  const i = current.indexOf(title);
-  if (i >= 0) current.splice(i, 1);
-  else current.push(title);
-  commit(props, { picked: current });
-}
-
-/**
  * 排序：上移/下移一项。
  *
  * @param {object} props
@@ -722,13 +697,19 @@ function customRow(props, current, active, multi) {
       const trimmed = text.trim();
 
       /*
-       * 统一写 picked **数组** —— 单选多选都一样。
+       * 写 picked 数组。
        *
-       * customRow 是独立函数，拿不到 renderAskComponent 里的 list，
-       * 所以从 props 自己算一遍：只有序号项要保留，自填项换成这一句。
+       * ## 单选必须互斥
+       *
+       * 用户看到的是「选项 / 自填 / 未选择」三选一，那数据里就该是
+       * 一个元素。之前无条件保留序号项，于是已选第 1 项再打字得到
+       * ['1','测试'] —— 长度 2 的数组直接把「单选」这个前提打破：
+       * single 变成 ''，isSkip 因此为真，三处同时亮。
+       *
+       * 所以：单选打字时**丢掉序号项**；多选才并联。
        */
       const cur = Array.isArray(props.picked) ? props.picked.map(String) : [];
-      const nums = cur.filter(function (x) { return /^\d+$/u.test(x); });
+      const nums = multi ? cur.filter(function (x) { return /^\d+$/u.test(x); }) : [];
       const next = nums.slice();
       if (trimmed !== '') next.push(trimmed);
       commitQuiet(props, { picked: next });
@@ -792,33 +773,6 @@ function paintSelection(props, multi, customOn) {
 
   const skip = sec.querySelector('.oc-skipbtn');
   if (skip !== null) skip.classList.toggle('on', !customOn && String(props.picked || '') === '未选择');
-}
-
-/**
- * 多选时把自定义文字并进 picked 数组（保留序号项）。
- *
- * @param {unknown} picked
- * @param {string} text
- * @returns {string[]}
- */
-function mergeCustom(picked, text) {
-  /*
-   * 只保留序号项。
-   *
-   * 用户原话：
-   *   > 多选的未选择，点击以后，会选中自定义输入框。
-   *   > 并且填充（并覆盖）"未选择"的输入文字
-   *
-   * 原因是 picked_multi 里的 '未选择' 被当成了自定义文字塞进输入框。
-   * 哨兵值不是内容，必须滤掉。
-   */
-  const list = Array.isArray(picked) ? picked.filter(function (x) {
-    const v = String(x);
-    return /^\d+$/u.test(v);
-  }) : [];
-  const trimmed = String(text || '').trim();
-  if (trimmed !== '') list.push(trimmed);
-  return list;
 }
 
 /**
@@ -922,16 +876,6 @@ function renderAskComponent(props) {
     ? (list.length === 0 || (list.length === 1 && list[0] === UNSET))
     : (single === UNSET || single.trim() === '');
 
-  /* 单选时：序号 / 自定义文字 */
-  const pickedIndex = !multi && /^\d+$/u.test(single) ? Number(single) : -1;
-  /*
-   * 自定义 = **真的有值**、不是序号、也不是哨兵。
-   *
-   * 空串要排除 —— 空串的意思是「没填」，不是「填了一个空的」。
-   * 之前漏了这一条，取消「未选择」之后自定义行还亮着。
-   */
-  const isCustom = !multi && !isSkip && pickedIndex < 0
-    && single !== UNSET_LABEL && single.trim() !== '';
 
   const listBox = el('div', {class:'oc-list'});
 

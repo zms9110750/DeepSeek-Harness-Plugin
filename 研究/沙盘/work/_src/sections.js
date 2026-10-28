@@ -277,31 +277,6 @@ function domainOf(task) {
      > 而类别，就是这个类别下面的模板。
    ══════════════════════════════════════════════════════════════ */
 
-/** 状态：组 → 具体状态。 */
-const STATUS_TREE = [
-  { key: '进行', children: ['提交', '处理中'] },
-  { key: '搁置', children: ['需要补充', '需要授权'] },
-  { key: '完成', children: ['完成', '失败', '取消'] },
-  { key: '草稿', children: ['未指定'] }
-];
-
-/** 类别。 */
-const KIND_TREE = [
-  { key: 'goal', label: '目标', children: [] },
-  { key: 'design', label: '设计', children: [] },
-  { key: 'record', label: '记录', children: [] },
-  { key: 'work', label: '工作', children: [] }
-];
-
-/** 领域 → 该领域下的模板。 */
-const DOMAIN_TREE = [
-  { key: 'code', label: '代码', children: [] },
-  { key: 'writing', label: '写作', children: [] },
-  { key: 'art', label: '绘画', children: [] },
-  { key: 'general', label: '通用', children: [] }
-];
-
-
 /* ══════════════════════════════════════════════════════════════
    关系类型 → 颜色
 
