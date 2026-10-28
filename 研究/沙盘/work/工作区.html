@@ -3898,7 +3898,7 @@ function deriveGoalStatus(t) {
   if (kids.length === 0) return '未开始';
   const groups = kids.map((k) => groupOf(k.status));
   /* 全部完成态 → 收尾；有进行 → 进行中；有搁置 → 停滞；否则未开始 */
-  if (groups.every((g) => g === '完成')) return '收尾';
+  if (groups.every((g) => g === '已结束')) return '收尾';
   if (groups.some((g) => g === '进行')) return '进行中';
   if (groups.some((g) => g === '搁置')) return '停滞';
   return '未开始';
