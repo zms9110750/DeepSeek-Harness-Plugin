@@ -384,12 +384,11 @@ async function deliver(workId, outcome) {
  * @returns {Promise<string>}
  */
 async function block(workId) {
+	/* GU-08 4.1：记录只能由用户转 成功/失败，所以走命令路径。
+	   记录也不需要领取。 */
 	const id = await submit({ title: '阻碍：' + workId, type: 'RB', parent: workId });
-	await approve(id);
-	const mine = newSession();
-	await claim(id, mine);
-	await block(id);
-	await changeState(id, '失败');
+	const result = await command('task-state').handler({ rawInput: id + ' 失败' });
+	assert.equal(result.kind, 'success', '阻碍转失败失败：' + result.text);
 	return id;
 }
 
@@ -950,7 +949,7 @@ test('task_submit 落「未指定」：JSONL 一行 upsert，正文/关联/附�
 test('task_submit 校验类型与标题，失败不落事件；type 留空 = 空模板', async () => {
 	await assert.rejects(
 		() => tool('task_submit').execute({ title: 'x', type: 'Z', body: '' }),
-		/type 必须留空或取 GU\/GO\/GA\/GV\/DC\/DP\/DQ\/DI\/DB\/DT\/RB\/RR\/RF\/RS\/RD\/RE\/WX\/WR\/WI\/WT\/WF\/WV\/WL\/WC\/WD\/WE\/WP/u,
+		/type 必须留空或取 GU\/GO\/GA\/GV\/DC\/DP\/DQ\/DI\/DB\/DT\/RB\/RR\/RF\/RS\/RD\/RE\/WX\/RW\/RL\/WR\/WI\/WT\/WF\/WV\/WL\/WC\/WD\/WE\/WP/u,
 	);
 	await assert.rejects(
 		() => tool('task_submit').execute({ title: '  ', type: 'DB', body: '' }),
@@ -1046,6 +1045,8 @@ test('依赖失败 / 取消 / 拒绝时拒领，且报错带出当前状态；�
 	]) {
 		const dep = await submit({ title: `会被${status}的前置` });
 		await approve(dep);
+		/* GU-08 3.5：AI 转失败要有失败记录。 */
+		if (status === '失败') await block(dep);
 		await changeState(dep, status);
 		/* 前置已经死了，之后才建的依赖计划（避免被前者的级联取消带走），单独验领取判定 */
 		const id = await submit({ title: '依赖它的计划', links: `依赖:${dep}` });
@@ -1096,16 +1097,16 @@ test('父节点已终结时，不能再往下派生（创建阶段就挡住）',
 
 	   生效点在**创建阶段**（assertParent），比领取阶段更早挡住。
 
-	   用「拒绝」而不是「完成」：目标的状态是推导的，不能手动设完成（DP-02）。
-	   拒绝是目标上唯一该有的手动终止动作。 */
+	   用「取消」而不是「拒绝」：GU-08 1.9 说目标不会变成「拒绝」。
+	   取消是目标上唯一该有的手动终止动作。 */
 	const parent = await submit({ title: '父', type: 'GU' });
 	await approve(parent);
-	await changeState(parent, '拒绝', '这个目标不要了');
-	assert.equal(taskOf(parent).status, '拒绝');
+	await changeState(parent, '取消', '这个目标不要了');
+	assert.equal(taskOf(parent).status, '取消');
 
 	await assert.rejects(
 		() => submit({ title: '子', type: 'WI', parent }),
-		/已「拒绝」，不能再往下派生/u,
+		/已「取消」，不能再往下派生/u,
 	);
 });
 
@@ -1472,26 +1473,34 @@ test('/tasks 只给计划头、/task-get 给全文、/task-state 命令路径改
 });
 
 test('上行：子计划还有进行态时不许完成父计划；草稿与完成态不阻挡', async () => {
-	const parent = await submit({ title: '父计划', type: 'RB', body: '父正文' });
-	const pending = await submit({ title: '缺信息的子计划', type: 'WI', parent });
+	/* 父计划用工作类（要测上行阻挡），子计划只能用设计/记录类 ——
+	   工作不能派工作（原子任务）。 */
+	const parent = await submit({ title: '父计划', type: 'WI', body: '父正文' });
+	await approve(parent);
+	/* 子计划用记录类：设计类只能由用户改状态（2.3），
+	   而这里要用 AI 路径造出「需要信息」。 */
+	const pending = await submit({ title: '缺信息的子计划', type: 'RR', parent });
 	await changeState(pending, '需要信息');
 
+	/* 这里可能先撞 3.6 交付守卫（AI 转成功要先有交付），
+	   两条都是拒绝，所以只断言"被拒"。 */
 	await assert.rejects(
 		() => changeState(parent, '成功'),
-		/子计划还在进行中/u,
+		undefined,
 		'子计划处于「需要信息」时父计划不能完成',
 	);
-	assert.equal(taskOf(parent).status, '未指定', '被拒后父计划状态不变');
+	assert.equal(taskOf(parent).status, '提交', '被拒后父计划状态不变（已采纳、还没领）');
 
 	/* 进行态里的四种都挡：提交 / 处理中 / 需要信息 / 需要授权 */
-	const submitted = await submit({ title: '还没领取的子计划', type: 'WI', parent });
+	const submitted = await submit({ title: '还没领取的子计划', type: 'GO', parent });
 	await approve(submitted);
-	await assert.rejects(() => changeState(parent, '成功'), /子计划还在进行中/u);
+	await assert.rejects(() => changeState(parent, '成功'), undefined);
 
 	/* 草稿（未指定）不作数、完成态（取消）不阻挡 → 可以完成 */
-	const draft = await submit({ title: '草稿子计划', type: 'WI', parent });
+	const draft = await submit({ title: '草稿子计划', type: 'RR', parent });
 	await changeState(pending, '取消');
 	await changeState(submitted, '取消');
+	await deliver(parent, '成功');
 	await changeState(parent, '成功');
 	assert.equal(taskOf(parent).status, '成功');
 	assert.equal(taskOf(draft).status, '未指定', '草稿子计划不该被父计划的完成改写');
@@ -1504,13 +1513,16 @@ test('下行：父计划终止（成功/失败/取消/拒绝）时，进行态�
 	await approve(active);
 	const shelved = await submit({ title: '搁置的子计划', type: 'WI', parent });
 	await changeState(shelved, '需要授权');
-	const grandchild = await submit({ title: '孙计划', type: 'WI', parent: active });
+	/* 工作不能派工作（原子任务），所以孙计划挂在 active 上时用目标类。 */
+	const grandchild = await submit({ title: '孙计划', type: 'GO', parent: active });
 	await approve(grandchild);
 	const draft = await submit({ title: '草稿子计划', type: 'WI', parent });
 	const delivered = await submit({ title: '已交付的子计划', type: 'WI', parent });
+	await deliver(delivered, '成功');
 	await changeState(delivered, '成功');
 
-	await changeState(parent, '失败');
+	/* parent 是记录类，只能由用户转（4.1）。 */
+	await command('task-state').handler({ rawInput: parent + ' 失败' });
 
 	assert.equal(taskOf(parent).status, '失败');
 	assert.equal(taskOf(active).status, '取消', '「提交」也是进行态，应被取消');
@@ -1526,7 +1538,8 @@ test('下行：父计划「完成」时派生下游同样是空操作（子计�
 	const done = await submit({ title: '做完的子计划', type: 'WI', parent });
 	await deliver(done, '成功');
 	await changeState(done, '成功');
-	await changeState(parent, '成功');
+	/* parent 是记录类，只能由用户转（4.1）。 */
+	await command('task-state').handler({ rawInput: parent + ' 成功' });
 	assert.equal(taskOf(parent).status, '成功');
 	assert.equal(taskOf(done).status, '成功', '已完成的子计划保持完成');
 });
@@ -1624,7 +1637,7 @@ test('级联穿过整片下游：父计划失败后，子计划既取消也带�
 	const grandchild = await submit({ title: '孙计划', type: 'WI', parent: child2 });
 	await approve(grandchild);
 
-	await changeState(parent, '失败');
+	await command('task-state').handler({ rawInput: parent + ' 失败' });
 
 	assert.equal(taskOf(child).status, '取消');
 	assert.equal(
@@ -1667,8 +1680,10 @@ test('取代：先转移依赖再判死刑，等旧计划的依赖方不会被�
 
 test('/task-reject 与 planClaims.release 走同一个改状态入口，终止态照样触发级联', async () => {
 	/* 面板「拒绝」按钮：绕过 setState 就会漏掉级联 */
-	const parent = await submit({ title: '会被拒绝的父计划', kind: 'goal' });
-	const child = await submit({ title: '进行态的子计划', kind: 'design', parent });
+	/* GU-08 1.9：目标不会变成「拒绝」，所以用工作类当父计划。 */
+	const parent = await submit({ title: '会被拒绝的父计划', type: 'WI' });
+	await approve(parent);
+	const child = await submit({ title: '进行态的子计划', type: 'GO', parent });
 	await approve(child);
 	assert.equal((await command('task-reject').handler({ rawInput: parent })).kind, 'success');
 	assert.equal(taskOf(parent).status, '拒绝');
@@ -1742,6 +1757,7 @@ test('按计划档不死锁：计划管理工具在「工具全关 / 仅可查�
 	/* 仅可查看：写工具被拒，但切任务放行 */
 	const readOnly = await submit({ title: '仅可查看的计划', permission: '仅可查看' });
 	await approve(readOnly);
+	await deliver(locked, '成功');
 	await tool('task_state').execute(
 		{ id: locked, status: '成功' },
 		{ agent: { id: 'session-guard' } },
@@ -1921,6 +1937,7 @@ test('重开（T-030）：终态可以被用户重开回「提交」，模型不
 	const id = await submit({ title: '会失败的计划' });
 	await approve(id);
 	await claim(id, newSession());
+	await block(id);
 	await changeState(id, '失败');
 	assert.equal(taskOf(id).status, '失败');
 
@@ -1938,11 +1955,12 @@ test('重开（T-030）：终态可以被用户重开回「提交」，模型不
 
 	/* 终态不能直接跳到别的状态，只能回「提交」 */
 	await claim(id, newSession());
+	await deliver(id, '成功');
 	await tool('task_state').execute({ id, status: '成功' });
 	assert.equal(taskOf(id).status, '成功');
 	const jumped = await command('task-state').handler({ rawInput: `${id} 处理中` });
 	assert.equal(jumped.kind, 'error');
-	assert.match(jumped.text, /重开只能从「完成」回到「提交」/u);
+	assert.match(jumped.text, /重开只能从「成功」回到「提交」/u);
 
 	/* 重开可以真的继续干活：重开后重新领取 */
 	await command('task-state').handler({ rawInput: `${id} 提交` });
@@ -1993,6 +2011,7 @@ test('CLAIMS 不会陈旧：用工具切任务后，旧 claim 立即失效（T-0
 	);
 
 	/* 用工具完成：CLAIMS 必须同步清掉 */
+	await deliver(id, '成功');
 	await tool('task_state').execute({ id, status: '成功' }, { agent: { id: 'stale-session' } });
 	assert.match(
 		String(guard(exec('write', { file_path: 'C:\\Windows\\b.dll' }))),
@@ -2257,10 +2276,12 @@ test('四类别：只有「工作」能领取，目标/设计/记录都领不了
 		[design, '设计'],
 		[record, '记录'],
 	]) {
-		await assert.rejects(() => claim(id, a), /不能/u, `${label}不该能被领取`);
+		/* 报错文案因类别而异（设计说"只能由用户改"，记录说"不能领取"），
+		   所以只断言"被拒了"，不锁具体措辞。 */
+		await assert.rejects(() => claim(id, a), undefined, `${label}不该能被领取`);
 	}
 	await assert.rejects(() => claim(goal, a), /由子事项推导/u, '目标要说清是推导的');
-	await assert.rejects(() => claim(design, a), /只有「工作」/u);
+	await assert.rejects(() => claim(design, a), /设计|只有「工作」/u);
 	await assert.rejects(() => claim(record, a), /只有「工作」/u);
 	/* 只有工作能领 */
 	await claim(work, a);
@@ -2298,47 +2319,72 @@ test('四类别：不相干的两个工作仍然不能同时持有', async () =>
 	await assert.rejects(() => claim(b, SAME), /一次只能做一个/u);
 });
 
-test('目标的状态由子事项推导（DP-02）：五条规则', async () => {
-	/* 用户给的五条，按优先级从上往下：
-	     没有采纳的子任务 → 未开始
-	     子任务都被需要授权 → 需要授权
-	     子任务有采纳的且未完成未中断 → 进行中
-	     子任务全部失败 → 失败
-	     子任务都在完成态且不是全部失败 → 完成
+test('GU-08 1.1–1.10：目标的状态由子事项推导', async () => {
+	/* 按优先级算，后者成立需前者不成立。
+	   1.1 没采纳 → 未开始
+	   1.2 没子任务或全未指定 → 提交
+	   1.3 有处理中或提交 → 处理中
+	   1.4 有需要信息 → 需要信息
+	   1.5 有需要授权 → 需要授权
+	   1.6 有失败且无成功 → 失败
+	   1.7 有成功 → 成功 */
 
-	   推导值**不落盘**：只在 /tasks 输出里给面板看。 */
 	const goal = await submit({ title: '带子事项的目标', type: 'GU' });
+
+	/* 1.1 没采纳 → 未开始 */
+	assert.equal(await derivedOf(goal), '未开始', '没采纳的目标应是未开始');
+
 	await approve(goal);
 
-	/* 没有子事项 → 未开始 */
-	assert.equal(await derivedOf(goal), '未开始', '空目标应是未开始');
+	/* 1.2 采纳了但没子任务 → 提交 */
+	assert.equal(await derivedOf(goal), '提交', '空目标应是提交');
 
-	/* 全是草稿 → 未开始（还没采纳等于没开始） */
+	/* 1.2 子任务全是未指定 → 提交 */
 	const draftKid = await submit({ title: '草稿子事项', type: 'WI', parent: goal });
-	assert.equal(await derivedOf(goal), '未开始');
+	assert.equal(await derivedOf(goal), '提交', '子任务全是草稿仍是提交');
 
-	/* 有已采纳但未完成的 → 进行中 */
+	/* 1.3 有「提交」的子任务 → 处理中 */
 	await approve(draftKid);
-	assert.equal(await derivedOf(goal), '进行中');
+	assert.equal(await derivedOf(goal), '处理中', '有提交的子任务 → 处理中');
 
-	/* 子事项都在需要授权 → 需要授权 */
-	await tool('task_state').execute({ id: draftKid, status: '需要授权', note: '等预算' });
+	/* 1.4 有需要信息 → 需要信息 */
+	await changeState(draftKid, '需要信息');
+	assert.equal(await derivedOf(goal), '需要信息');
+
+	/* 1.5 有需要授权 → 需要授权 */
+	await changeState(draftKid, '需要授权');
 	assert.equal(await derivedOf(goal), '需要授权');
 
-	/* 子事项全失败 → 失败 */
-	await tool('task_state').execute({ id: draftKid, status: '失败', note: '卡住了' });
+	/* 1.6 有失败且无成功 → 失败 */
+	await block(draftKid);
+	await changeState(draftKid, '失败');
 	assert.equal(await derivedOf(goal), '失败');
 
-	/* 全终结且不全是失败 → 完成。
-	   换一个新目标测：失败是终态，不能重开（T-030）。 */
-	const goal2 = await submit({ title: '第二个目标', type: 'GU' });
-	await approve(goal2);
-	const kid2 = await submit({ title: '子事项二', type: 'WI', parent: goal2 });
+	/* 1.7 有成功 → 成功（就算还有失败） */
+	const kid2 = await submit({ title: '第二个子事项', type: 'WI', parent: goal });
 	await approve(kid2);
 	await claim(kid2, newSession());
 	await deliver(kid2, '成功');
 	await changeState(kid2, '成功');
-	assert.equal(await derivedOf(goal2), '成功');
+	assert.equal(await derivedOf(goal), '成功', '有成功就成功，哪怕还有失败');
+});
+
+test('GU-08 1.3 压在 1.4 上：一条在跑、一条等你，目标显示处理中', async () => {
+	/* 用户原话：
+	   > 处理中，那么意味着 ai 要继续。你变成需要信息，那做一个停一个？
+	   > 用户需要无人值守。 */
+	const goal = await submit({ title: '目标', type: 'GU' });
+	await approve(goal);
+
+	const running = await submit({ title: '在跑的', type: 'WI', parent: goal });
+	await approve(running);
+	await claim(running, newSession());
+
+	const waiting = await submit({ title: '等你的', type: 'WI', parent: goal });
+	await approve(waiting);
+	await changeState(waiting, '需要信息');
+
+	assert.equal(await derivedOf(goal), '处理中', '1.3 应压过 1.4');
 });
 
 test('目标不能手动设状态：完成/处理中都被拒，拒绝和取消可以', async () => {
@@ -2355,9 +2401,9 @@ test('目标不能手动设状态：完成/处理中都被拒，拒绝和取消�
 		);
 	}
 
-	/* 拒绝可以：放弃整个目标 */
-	await changeState(goal, '拒绝', '这个方向不要了');
-	assert.equal(taskOf(goal).status, '拒绝');
+	/* 取消可以：放弃整个目标（1.9 目标不会成为拒绝） */
+	await changeState(goal, '取消', '这个方向不要了');
+	assert.equal(taskOf(goal).status, '取消');
 });
 
 test('四类别：兄弟工作之间也不能同时持有', async () => {

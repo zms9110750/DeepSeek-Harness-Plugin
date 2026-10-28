@@ -809,8 +809,9 @@ function derivedStatus(task, all) {
 	const kids = all.filter((item) => item.parent === task.id);
 	const kind = kindOf(task);
 
-	/* 草稿不计算 —— 没采纳的东西不投影。 */
-	if (statusOf(task) === '未指定') return '未指定';
+	/* 草稿不计算 —— 没采纳的东西不投影。
+	   目标用「未开始」（它没有草稿这个概念，只有"还没采纳"）。 */
+	if (statusOf(task) === '未指定') return kindOf(task) === 'goal' ? '未开始' : '未指定';
 
 	/* 结束态不被计算覆盖：已经结束的东西不再"等什么"。 */
 	if (isEnded(task)) return statusOf(task);
@@ -1718,7 +1719,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 			const evidenced = children.some(
 				(child) =>
 					kindOf(child) === 'record' &&
-					(typeOf(child) === 'RB' || typeOf(child) === '交付') &&
+					(typeOf(child) === 'RB' || typeOf(child) === 'RW' || typeOf(child) === '交付') &&
 					statusOf(child) === '失败',
 			);
 			if (!evidenced) {
@@ -1739,7 +1740,8 @@ async function setStateInner(id, next, agent, byUser, note) {
 		const hasRecord = children.some((item) => kindOf(item) === 'record');
 		const wroteNote = text(note) !== '' || text(task.note) !== '';
 		const selfIsReason = kindOf(task) === 'record';
-		if (!selfIsReason && !hasRecord && !wroteNote) {
+		/* 3.5：用户转化为失败不受限制 —— 理由守卫只拦 AI。 */
+		if (byUser !== true && !selfIsReason && !hasRecord && !wroteNote) {
 			throw new Error(
 				`${task.id} 要转「失败」，得先说明失败的原因。两个办法：\n` +
 					'  1. 派一条记录（推荐 RB 阻碍）把它写清楚：task_submit 时 parent 填这个 id、type 填 RB\n' +
@@ -1815,7 +1817,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 		 */
 		if (kindOf(task) === 'work' && byUser !== true) {
 			const delivered = all.some(
-				(child) => child.parent === task.id && kindOf(child) === 'record' && typeOf(child) === '交付' && statusOf(child) === '成功',
+				(child) => child.parent === task.id && kindOf(child) === 'record' && (typeOf(child) === 'RW' || typeOf(child) === '交付') && statusOf(child) === '成功',
 			);
 			if (!delivered) {
 				throw new Error(

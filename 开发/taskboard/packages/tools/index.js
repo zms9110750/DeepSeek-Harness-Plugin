@@ -140,7 +140,7 @@ const splitWorkspaces = coreFn('splitWorkspaces');
 const TYPES = [
 	'GU', 'GO', 'GA', 'GV',
 	'DC', 'DP', 'DQ', 'DI', 'DB', 'DT',
-	'RB', 'RR', 'RF', 'RS', 'RD', 'RE', 'WX',
+	'RB', 'RR', 'RF', 'RS', 'RD', 'RE', 'WX', 'RW', 'RL',
 	'WR', 'WI', 'WT', 'WF', 'WV', 'WL', 'WC', 'WD', 'WE', 'WP',
 ];
 /** 全部编号（含老类型）。函数而非常量：LEGACY_TYPES 在后面才定义。 */
