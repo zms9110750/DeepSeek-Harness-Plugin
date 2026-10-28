@@ -1137,7 +1137,53 @@ async function createNew(task) {
  * 老数据保持 `T-001` 不动（只读不改）。新老 id 混存没问题，
  * 因为 id 只是主键，语义在 type/kind 里。
  */
+/**
+ * 1.10 的复盘约束：失败数除 3 向下取整，不能大于成功复盘数。
+ *
+ * 用户原话：
+ *
+ *   > 失败的"工作"子任务，数量除3向下取整，不能大于成功"复盘"。
+ *   > 在这个情况下不能继续创建"工作"子任务。（ai不能创建，用户不受影响）
+ *
+ * 也就是说：每 3 个失败要配 1 个复盘。
+ *
+ *   失败 0–2 个 → floor(0)=0 → 不限
+ *   失败 3–5 个 → floor(1)=1 → 至少 1 个复盘
+ *   失败 6–8 个 → floor(2)=2 → 至少 2 个复盘
+ *
+ * ## 只拦 AI
+ *
+ * 用户不受影响 —— 人想拆多少工作就拆多少。
+ * 这条约束是给 AI 的：防止它无限试错而不总结。
+ *
+ * @param {string} goalId
+ * @returns {Promise<string>} 空串表示可以创建
+ */
+async function retroBlocker(goalId) {
+	if (goalId === '') return '';
+	const all = await listAll();
+	const kids = all.filter((item) => item.parent === goalId);
+	const failed = kids.filter((item) => kindOf(item) === 'work' && statusOf(item) === '失败').length;
+	const retros = kids.filter((item) => kindOf(item) === 'record' && typeOf(item) === 'RF' && statusOf(item) === '成功').length;
+	const need = Math.floor(failed / 3);
+	if (need <= retros) return '';
+	return (
+		`${goalId} 下面已经有 ${failed} 条失败的工作，需要 ${need} 份复盘，但现在只有 ${retros} 份。` +
+		'先派一条复盘（记录类 RF）写清根因和下次怎么避，再来创建工作。'
+	);
+}
+
 async function createNewInner(task) {
+	/* 1.10：AI 创建工作子任务前，先查复盘够不够。
+	 *
+	 * 注意：这里 task 还没编号，kindOf 靠 kind / type 字段判断，
+	 * 不能用 isClaimable(task) —— 那个判的是"领取资格"，语义不对。
+	 */
+	if (String(task?.parent ?? '') !== '' && kindOf(task) === 'work') {
+		const blocker = await retroBlocker(String(task.parent));
+		if (blocker !== '') throw new Error(blocker);
+	}
+
 	/* 前缀：有模板就用模板编号（MG / SQ / GR…）；
 	   空模板（没选 type）用**大类首字母**：goal→M、design→S、record→J、work→G。
 	   这样空模板也有可读编号，不会冒出一个 ITEM-01 这种怪东西。 */
@@ -1501,8 +1547,63 @@ const REOPEN_FROM = TERMINAL;
  * 判定一条转移是否允许；返回空串表示允许，否则返回给模型看的原因。
  * `byUser` 为 true 时是用户路径（面板按钮、斜杠命令）。
  */
-function transitionBlocker(from, to, byUser) {
+function transitionBlocker(from, to, byUser, task) {
 	if (from === to) return '';
+
+	/*
+	 * ---------------------------------------------------------------------
+	 * GU-08：权限按**类别**不同，不再是全局一套
+	 * ---------------------------------------------------------------------
+	 *
+	 * 用户原话：
+	 *
+	 *   2.3 用户可以手动转换为"成功""拒绝""取消"。ai无权进行状态转移操作
+	 *   3.5 必须有一个失败的"阻碍"子任务或一个失败的"交付"子任务，
+	 *       ai才可以转化为"失败"。用户转化为失败不受限制。
+	 *   3.6 必须有一个成功的"交付"子任务，ai才可以转化为"成功"。
+	 *       用户转化不受限制。
+	 *   4.1 初始状态为"需要授权"。只能由用户转移为"成功""失败"。
+	 *
+	 * 归成一张表：
+	 *
+	 *   类别   采纳   领取   转成功     转失败     拒绝   取消
+	 *   目标   人     —     推导        推导       ✗     人
+	 *   设计   —      —     人          不会失败   人     人
+	 *   工作   人     人+AI  人/AI(守卫) 人/AI(守卫) 人     人+AI
+	 *   记录   —      —     人          人         —      —
+	 *
+	 * 没给 task 时（老调用点）退化成之前的全局规则。
+	 */
+	if (task !== undefined) {
+		const kind = kindOf(task);
+
+		/* 设计：AI 完全无权改状态（2.3）。 */
+		if (kind === 'design' && byUser !== true) {
+			return '「设计」的状态只能由用户改：模型请把要问的写成正文，等用户在面板上处理。';
+		}
+
+		/* 设计不会失败（2.4）。 */
+		if (kind === 'design' && to === '失败') {
+			return '「设计」不会失败。做不下去就换成「拒绝」，或者派一条调研。';
+		}
+
+		/* 记录：只能由用户转 成功/失败（4.1）。 */
+		if (kind === 'record') {
+			if (byUser !== true && (to === '成功' || to === '失败')) {
+				return '「记录」只能由用户验收：模型写完等用户在面板上点「成功」或「失败」。';
+			}
+		}
+
+		/* 目标不会成为拒绝（1.9）。 */
+		if (kind === 'goal' && to === '拒绝') {
+			return '「目标」不会变成「拒绝」。要放弃整个目标，用「取消」。';
+		}
+
+		/* 工作：AI 转成功/失败要满足守卫（3.5/3.6），具体在 setStateInner 里查子任务。 */
+		if (kind === 'work' && byUser !== true && (to === '成功' || to === '失败')) {
+			return '';  /* 守卫需要读子任务，交给 setStateInner */
+		}
+	}
 
 	/* 安全边界：草稿不能直接进处理中。 */
 	if (from === DRAFT_STATUS && to === '处理中') {
@@ -1560,7 +1661,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 	const from = String(task.status || '未指定');
 
 	/* 状态转移规则：安全边界（草稿不能进处理中）+ 终态重开限定。 */
-	const blocker = transitionBlocker(from, wanted, byUser);
+	const blocker = transitionBlocker(from, wanted, byUser, task);
 	if (blocker !== '') throw new Error(blocker);
 
 	/* 目标的状态是**推导**的，不能手动设（DP-02）。
@@ -1601,6 +1702,30 @@ async function setStateInner(id, next, agent, byUser, note) {
 	 */
 	if (wanted === '失败') {
 		const children = (await listAll()).filter((item) => item.parent === task.id);
+
+		/*
+		 * 3.5：工作转失败，AI 必须有「失败的阻碍」或「失败的交付」子任务。
+		 *
+		 * 用户原话：
+		 *   > 必须有一个失败的"阻碍"子任务或一个失败的"交付"子任务，
+		 *   > ai才可以转化为"失败"。用户转化为失败不受限制。
+		 */
+		if (kindOf(task) === 'work' && byUser !== true) {
+			const evidenced = children.some(
+				(child) =>
+					kindOf(child) === 'record' &&
+					(typeOf(child) === 'RB' || typeOf(child) === '交付') &&
+					statusOf(child) === '失败',
+			);
+			if (!evidenced) {
+				throw new Error(
+					`${task.id} 要转「失败」，得先有一条**失败的记录**作为依据。` +
+						'派一条阻碍（RB）写清卡在哪，或一条交付写清做不出来什么；' +
+						'等用户在那条记录上点「失败」，再回来把这条工作标失败。',
+				);
+			}
+		}
+
 		const hasRecord = children.some((item) => kindOf(item) === 'record');
 		const wroteNote = text(note) !== '' || text(task.note) !== '';
 		if (!hasRecord && !wroteNote) {
@@ -1665,14 +1790,38 @@ async function setStateInner(id, next, agent, byUser, note) {
 		if (blocker2 !== '') throw new Error(`不能领取 ${task.id}：${blocker2}`);
 	}
 	if (wanted === '成功') {
-		/* 上行：子计划里只要还有「进行态」（提交 / 处理中 / 需要信息 / 需要授权），父计划就不能完成。
-		   草稿（未指定）不作数，完成态（完成/失败/取消/拒绝）不阻挡。 */
 		const all = await listAll();
+
+		/*
+		 * 3.6：工作转成功，AI 必须有一个成功的「交付」子任务。
+		 *
+		 * 用户原话：
+		 *   > 必须有一个成功的"交付"子任务，ai才可以转化为"成功"。
+		 *   > 用户转化不受限制。
+		 *
+		 * 用户不受限 —— 因为用户点「成功」这件事本身就是验收，
+		 * 不再需要一份书面交付来证明。
+		 */
+		if (kindOf(task) === 'work' && byUser !== true) {
+			const delivered = all.some(
+				(child) => child.parent === task.id && kindOf(child) === 'record' && typeOf(child) === '交付' && statusOf(child) === '成功',
+			);
+			if (!delivered) {
+				throw new Error(
+					`${task.id} 要转「成功」，得先有一份**成功的交付记录**。` +
+						'派一条交付（记录类）写清：产物在哪、别人拿它做什么、过时了怎么知道；' +
+						'等用户在上面点「成功」，再回来把这条工作标成功。',
+				);
+			}
+		}
+
+		/* 上行：子计划里只要还有「进行态」，父计划就不能成功。
+		   草稿（未指定）不作数，结束态（成功/失败/取消/拒绝）不阻挡。 */
 		const open = all.filter((child) => child.parent === task.id && isActive(child.status));
 		if (open.length > 0) {
 			throw new Error(
 				`子计划还在进行中：${open.map((child) => `${child.id}（${child.status}）`).join('、')}；` +
-					'先把它们收掉（完成 / 失败 / 取消 / 拒绝）再完成父计划',
+					'先把它们收掉（成功 / 失败 / 取消 / 拒绝）再完成父计划',
 			);
 		}
 	}
@@ -2231,7 +2380,7 @@ function coreService(ctx) {
 		applySupersede: (task) => applySupersede(task),
 
 		/* ── 规则查询（工具要用来校验 / 展示）── */
-		transitionBlocker: (from, to, byUser) => transitionBlocker(from, to, byUser),
+		transitionBlocker: (from, to, byUser, task) => transitionBlocker(from, to, byUser, task),
 		claimBlocker: (task, tasks) => claimBlocker(task, tasks),
 		claimHints: (task, tasks) => claimHints(task, tasks),
 		assertParent: (parentId, childKind, childType) => assertParent(parentId, childKind, childType),

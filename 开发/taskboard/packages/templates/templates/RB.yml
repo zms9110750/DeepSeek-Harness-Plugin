@@ -1,7 +1,7 @@
 name: RB · 阻碍
 default_kind: record
 behavior: block
-description: 卡住了；父工作会被踢出「处理中」，转入「需要补充」
+description: 卡住了；父工作会被踢出「处理中」，转入「需要信息」
 domain: general
 framed: true
 dispatch: [goal, design, record, work]
@@ -80,7 +80,7 @@ body:
       description: |
         从词表里挑（见 templates/STOP-REASONS.md），再补一句具体说明：
         · 需要授权：代价过大 / 用户转移话题 / 方案缺陷过大 / 资源被占用 / 缺权限 / 环境不对
-        · 需要补充：缺用户信息 / 需要先调研 / 子任务未回收
+        · 需要信息：缺用户信息 / 需要先调研 / 子任务未回收
         挑不出来说明还没想清卡在哪，先别派阻碍。
     validations:
       required: true

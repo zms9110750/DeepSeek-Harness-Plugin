@@ -6306,7 +6306,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 setAction({ busy: false, error: String(error && error.message || error) });
               });
             },
-            /* 要更多信息：状态推到「需要补充」，它会转向用户。 */
+            /* 要更多信息：状态推到「需要信息」，它会转向用户。 */
             onMoreInfo: function() {
               runState("\u9700\u8981\u8865\u5145");
             },

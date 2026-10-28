@@ -340,6 +340,60 @@ async function derivedOf(id) {
 	return row.derived;
 }
 
+/**
+ * 给一条工作配一份「交付」记录，并把它标成指定状态。
+ *
+ * GU-08 之后，AI 要把工作转成功必须有成功的交付，转失败必须有失败的阻碍/交付。
+ * 这个 helper 造那个前提。
+ *
+ * @param {string} workId
+ * @param {'成功'|'失败'} outcome
+ * @returns {Promise<string>} 交付记录的 id
+ */
+/**
+ * 在某个父事项下面按模板编号找一条子事项的 id。
+ *
+ * @param {string} parentId
+ * @param {string} type
+ * @returns {string}
+ */
+function taskIdOf(parentId, type) {
+	/* 重放事件拿到当前全部事项（和 taskOf 同一套）。 */
+	const map = new Map();
+	for (const event of events()) {
+		if (event.op === 'upsert' && event.task?.id) map.set(event.task.id, event.task);
+		else if (event.op === 'patch' && map.has(event.id)) map.set(event.id, Object.assign({}, map.get(event.id), event.patch));
+	}
+	const hit = [...map.values()].filter((t) => t.parent === parentId && t.type === type);
+	if (hit.length === 0) throw new Error(`${parentId} 下面没有 ${type}`);
+	return hit[hit.length - 1].id;
+}
+
+async function deliver(workId, outcome) {
+	const id = await submit({ title: '交付：' + workId, type: '交付', parent: workId });
+	await approve(id);
+	const mine = newSession();
+	await claim(id, mine);
+	await changeState(id, outcome);
+	return id;
+}
+
+/**
+ * 给一条工作配一份「阻碍」记录，并标成失败。
+ *
+ * @param {string} workId
+ * @returns {Promise<string>}
+ */
+async function block(workId) {
+	const id = await submit({ title: '阻碍：' + workId, type: 'RB', parent: workId });
+	await approve(id);
+	const mine = newSession();
+	await claim(id, mine);
+	await block(id);
+	await changeState(id, '失败');
+	return id;
+}
+
 async function changeState(id, status, note) {
 	/* 转「失败」必须有理由载体（WI-01）。这里默认给一句，
 	   免得每个用例都要单独补——专门验证拒绝的用例会显式不传。 */
@@ -485,10 +539,10 @@ test('备注：可写可清空，不受「只有未指定可改」限制，task_
 
 	/* /task-state 的第三个参数起也是备注（含空格） */
 	const stateWithNote = await command('task-state').handler({
-		rawInput: `${id} 需要补充 缺三样东西：预算 / 期限 / 验收人`,
+		rawInput: `${id} 需要信息 缺三样东西：预算 / 期限 / 验收人`,
 	});
 	assert.equal(stateWithNote.kind, 'success');
-	assert.equal(taskOf(id).status, '需要补充');
+	assert.equal(taskOf(id).status, '需要信息');
 	assert.equal(taskOf(id).note, '缺三样东西：预算 / 期限 / 验收人');
 
 	/* 空串清空 */
@@ -502,62 +556,95 @@ test('备注：可写可清空，不受「只有未指定可改」限制，task_
 	);
 });
 
-test('失败必须有理由：没阻碍子事项、也没 note 时拒绝', async () => {
-	/* 用户要求：点失败 = 新建 -> 记录 -> 阻碍。
-	   理由要有载体，不能是一句空话。 */
+test('GU-08 3.5：工作转失败，AI 必须有失败的阻碍', async () => {
 	const id = await submit({ title: '会失败的活', type: 'WI' });
 	await approve(id);
 	await claim(id, newSession());
 
-	/* 什么都没有 → 拒绝，且报错要说清两个办法 */
+	/* 什么都没有 → 拒绝 */
 	await assert.rejects(
 		() => tool('task_state').execute({ id, status: '失败' }),
-		/得先说明失败的原因/u,
+		/得先有一条\*\*失败的记录\*\*作为依据/u,
 	);
-	/* 报错要给出路，不能只说"不允许" */
+	/* 报错要给出路 */
 	await assert.rejects(
 		() => tool('task_state').execute({ id, status: '失败' }),
-		/派一条记录/u,
+		/派一条阻碍/u,
 	);
 	assert.equal(taskOf(id).status, '处理中', '被拒后状态不变');
 
-	/* 出路 1：派一条记录（阻碍） */
+	/* 建了一条阻碍但还没标失败 → 仍然拒绝（这是 GU-08 收紧的地方） */
 	await submit({ title: '卡在没有梯子', type: 'RB', parent: id });
+	await assert.rejects(
+		() => tool('task_state').execute({ id, status: '失败' }),
+		/失败的记录/u,
+		'阻碍还没被标成失败，不算依据',
+	);
+
+	/* 把阻碍标成失败 → 放行 */
+	const rb = taskIdOf(id, 'RB');
+	await approve(rb);
+	await tool('task_state').execute({ id: rb, status: '失败' });
 	await tool('task_state').execute({ id, status: '失败' });
 	assert.equal(taskOf(id).status, '失败');
 });
 
-test('失败必须有理由：note 也能当理由载体（AI 走工具路径时）', async () => {
-	/* 面板会引导用户建阻碍，但 AI 调 task_state 不会弹窗。
-	   对它来说 note 就是那句话的载体。 */
+test('GU-08 3.5：note 不再能替代失败依据（AI 路径也拦）', async () => {
+	/* GU-08 之前 note 可以兜底；之后不行 —— 依据必须是子事项的状态。 */
 	const id = await submit({ title: '会失败的活', type: 'WI' });
 	await approve(id);
 	await claim(id, newSession());
-	await tool('task_state').execute({ id, status: '失败', note: '卡在权限上，没有可用的网络出口' });
-	assert.equal(taskOf(id).status, '失败');
-	assert.equal(taskOf(id).note, '卡在权限上，没有可用的网络出口');
+	await assert.rejects(
+		() => tool('task_state').execute({ id, status: '失败', note: '卡在权限上' }),
+		/失败的记录/u,
+	);
+	assert.equal(taskOf(id).status, '处理中');
 });
 
-test('失败必须有理由：记录类子事项就算理由，不必非得是阻碍', async () => {
-	/* 用户说"不区分具体是什么记录"。所以 RR / RF / RD 都算。 */
+test('GU-08 3.5：用户转失败不受限制', async () => {
 	const id = await submit({ title: '会失败的活', type: 'WI' });
 	await approve(id);
 	await claim(id, newSession());
-	await submit({ title: '一份复盘', type: 'RF', parent: id });
-	await tool('task_state').execute({ id, status: '失败' });
+	const result = await command('task-state').handler({ rawInput: id + ' 失败' });
+	assert.equal(result.kind, 'success', '用户路径不该被守卫拦：' + result.text);
 	assert.equal(taskOf(id).status, '失败');
 });
 
-test('搁置后能重新领取（「需要补充」不是死路）', async () => {
+test('GU-08 3.6：工作转成功，AI 必须有成功的交付', async () => {
+	const id = await submit({ title: '会成功的活', type: 'WI' });
+	await approve(id);
+	await claim(id, newSession());
+
+	await assert.rejects(
+		() => tool('task_state').execute({ id, status: '成功' }),
+		/成功的交付记录/u,
+	);
+
+	/* 建交付并标成功 → 放行 */
+	await deliver(id, '成功');
+	await tool('task_state').execute({ id, status: '成功' });
+	assert.equal(taskOf(id).status, '成功');
+});
+
+test('GU-08 3.6：用户转成功不受限制', async () => {
+	const id = await submit({ title: '会成功的活', type: 'WI' });
+	await approve(id);
+	await claim(id, newSession());
+	const result = await command('task-state').handler({ rawInput: id + ' 成功' });
+	assert.equal(result.kind, 'success', '用户路径不该被守卫拦：' + result.text);
+	assert.equal(taskOf(id).status, '成功');
+});
+
+test('搁置后能重新领取（「需要信息」不是死路）', async () => {
 	/*
 	 * 这条回归锁的是子 AI 审查发现的一个功能级死路：
 	 *
 	 *   领取 → 处理中
-	 *   AI 卡住 → task_state 置为「需要补充」（setStateInner 里会清掉 CLAIMS）
-	 *   用户补完信息 → 状态仍是「需要补充」
+	 *   AI 卡住 → task_state 置为「需要信息」（setStateInner 里会清掉 CLAIMS）
+	 *   用户补完信息 → 状态仍是「需要信息」
 	 *   AI 想接着做 → task_claim 要求 from === '提交' → 拒绝
 	 *
-	 * 「需要补充」「需要授权」的语义是**进行中的暂停**（GROUP_OF 里它们
+	 * 「需要信息」「需要授权」的语义是**进行中的暂停**（GROUP_OF 里它们
 	 * 同时属于「进行」和「搁置」），暂停之后必须能恢复，否则这张计划
 	 * 只能被取消重开。
 	 */
@@ -569,8 +656,8 @@ test('搁置后能重新领取（「需要补充」不是死路）', async () =>
 	assert.equal(taskOf(id).status, '处理中', '领取后应该是处理中');
 
 	/* 遇到障碍，挂起等用户补充 */
-	await tool('task_state').execute({ id, status: '需要补充' });
-	assert.equal(taskOf(id).status, '需要补充');
+	await tool('task_state').execute({ id, status: '需要信息' });
+	assert.equal(taskOf(id).status, '需要信息');
 
 	/* 用户补了信息，AI 重新领取继续做 —— 这一步原来会抛「只有提交能领取」 */
 	const again = await tool('task_claim').execute({ id }, { agent: { id: session } });
@@ -799,17 +886,17 @@ test('九态分组：一个状态可属于多个组，三分类由分组派生',
 	assert.deepEqual(of('未指定'), [], '草稿不属于任何组');
 	assert.deepEqual(of('提交'), ['进行']);
 	assert.deepEqual(of('处理中'), ['进行']);
-	assert.deepEqual(of('完成'), ['完成']);
-	assert.deepEqual(of('失败'), ['完成']);
-	assert.deepEqual(of('取消'), ['完成']);
-	assert.deepEqual(of('拒绝'), ['完成']);
+	assert.deepEqual(of('成功'), ['结束']);
+	assert.deepEqual(of('失败'), ['结束']);
+	assert.deepEqual(of('取消'), ['结束']);
+	assert.deepEqual(of('拒绝'), ['结束']);
 	/* 关键：搁置的两种同时属于「进行」和「搁置」 */
-	assert.deepEqual(of('需要补充'), ['进行', '搁置']);
+	assert.deepEqual(of('需要信息'), ['进行', '搁置']);
 	assert.deepEqual(of('需要授权'), ['进行', '搁置']);
 
 	assert.deepEqual(
 		model.groups.map((g) => g.id),
-		['进行', '搁置', '完成'],
+		['进行', '搁置', '结束'],
 	);
 
 	/* /tasks 的每一行带上 groups，面板据此着色 */
@@ -944,8 +1031,9 @@ test('依赖未完成不能领取；依赖不存在不能领取；依赖完成�
 	await assert.rejects(() => claim(missing, newSession()), /依赖 T-999 不存在/u);
 
 	/* 依赖完成后放行 */
-	await changeState(dep, '完成');
-	assert.equal(taskOf(dep).status, '完成');
+	await deliver(dep, '成功');
+	await changeState(dep, '成功');
+	assert.equal(taskOf(dep).status, '成功');
 	const claimed = await claim(id, newSession());
 	assert.match(claimed.text, /已领取/u);
 	assert.equal(taskOf(id).status, '处理中');
@@ -971,7 +1059,8 @@ test('依赖失败 / 取消 / 拒绝时拒领，且报错带出当前状态；�
 
 	/* 多个依赖：报第一个没满足的 */
 	const okDep = await submit({ title: '已完成的前置' });
-	await changeState(okDep, '完成');
+	await deliver(okDep, '成功');
+	await changeState(okDep, '成功');
 	const badDep = await submit({ title: '没完成的前置' });
 	const multi = await submit({ title: '两个依赖', links: `依赖:${okDep}, 依赖:${badDep}` });
 	await approve(multi);
@@ -1045,13 +1134,16 @@ test('同一会话一次只能有一个「处理中」；换会话可以并行',
 	assert.equal(taskOf(second).claimed_by, b);
 });
 
-test('终态（完成 / 失败 / 取消 / 拒绝）清空 claimed_by', async () => {
-	for (const status of ['完成', '失败', '取消', '拒绝']) {
+test('终态（成功 / 失败 / 取消 / 拒绝）清空 claimed_by', async () => {
+	for (const status of ['成功', '失败', '取消', '拒绝']) {
 		const id = await submit({ title: `要进入终态的 ${status}` });
 		await approve(id);
 		const mine = newSession();
 		await claim(id, mine);
 		assert.equal(taskOf(id).claimed_by, mine);
+		/* GU-08 3.5/3.6：AI 转成功要有成功交付，转失败要有失败阻碍。 */
+		if (status === '成功') await deliver(id, '成功');
+		if (status === '失败') await block(id);
 		await changeState(id, status);
 		const stored = taskOf(id);
 		assert.equal(stored.status, status);
@@ -1322,7 +1414,7 @@ test('停止原因词表：阻碍模板带 reason 小节，且词表文档存在
 	const yaml = (await tool('task_template').execute({ type: 'RB' })).text;
 	assert.match(yaml, /reason/u, 'B.yml 应有 reason 小节');
 	assert.match(yaml, /需要授权/u, 'reason 提示里应列出需要授权类');
-	assert.match(yaml, /需要补充/u, 'reason 提示里应列出需要补充类');
+	assert.match(yaml, /需要信息/u, 'reason 提示里应列出需要信息类');
 });
 
 test('/tasks 只给计划头、/task-get 给全文、/task-state 命令路径改状态并记 claim', async () => {
@@ -1383,30 +1475,30 @@ test('/tasks 只给计划头、/task-get 给全文、/task-state 命令路径改
 test('上行：子计划还有进行态时不许完成父计划；草稿与完成态不阻挡', async () => {
 	const parent = await submit({ title: '父计划', type: 'RB', body: '父正文' });
 	const pending = await submit({ title: '缺信息的子计划', type: 'C', parent });
-	await changeState(pending, '需要补充');
+	await changeState(pending, '需要信息');
 
 	await assert.rejects(
-		() => changeState(parent, '完成'),
+		() => changeState(parent, '成功'),
 		/子计划还在进行中/u,
-		'子计划处于「需要补充」时父计划不能完成',
+		'子计划处于「需要信息」时父计划不能完成',
 	);
 	assert.equal(taskOf(parent).status, '未指定', '被拒后父计划状态不变');
 
-	/* 进行态里的四种都挡：提交 / 处理中 / 需要补充 / 需要授权 */
+	/* 进行态里的四种都挡：提交 / 处理中 / 需要信息 / 需要授权 */
 	const submitted = await submit({ title: '还没领取的子计划', type: 'C', parent });
 	await approve(submitted);
-	await assert.rejects(() => changeState(parent, '完成'), /子计划还在进行中/u);
+	await assert.rejects(() => changeState(parent, '成功'), /子计划还在进行中/u);
 
 	/* 草稿（未指定）不作数、完成态（取消）不阻挡 → 可以完成 */
 	const draft = await submit({ title: '草稿子计划', type: 'C', parent });
 	await changeState(pending, '取消');
 	await changeState(submitted, '取消');
-	await changeState(parent, '完成');
-	assert.equal(taskOf(parent).status, '完成');
+	await changeState(parent, '成功');
+	assert.equal(taskOf(parent).status, '成功');
 	assert.equal(taskOf(draft).status, '未指定', '草稿子计划不该被父计划的完成改写');
 });
 
-test('下行：父计划终止（完成/失败/取消/拒绝）时，进行态的子计划全部取消（递归），草稿与完成态不动', async () => {
+test('下行：父计划终止（成功/失败/取消/拒绝）时，进行态的子计划全部取消（递归），草稿与完成态不动', async () => {
 	/* 失败这条最典型：父计划走不下去，还活着的派生任务不该继续挂着 */
 	const parent = await submit({ title: '父计划', type: 'RB', body: '父正文' });
 	const active = await submit({ title: '待领取的子计划', type: 'C', parent });
@@ -1417,7 +1509,7 @@ test('下行：父计划终止（完成/失败/取消/拒绝）时，进行态�
 	await approve(grandchild);
 	const draft = await submit({ title: '草稿子计划', type: 'C', parent });
 	const delivered = await submit({ title: '已交付的子计划', type: 'C', parent });
-	await changeState(delivered, '完成');
+	await changeState(delivered, '成功');
 
 	await changeState(parent, '失败');
 
@@ -1426,17 +1518,18 @@ test('下行：父计划终止（完成/失败/取消/拒绝）时，进行态�
 	assert.equal(taskOf(shelved).status, '取消', '需要授权是进行态，应被取消');
 	assert.equal(taskOf(grandchild).status, '取消', '级联应递归到孙计划');
 	assert.equal(taskOf(draft).status, '未指定', '草稿不作数，不该被动');
-	assert.equal(taskOf(delivered).status, '完成', '完成态是已交付记录，不该被改写');
+	assert.equal(taskOf(delivered).status, '成功', '完成态是已交付记录，不该被改写');
 	assert.equal(taskOf(active).claimed_by, '');
 });
 
 test('下行：父计划「完成」时派生下游同样是空操作（子计划本来就都终结了）', async () => {
 	const parent = await submit({ title: '父计划', type: 'RB' });
 	const done = await submit({ title: '做完的子计划', type: 'C', parent });
-	await changeState(done, '完成');
-	await changeState(parent, '完成');
-	assert.equal(taskOf(parent).status, '完成');
-	assert.equal(taskOf(done).status, '完成', '已完成的子计划保持完成');
+	await deliver(done, '成功');
+	await changeState(done, '成功');
+	await changeState(parent, '成功');
+	assert.equal(taskOf(parent).status, '成功');
+	assert.equal(taskOf(done).status, '成功', '已完成的子计划保持完成');
 });
 
 test('依赖链单向终结：前者失败/取消/拒绝，进行态的下游全部取消（递归），完成则放行', async () => {
@@ -1445,7 +1538,8 @@ test('依赖链单向终结：前者失败/取消/拒绝，进行态的下游全
 	const after = await submit({ title: '依赖它的后者', links: `依赖:${good}` });
 	await approve(good);
 	await approve(after);
-	await changeState(good, '完成');
+	await deliver(good, '成功');
+	await changeState(good, '成功');
 	assert.equal(taskOf(after).status, '提交', '前者完成，后者照常待领');
 
 	/* 前者失败 → 后者取消；再沿着链递归 */
@@ -1455,6 +1549,7 @@ test('依赖链单向终结：前者失败/取消/拒绝，进行态的下游全
 	const tailDraft = await submit({ title: '链尾的草稿', links: `依赖:${mid}` });
 	await approve(mid);
 	await approve(tail);
+	await block(bad);
 	await changeState(bad, '失败');
 	assert.equal(taskOf(mid).status, '取消', '直接依赖失败者的应取消');
 	assert.equal(taskOf(tail).status, '取消', '级联应顺着依赖链递归');
@@ -1545,7 +1640,8 @@ test('完成不级联依赖方：父计划成功，等它的人照常可领', as
 	const upstream = await submit({ title: '做得成的前置' });
 	const waiter = await submit({ title: '等它的人', links: `依赖:${upstream}` });
 	await approve(waiter);
-	await changeState(upstream, '完成');
+	await deliver(upstream, '成功');
+	await changeState(upstream, '成功');
 	assert.equal(taskOf(waiter).status, '提交', '前者成功，后者保持待领');
 	const claimed = await claim(waiter, newSession());
 	assert.match(claimed.text, /已领取/u);
@@ -1648,7 +1744,7 @@ test('按计划档不死锁：计划管理工具在「工具全关 / 仅可查�
 	const readOnly = await submit({ title: '仅可查看的计划', permission: '仅可查看' });
 	await approve(readOnly);
 	await tool('task_state').execute(
-		{ id: locked, status: '完成' },
+		{ id: locked, status: '成功' },
 		{ agent: { id: 'session-guard' } },
 	);
 	await tool('task_state').execute(
@@ -1693,9 +1789,9 @@ test('会话隔离：一个会话只执行一个任务；两个会话并发领�
 	await assert.rejects(() => claims.claim(sessionA, third), /一次只能做一个/u);
 
 	/* 释放后快取同步清掉：effective 立刻返回 undefined，不会残留旧权限 */
-	await claims.release(sessionA, '完成');
+	await claims.release(sessionA, '成功');
 	assert.equal(await claims.effective(sessionA), undefined);
-	assert.equal(taskOf(a).status, '完成');
+	assert.equal(taskOf(a).status, '成功');
 	/* B 不受影响 */
 	assert.equal((await claims.effective(sessionB)).id, b);
 });
@@ -1843,8 +1939,8 @@ test('重开（T-030）：终态可以被用户重开回「提交」，模型不
 
 	/* 终态不能直接跳到别的状态，只能回「提交」 */
 	await claim(id, newSession());
-	await tool('task_state').execute({ id, status: '完成' });
-	assert.equal(taskOf(id).status, '完成');
+	await tool('task_state').execute({ id, status: '成功' });
+	assert.equal(taskOf(id).status, '成功');
 	const jumped = await command('task-state').handler({ rawInput: `${id} 处理中` });
 	assert.equal(jumped.kind, 'error');
 	assert.match(jumped.text, /重开只能从「完成」回到「提交」/u);
@@ -1898,7 +1994,7 @@ test('CLAIMS 不会陈旧：用工具切任务后，旧 claim 立即失效（T-0
 	);
 
 	/* 用工具完成：CLAIMS 必须同步清掉 */
-	await tool('task_state').execute({ id, status: '完成' }, { agent: { id: 'stale-session' } });
+	await tool('task_state').execute({ id, status: '成功' }, { agent: { id: 'stale-session' } });
 	assert.match(
 		String(guard(exec('write', { file_path: 'C:\\Windows\\b.dll' }))),
 		/没有可用的领取/u,
@@ -2103,7 +2199,7 @@ test('事件溯源：老事件（没有 ts/actor/from-to）照样能读，不会
 	/* 造一份「老格式」存储：只有 op/task，没有任何新字段 */
 	const legacy = [
 		{ op: 'upsert', task: { id: 'T-001', title: '老计划', type: 'DB', status: '提交', claimed_by: '', body: 'x' } },
-		{ op: 'upsert', task: { id: 'T-001', title: '老计划', type: 'DB', status: '完成', claimed_by: '', body: 'x' } },
+		{ op: 'upsert', task: { id: 'T-001', title: '老计划', type: 'DB', status: '成功', claimed_by: '', body: 'x' } },
 	];
 	writeFileSync(STORE_PATH, legacy.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8');
 	const before = readFileSync(STORE_PATH, 'utf8');
@@ -2112,7 +2208,7 @@ test('事件溯源：老事件（没有 ts/actor/from-to）照样能读，不会
 	const listed = await tool('task_list').execute({ group: 'all' });
 	assert.match(listed.text, /老计划/u);
 	const got = await tool('task_get').execute({ id: 'T-001' });
-	assert.equal(taskOf('T-001').status, '完成', '折叠逻辑不受影响');
+	assert.equal(taskOf('T-001').status, '成功', '折叠逻辑不受影响');
 
 	/* 历史也能读，只是缺字段显示为 — */
 	const history = await tool('task_history').execute({ id: 'T-001' });
@@ -2129,7 +2225,7 @@ test('事件溯源：坏事件行不影响历史读取', async () => {
 		[
 			JSON.stringify({ op: 'upsert', ts: new Date().toISOString(), actor: 'a', task: { id: 'T-001', title: 'x', status: '提交', body: '' } }),
 			'{ 这一行是坏的 json',
-			JSON.stringify({ op: 'upsert', ts: new Date().toISOString(), actor: 'b', from: '提交', to: '完成', task: { id: 'T-001', title: 'x', status: '完成', body: '' } }),
+			JSON.stringify({ op: 'upsert', ts: new Date().toISOString(), actor: 'b', from: '提交', to: '成功', task: { id: 'T-001', title: 'x', status: '成功', body: '' } }),
 		].join('\n') + '\n',
 		'utf8',
 	);
@@ -2185,7 +2281,8 @@ test('四类别：目标不占位，可以做多个工作互不影响', async ()
 	const a = newSession();
 	/* 领工作一，做完，再领工作二 —— 目标从头到尾没参与竞争 */
 	await claim(w1, a);
-	await changeState(w1, '完成');
+	await deliver(w1, '成功');
+	await changeState(w1, '成功');
 	await claim(w2, a);
 	assert.equal(taskOf(w2).status, '处理中');
 	assert.equal(taskOf(goal).status, '提交', '目标状态不受领取影响');
@@ -2240,8 +2337,9 @@ test('目标的状态由子事项推导（DP-02）：五条规则', async () => 
 	const kid2 = await submit({ title: '子事项二', type: 'WI', parent: goal2 });
 	await approve(kid2);
 	await claim(kid2, newSession());
-	await changeState(kid2, '完成');
-	assert.equal(await derivedOf(goal2), '完成');
+	await deliver(kid2, '成功');
+	await changeState(kid2, '成功');
+	assert.equal(await derivedOf(goal2), '成功');
 });
 
 test('目标不能手动设状态：完成/处理中都被拒，拒绝和取消可以', async () => {
@@ -2250,7 +2348,7 @@ test('目标不能手动设状态：完成/处理中都被拒，拒绝和取消�
 	const goal = await submit({ title: '一个目标', type: 'GU' });
 	await approve(goal);
 
-	for (const status of ['完成', '处理中', '失败']) {
+	for (const status of ['成功', '处理中', '失败']) {
 		await assert.rejects(
 			() => changeState(goal, status, '随便写'),
 			/由子事项推导/u,
@@ -2426,6 +2524,6 @@ test('assertParent 与 task_dispatch 用同一套判定', async () => {
 test('task_state 校验九态名与计划 id，非法值不改状态', async () => {
 	const id = await submit({ title: '状态校验' });
 	await assert.rejects(() => changeState(id, '草稿'), /状态必须是九态之一/u);
-	await assert.rejects(() => changeState('T-999', '完成'), /没有这份计划：T-999/u);
+	await assert.rejects(() => changeState('T-999', '成功'), /没有这份计划：T-999/u);
 	assert.equal(taskOf(id).status, '未指定');
 });
