@@ -463,6 +463,21 @@ function kindOf(task) {
 	return 'work';
 }
 
+/** 一条事项的状态，缺省按草稿算。 */
+function statusOf(task) {
+	return String(task?.status || '未指定');
+}
+
+/** 一条事项的模板编号（双字母，老数据自动升级）。 */
+function typeOf(task) {
+	return normalizeType(task?.type);
+}
+
+/** 是否已经结束（成功/失败/拒绝/取消）—— 结束的东西不再参与计算。 */
+function isEnded(task) {
+	return PARENT_CLOSED.has(statusOf(task));
+}
+
 /** 这个 kind 是否参与领取竞争。 */
 function isClaimable(task) {
 	return KINDS[kindOf(task)]?.claimable === true;
@@ -606,64 +621,233 @@ const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup
  * 目标是纯投影：它没有自己的生命周期，只有"下面那堆事到哪一步了"。
  * 推导值不进 `status` 字段。真实的 `status` 只由用户/工具显式设置。
  */
-const GOAL_DERIVED = {
-	未开始: '未开始',
-	提交: '提交',
-	处理中: '处理中',
-	需要信息: '需要信息',
-	需要授权: '需要授权',
-	失败: '失败',
-	成功: '成功',
-	已取消: '已取消',
+/*
+ * ---------------------------------------------------------------------------
+ * 四类的状态推导（GU-08）
+ * ---------------------------------------------------------------------------
+ *
+ * 用户原话：
+ *
+ *   > 给模板改变状态变更，状态分组，专有名词，状态转移。
+ *   >
+ *   > 草稿：未指定
+ *   > 进行：提交，处理中
+ *   > 搁置：需要信息，需要授权
+ *   > 结束：成功，失败，拒绝，取消
+ *   >
+ *   > 目标：用户需求
+ *   > 设计：提问，决策
+ *   > 工作：调研，校验
+ *   > 记录：阻碍，交付，复盘，留档
+ *
+ * ## 两类状态
+ *
+ * **存储态** —— 由人/AI 的动作写进 `status` 字段：
+ *
+ *     未指定 --采纳(人)--> 提交 --领取--> 处理中
+ *     处理中 --交付成功(人批准)--> 成功
+ *     处理中 --满足守卫--> 失败
+ *     任意 --取消--> 取消
+ *     任意 --拒绝(人)--> 拒绝
+ *
+ * **计算态** —— 不存，每次由子事项算出来：
+ *
+ *     需要信息 / 需要授权
+ *
+ * 计算态是**覆盖层**，不是存下来的状态。梗阻消失后不是"回到"某个状态，
+ * 而是重新算一遍，发现没有梗阻，露出底下的存储态。
+ *
+ * ## 规则的第 3 节开头那句话
+ *
+ *   > 只有说了用户或ai进行操作的，才是手动转换。否则为计算状态，
+ *   > 状态在更前面的更具有优先级
+ *
+ * 所以每类的规则分成三栏：
+ *
+ *     manual   人/AI 的动作（写 status）
+ *     computed 从子事项算出来的梗阻（不写 status）
+ *     guard    手动动作的前置条件（不参与优先级）
+ */
+
+/**
+ * 四类各自的计算态规则。
+ *
+ * 每一项是一个 `(task, children) => string` —— 返回空串表示不触发。
+ * 数组顺序就是优先级，前面的赢。
+ */
+const COMPUTED_RULES = {
+	/*
+	 * 1. 目标：1.1–1.10
+	 *
+	 * 1.1 没采纳 → 未开始（不计算）
+	 * 1.2 没子任务或全未指定 → 提交
+	 * 1.3 有处理中或提交 → 处理中
+	 * 1.4 有需要信息 → 需要信息
+	 * 1.5 有需要授权 → 需要授权
+	 * 1.6 有失败且无成功 → 失败
+	 * 1.7 有成功 → 成功
+	 *
+	 * 1.8 取消、1.9 拒绝是手动动作，不在这里。
+	 */
+	goal: [
+		{
+			why: '1.2 没有任何子任务，或子任务全是未指定',
+			test: (task, kids) => {
+				const live = kids.filter((k) => statusOf(k) !== '未指定');
+				return live.length === 0 ? '提交' : '';
+			},
+		},
+		{
+			why: '1.3 有子任务在处理中或提交（AI 要继续，所以压在等你之上）',
+			test: (task, kids) => (kids.some((k) => ['处理中', '提交'].includes(statusOf(k))) ? '处理中' : ''),
+		},
+		{
+			why: '1.4 有子任务需要信息',
+			test: (task, kids) => (kids.some((k) => statusOf(k) === '需要信息') ? '需要信息' : ''),
+		},
+		{
+			why: '1.5 有子任务需要授权',
+			test: (task, kids) => (kids.some((k) => statusOf(k) === '需要授权') ? '需要授权' : ''),
+		},
+		{
+			why: '1.6 有失败且没有任何成功',
+			test: (task, kids) => {
+				const hasFail = kids.some((k) => statusOf(k) === '失败');
+				const hasDone = kids.some((k) => statusOf(k) === '成功');
+				return hasFail && !hasDone ? '失败' : '';
+			},
+		},
+		{
+			why: '1.7 有任何成功',
+			test: (task, kids) => (kids.some((k) => statusOf(k) === '成功') ? '成功' : ''),
+		},
+		{
+			why: '兜底：子任务全都不做了（全取消/拒绝）',
+			test: (task, kids) => {
+				const live = kids.filter((k) => statusOf(k) !== '未指定');
+				if (live.length === 0) return '';
+				return live.every((k) => ['取消', '拒绝'].includes(statusOf(k))) ? '取消' : '';
+			},
+		},
+	],
+
+	/*
+	 * 2. 设计：2.1–2.4
+	 *
+	 * 2.1 初始 需要授权（人工设置，不是推导）
+	 * 2.2 有任何未结束的调研子任务 → 需要信息
+	 * 2.3 用户手动转 成功/拒绝/取消
+	 * 2.4 设计不会失败
+	 */
+	design: [
+		{
+			why: '2.2 有未结束的调研子任务',
+			test: (task, kids) => {
+				const draft = kids.some((k) => kindOf(k) === 'work' && typeOf(k) === 'WR' && !isEnded(k));
+				return draft ? '需要信息' : '';
+			},
+		},
+	],
+
+	/*
+	 * 3. 工作：3.1–3.8
+	 *
+	 * 3.1 初始 未指定，需要用户采纳
+	 * 3.2 需要用户或 AI 领取 → 处理中
+	 * 3.3 有不为结束的调研或设计子任务 → 需要信息
+	 * 3.4 有需要授权的阻碍子任务 → 需要授权
+	 * 3.5/3.6/3.7/3.8 是手动动作的守卫，不在这里
+	 */
+	work: [
+		{
+			why: '3.3 有未结束的调研或设计子任务',
+			test: (task, kids) => {
+				const blocked = kids.some((k) => {
+					if (isEnded(k)) return false;
+					const kind = kindOf(k);
+					if (kind === 'design') return true;
+					if (kind === 'work' && typeOf(k) === 'WR') return true;
+					return false;
+				});
+				return blocked ? '需要信息' : '';
+			},
+		},
+		{
+			why: '3.4 有需要授权的阻碍子任务',
+			test: (task, kids) => {
+				const blocked = kids.some((k) => kindOf(k) === 'record' && typeOf(k) === 'RB' && statusOf(k) === '需要授权');
+				return blocked ? '需要授权' : '';
+			},
+		},
+	],
+
+	/*
+	 * 4. 记录：4.1–4.2
+	 *
+	 * 4.1 初始 需要授权，只能由用户转 成功/失败
+	 * 4.2 阻碍成功=解决，失败=解决不了
+	 *
+	 * 记录**没有计算态** —— 它不靠子任务，写出来就等人看。
+	 */
+	record: [],
 };
 
 /**
- * 按子事项推导一个目标当前的样子。
+ * 一条事项现在应该显示什么状态。
  *
- * 返回 `未开始` 表示「还没采纳」或「下面什么都没有」——
- * 这两件事对用户是同一个意思：这目标还没动。
+ * 计算态优先于存储态：有梗阻时显示梗阻，没梗阻才显示 status 字段。
+ *
+ * @param {object} task
+ * @param {object[]} all
+ * @returns {string}
+ */
+function derivedStatus(task, all) {
+	const kids = all.filter((item) => item.parent === task.id);
+	const kind = kindOf(task);
+
+	/* 草稿不计算 —— 没采纳的东西不投影。 */
+	if (statusOf(task) === '未指定') return '未指定';
+
+	/* 结束态不被计算覆盖：已经结束的东西不再"等什么"。 */
+	if (isEnded(task)) return statusOf(task);
+
+	for (const rule of COMPUTED_RULES[kind] || []) {
+		const got = rule.test(task, kids);
+		if (got !== '') return got;
+	}
+
+	return statusOf(task);
+}
+
+/**
+ * 当前生效的是哪一条规则（给详情页显示"为什么是这个状态"）。
+ *
+ * @param {object} task
+ * @param {object[]} all
+ * @returns {{why: string, status: string}|undefined}
+ */
+function derivedReason(task, all) {
+	const kids = all.filter((item) => item.parent === task.id);
+	const kind = kindOf(task);
+	if (statusOf(task) === '未指定' || isEnded(task)) return undefined;
+	for (const rule of COMPUTED_RULES[kind] || []) {
+		const got = rule.test(task, kids);
+		if (got !== '') return { why: rule.why, status: got };
+	}
+	return undefined;
+}
+
+/**
+ * 目标状态的推导（旧名，保留给已有调用点）。
+ *
+ * 新代码请用 `derivedStatus(task, all)` —— 它对四类都适用。
  *
  * @param {object} task
  * @param {object[]} all
  * @returns {string}
  */
 function deriveGoalStatus(task, all) {
-	/* 1.1：没采纳就不计算，直接算未开始。 */
-	if (String(task.status || '未指定') === '未指定') return GOAL_DERIVED.未开始;
-
-	const children = all.filter((item) => item.parent === task.id);
-	const statuses = children.map((item) => String(item.status || '未指定'));
-
-	/* 1.2：没有子任务，或者子任务全是未指定 → 提交（已采纳，还没动）。 */
-	const live = statuses.filter((status) => status !== '未指定');
-	if (live.length === 0) return GOAL_DERIVED.提交;
-
-	/* 1.3：有任何子任务在处理中或提交 → 处理中。 */
-	if (live.some((status) => status === '处理中' || status === '提交')) return GOAL_DERIVED.处理中;
-
-	/* 1.4：有需要信息 → 需要信息。 */
-	if (live.some((status) => status === '需要信息')) return GOAL_DERIVED.需要信息;
-
-	/* 1.5：有需要授权 → 需要授权。 */
-	if (live.some((status) => status === '需要授权')) return GOAL_DERIVED.需要授权;
-
-	/* 1.6：有失败且没有任何成功 → 失败。 */
-	const hasFail = live.some((status) => status === '失败');
-	const hasDone = live.some((status) => status === '成功');
-	if (hasFail && !hasDone) return GOAL_DERIVED.失败;
-
-	/* 1.7：有任何成功 → 成功。 */
-	if (hasDone) return GOAL_DERIVED.成功;
-
-	/*
-	 * 兜底：到这里只可能是「子任务全是 取消 / 拒绝」。
-	 *
-	 * 规则里没写这一档（1.2–1.7 都要求子任务在某个具体状态），
-	 * 但不给兜底的话目标会没有状态。子任务全都不做了 → 目标也不做了。
-	 */
-	if (live.every((status) => status === '取消' || status === '拒绝')) return GOAL_DERIVED.已取消;
-
-	return GOAL_DERIVED.处理中;
+	return derivedStatus(task, all);
 }
 
 function isActive(status) {
