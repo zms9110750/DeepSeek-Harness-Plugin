@@ -721,16 +721,17 @@ function customRow(props, current, active, multi) {
       const text = String(e.target.value);
       const trimmed = text.trim();
 
-      if (multi) {
-        /* 多选：序号项保留，自定义项换成这一句 */
-        commitQuiet(props, { picked_multi: mergeCustom(props.pickedMulti, text) });
-      } else {
-        /*
-         * 单选：输入框里的字就是 picked。
-         * 空字符串表示「还没填」，保留原状态不覆盖。
-         */
-        if (trimmed !== '') commitQuiet(props, { picked: trimmed });
-      }
+      /*
+       * 统一写 picked **数组** —— 单选多选都一样。
+       *
+       * customRow 是独立函数，拿不到 renderAskComponent 里的 list，
+       * 所以从 props 自己算一遍：只有序号项要保留，自填项换成这一句。
+       */
+      const cur = Array.isArray(props.picked) ? props.picked.map(String) : [];
+      const nums = cur.filter(function (x) { return /^\d+$/u.test(x); });
+      const next = nums.slice();
+      if (trimmed !== '') next.push(trimmed);
+      commitQuiet(props, { picked: next });
 
       paintSelection(props, multi, trimmed !== '');
     },
@@ -1040,20 +1041,6 @@ function renderAskComponent(props) {
    * 卡片的任何状态都不该改变它的高度。
    */
   return card;
-}
-
-/**
- * 多选：加/删一项。
- *
- * @param {object} props
- * @param {string} key
- */
-function toggleMultiPick(props, key) {
-  const current = Array.isArray(props.pickedMulti) ? props.pickedMulti.map(String) : [];
-  const i = current.indexOf(key);
-  if (i >= 0) current.splice(i, 1);
-  else current.push(key);
-  commit(props, { picked_multi: current });
 }
 
 function renderRankComponent(props) {

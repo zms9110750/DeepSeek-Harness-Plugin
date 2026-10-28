@@ -47,7 +47,7 @@ function el(tag, props, ...children) {
 
      text      value
      markdown  value
-     ask       options[{title, placeholder}] / picked / allow_custom / allow_defer
+     ask       options[{label, description, recommended}] / max_picks
      rank      items[{title, placeholder}] / keep
      derive    templates[] / mode
 
