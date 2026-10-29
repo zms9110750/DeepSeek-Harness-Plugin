@@ -3022,7 +3022,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           /* 归档（DP-04）：默认不在树/列表里显示。 */
           archived: row.archived === true,
           /* 属于哪些分组（id 数组）。面板从 groups.jsonl 反填，宿主 /tasks 也填。 */
-          stategroupsOf: Array.isArray(row.stategroupsOf) ? row.stategroupsOf.map(String) : [],
+          workgroups: Array.isArray(row.workgroups) ? row.workgroups.map(String) : [],
           /* 标签：多个，自由字符串。用于跨组检索。 */
           tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
           /* 开放问题进度：树/列表上可以标「还差 2 条没答」。 */
@@ -3216,10 +3216,18 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       }
       function TaskList(props) {
         const tasks = props.tasks;
+        /*
+         * 四个桶 = 三个状态组 + 草稿。
+         *
+         * 第三桶必须叫「结束」不能叫「成功」——
+         * 它是兜底桶，失败 / 取消 / 拒绝全落这儿。
+         * 叫「成功」就会出现「成功（3）」底下挂着两条失败，
+         * 看板会撒谎。
+         */
         const byGroup = [
           { id: "\u8FDB\u884C", label: "\u8FDB\u884C" },
           { id: "\u6401\u7F6E", label: "\u6401\u7F6E" },
-          { id: "\u6210\u529F", label: "\u6210\u529F" },
+          { id: "\u7ED3\u675F", label: "\u7ED3\u675F" },
           { id: "", label: "\u8349\u7A3F" }
         ];
         const bucket = function(node) {
@@ -3227,7 +3235,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           const groups = stategroupsOf(node.status);
           if (groups.indexOf("\u6401\u7F6E") !== -1) return "\u6401\u7F6E";
           if (groups.indexOf("\u8FDB\u884C") !== -1) return "\u8FDB\u884C";
-          return "\u6210\u529F";
+          return "\u7ED3\u675F";
         };
         return h(
           "div",
@@ -3930,7 +3938,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               const heads = [
                 { key: "active", label: "\u8FDB\u884C", color: "var(--dsw-alias-brand-primary)" },
                 { key: "held", label: "\u6401\u7F6E", color: "#c98a20" },
-                { key: "done", label: "\u6210\u529F", color: "#2e9e6b" }
+                { key: "done", label: "\u7ED3\u675F", color: "#2e9e6b" }
               ];
               const groupOf = function(title, color, entries) {
                 if (entries.length === 0) return null;
@@ -5504,7 +5512,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 }
               }
               const rowsWithGroups = rows.map(function(row) {
-                return Object.assign({}, row, { stategroupsOf: ownerOf.get(row.id) || [] });
+                return Object.assign({}, row, { workgroups: ownerOf.get(row.id) || [] });
               });
               const currentPath = String(paths.store || "").replace(/[\\/][^\\/]+$/u, "") + "\\current.json";
               return Promise.resolve(files.read(sessionId, currentPath, void 0, void 0)).then(function(currentRaw) {
@@ -5805,7 +5813,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           function() {
             const needle = search.trim().toLowerCase();
             return allTasks.filter(function(node) {
-              const ownGroups = Array.isArray(node.stategroupsOf) ? node.stategroupsOf : [];
+              const ownGroups = Array.isArray(node.workgroups) ? node.workgroups : [];
               if (!showArchived && ownGroups.length > 0) {
                 const live = ownGroups.some(function(id) {
                   const group = groups.find(function(item) {
@@ -6037,7 +6045,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               });
               visible.forEach(function(group) {
                 const count = allTasks.filter(function(item) {
-                  return Array.isArray(item.stategroupsOf) && item.stategroupsOf.indexOf(group.id) !== -1;
+                  return Array.isArray(item.workgroups) && item.workgroups.indexOf(group.id) !== -1;
                 }).length;
                 const active = groupPick === group.id;
                 const isCurrent = currentGroup === group.id;

@@ -91,7 +91,7 @@ h("iframe", { srcDoc: content, sandbox: "allow-same-origin allow-scripts ..." })
 
 | 视图 | 组件 | 什么时候用 |
 | --- | --- | --- |
-| **列表** | `TaskList` | 看一批事项的标题和状态 |
+| **列表** | `TaskList` | 看一批任务的标题和状态 |
 | **科技树** | `TechTree` | 看父子结构 |
 | **详情** | `DetailPane` | 看/改一条 |
 | **新建** | `CreateForm` | 建一条 |

@@ -964,7 +964,7 @@ async function setProgress(id, sectionId, value) {
 		}
 
 		/* 标了 aiWritable / progress 才放行。 */
-		const allowed = section.aiWritable === true || section.progress === true;
+		const allowed = section.aiWritable === true;
 		if (!allowed) {
 			throw new Error(
 				`${task.id} 的「${wanted}」这一章不允许 AI 写。\n` +

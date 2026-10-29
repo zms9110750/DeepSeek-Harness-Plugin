@@ -718,8 +718,10 @@ function registerCommands(ctx) {
 							/* 归档：面板默认不显示，但**照样返回**——
 							   用户明确要求"已经归档的，ai 仍然可以用工具查看"。 */
 							archived: head.archived === true,
-							/* 属于哪些分组（id 数组）。 */
-							stategroupsOf: workgroupOfTask.get(head.id) ?? [],
+							/* 属于哪些**工作组**（id 数组）。
+							   注意字段名 —— 这里是工作组，不是状态组。
+							   上面那个 groups 才是状态组（进行/搁置/结束）。 */
+							workgroups: workgroupOfTask.get(head.id) ?? [],
 							/* 标签：多个，自由字符串。用于跨组检索。 */
 							tags: Array.isArray(head.tags) ? head.tags : [],
 							/* 标记：与状态正交（unread/read/needs-me/needs-review）。 */
