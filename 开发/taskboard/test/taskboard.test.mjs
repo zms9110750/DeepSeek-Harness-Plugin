@@ -329,10 +329,10 @@ function newSession() {
 /** 跑一次 task_submit，返回新任务 id。 */
 /** 每个用例前确保有一个默认分组（任务必须归组）。 */
 async function ensureGroup() {
-	const listed = await command('task-group-list').handler({});
+	const listed = await command('task-workgroup-list').handler({});
 	const groups = JSON.parse(listed.text);
 	if (groups.length > 0) return groups[0].id;
-	const made = await tool('task_group').execute({ action: 'create', name: '测试组' });
+	const made = await tool('task_workgroup').execute({ action: 'create', name: '测试组' });
 	const id = /已建分组 (g-\d+)/u.exec(made.text)?.[1];
 	assert.ok(id, `建分组没返回 id：${made.text}`);
 	return id;
@@ -504,7 +504,6 @@ test('apply 注册十五个工具、二十条面板命令、「按计划」预�
 		'task_dispatch',
 		'task_flag',
 		'task_get',
-		'task_group',
 		'task_history',
 		'task_list',
 		'task_note',
@@ -514,6 +513,7 @@ test('apply 注册十五个工具、二十条面板命令、「按计划」预�
 		'task_tag',
 		'task_template',
 		'task_update',
+		'task_workgroup',
 	]);
 	assert.deepEqual([...commands.keys()].sort(), [
 		'task-answer',
@@ -522,18 +522,18 @@ test('apply 注册十五个工具、二十条面板命令、「按计划」预�
 		'task-create',
 		'task-dispatch',
 		'task-get',
-		'task-group-archive',
-		'task-group-list',
-		'task-group-save',
-		'task-group-select',
-		'task-groups',
 		'task-history',
 		'task-note',
 		'task-paths',
 		'task-reject',
 		'task-state',
+		'task-stategroups',
 		'task-templates',
 		'task-update',
+		'task-workgroup-archive',
+		'task-workgroup-list',
+		'task-workgroup-save',
+		'task-workgroup-select',
 		'taskboard-prototype',
 		'tasks',
 	]);
@@ -916,7 +916,7 @@ test('开放问题：正文里没有「要定的点」时不产生问题', async
 });
 
 test('九态分组：一个状态可属于多个组，三分类由分组派生', async () => {
-	const c = command('task-groups');
+	const c = command('task-stategroups');
 	const raw = (await c.handler({})).text;
 	const model = JSON.parse(raw);
 

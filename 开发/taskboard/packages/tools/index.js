@@ -22,7 +22,7 @@
  *
  *   14 个模型工具：task_list / task_get / task_submit / task_claim /
  *                  task_state / task_template / task_dispatch / task_history /
- *                  task_group / task_flag / task_tag / task_note /
+ *                  task_workgroup / task_flag / task_tag / task_note /
  *                  task_answer / task_update
  *   + 展示层（renderList / summarize / renderHistory）
  *   + 一批面板命令（/tasks、/task-get、/task-state …）
@@ -97,10 +97,10 @@ const lazyTable = (name) => () => coreVal(name);
 /* 读 */
 const listAll = coreFn('listAll');
 const readTask = coreFn('readTask');
-const listGroups = coreFn('listGroups');
-const readCurrentGroup = coreFn('readCurrentGroup');
-const writeCurrentGroup = coreFn('writeCurrentGroup');
-const saveGroup = coreFn('saveGroup');
+const listWorkgroups = coreFn('listWorkgroups');
+const readCurrentWorkgroup = coreFn('readCurrentWorkgroup');
+const writeCurrentWorkgroup = coreFn('writeCurrentWorkgroup');
+const saveWorkgroup = coreFn('saveWorkgroup');
 const readHistory = coreFn('readHistory');
 
 /* 写 */
@@ -126,7 +126,7 @@ const normalizeType = coreFn('normalizeType');
 const normalizeLinks = coreFn('normalizeLinks');
 const linkPairs = coreFn('linkPairs');
 const kindOf = coreFn('kindOf');
-const groupsOf = coreFn('groupsOf');
+const stategroupsOf = coreFn('stategroupsOf');
 const deriveGoalStatus = coreFn('deriveGoalStatus');
 const isClaimable = coreFn('isClaimable');
 const isActive = coreFn('isActive');
@@ -248,7 +248,7 @@ function text(value) {
 	return typeof value === 'string' ? value : '';
 }
 function summarize(task) {
-	const groups = groupsOf(task.status);
+	const groups = stategroupsOf(task.status);
 	const kind = kindOf(task);
 	const bits = [
 		`${task.id} [${KINDS[kind]?.name ?? kind}/${task.type || '?'} ${typeNames()[task.type] || ''}] ${task.title}`,
@@ -346,14 +346,14 @@ function registerTools(ctx) {
 			},
 			async execute(args) {
 				const all = await listAll();
-				const groups = (await listGroups()).filter((entry) => entry.name !== '');
-				const current = await readCurrentGroup(currentSessionId());
+				const groups = (await listWorkgroups()).filter((entry) => entry.name !== '');
+				const current = await readCurrentWorkgroup(currentSessionId());
 				const wanted = String(args?.group ?? '').trim();
 
 				/* ① 没传 group → 列出所有分组（不列任务）。 */
 				if (wanted === '') {
 					if (groups.length === 0) {
-						return { text: '还没有任何工作组。用 task_group action=create name=… 建一个。' };
+						return { text: '还没有任何工作组。用 task_workgroup action=create name=… 建一个。' };
 					}
 					const lines = groups.map((group) => {
 						const live = group.members.filter((id) => all.some((item) => item.id === id));
@@ -414,12 +414,12 @@ function registerTools(ctx) {
 				/* 归属校验：防止跨组读到同编号的东西。 */
 				const scope = String(args.group ?? '').trim();
 				if (scope !== 'all') {
-					const groups = (await listGroups()).filter((entry) => entry.name !== '');
-					const groupId = scope !== '' ? scope : await readCurrentGroup(currentSessionId());
-					if (groupId !== '') {
-						const group = groups.find((entry) => entry.id === groupId);
+					const groups = (await listWorkgroups()).filter((entry) => entry.name !== '');
+					const workgroupId = scope !== '' ? scope : await readCurrentWorkgroup(currentSessionId());
+					if (workgroupId !== '') {
+						const group = groups.find((entry) => entry.id === workgroupId);
 						if (group === undefined) {
-							throw new Error(`没有这个分组：${groupId}。现有：${groups.map((g) => g.id).join(' / ') || '（没有）'}`);
+							throw new Error(`没有这个分组：${workgroupId}。现有：${groups.map((g) => g.id).join(' / ') || '（没有）'}`);
 						}
 						if (!group.members.includes(wanted)) {
 							throw new Error(
@@ -506,31 +506,31 @@ function registerTools(ctx) {
 				 *   3. **当前组**（跟随会话）
 				 *   4. 都没有 → 拒绝（说明怎么设当前组）
 				 */
-				const groups = (await listGroups()).filter((entry) => entry.name !== '');
+				const groups = (await listWorkgroups()).filter((entry) => entry.name !== '');
 				const parentId = text(args.parent);
-				let groupId = text(args.group);
-				if (groupId === '' && parentId !== '') {
+				let workgroupId = text(args.group);
+				if (workgroupId === '' && parentId !== '') {
 					const owner = groups.find((entry) => entry.members.includes(parentId));
-					if (owner !== undefined) groupId = owner.id;
+					if (owner !== undefined) workgroupId = owner.id;
 				}
-				if (groupId === '') {
+				if (workgroupId === '') {
 					/* 回落到当前组。sessionId 由工具上下文给（agent.id），
 					   没有就用 _default。 */
-					groupId = await readCurrentGroup(currentSessionId());
+					workgroupId = await readCurrentWorkgroup(currentSessionId());
 				}
-				if (groupId === '') {
+				if (workgroupId === '') {
 					throw new Error(
 						'task_submit: 没有分组可归属。\n' +
 							'每个工作组 = 一件事 / 一个项目；"闲聊不会创建出任务"，所以任务必须有归属。\n' +
 							(groups.length === 0
-								? '现在一个工作组都没有，先用 task_group action=create name=… 建一个。'
-								: '设一个「当前组」就不用每次指定了：task_group action=select group=…\n' +
+								? '现在一个工作组都没有，先用 task_workgroup action=create name=… 建一个。'
+								: '设一个「当前组」就不用每次指定了：task_workgroup action=select group=…\n' +
 									`现有分组：${groups.map((entry) => `${entry.id}（${entry.name}）`).join(' / ')}`),
 					);
 				}
-				const target = groups.find((entry) => entry.id === groupId);
+				const target = groups.find((entry) => entry.id === workgroupId);
 				if (target === undefined) {
-					throw new Error(`没有这个分组：${groupId}。现有：${groups.map((entry) => entry.id).join(' / ') || '（没有）'}`);
+					throw new Error(`没有这个分组：${workgroupId}。现有：${groups.map((entry) => entry.id).join(' / ') || '（没有）'}`);
 				}
 				/* 额外工作区：校验绝对路径并归一（逗号分隔）；非法直接拒，不落盘。 */
 				const workspaces = splitWorkspaces(args.workspaces).join(', ');
@@ -585,8 +585,8 @@ function registerTools(ctx) {
 					claimed_by: '',
 					body: bodyCheck.body,
 				});
-				/* 建完立刻认领进分组（同一把锁里已算好 groupId）。 */
-				await saveGroup({
+				/* 建完立刻认领进分组（同一把锁里已算好 workgroupId）。 */
+				await saveWorkgroup({
 					id: target.id,
 					name: target.name,
 					members: [...new Set([...target.members, id])],
@@ -680,12 +680,12 @@ function registerCommands(ctx) {
 		async handler() {
 			const tasks = await listAll();
 			/* 每个任务属于哪些分组：反查一遍，别让面板自己拼。 */
-			const groups = (await listGroups()).filter((group) => group.name !== '');
-			const groupOfTask = new Map();
+			const groups = (await listWorkgroups()).filter((group) => group.name !== '');
+			const workgroupOfTask = new Map();
 			for (const group of groups) {
 				for (const member of group.members) {
-					if (!groupOfTask.has(member)) groupOfTask.set(member, []);
-					groupOfTask.get(member).push(group.id);
+					if (!workgroupOfTask.has(member)) workgroupOfTask.set(member, []);
+					workgroupOfTask.get(member).push(group.id);
 				}
 			}
 			return {
@@ -699,7 +699,7 @@ function registerCommands(ctx) {
 						return Object.assign(head, {
 							summary: firstLine ? firstLine.slice(0, 80) : '',
 							/* 状态组：数组，一个状态可以属于多个组。面板按这个着色/分区。 */
-							groups: groupsOf(head.status),
+							groups: stategroupsOf(head.status),
 							/* kind 用**推断后**的值：老数据没存 kind，直接给 head.kind 会是空的，
 							   面板就没法按四类别显示。这里统一填好，面板不用自己推。 */
 							kind: kindOf(head),
@@ -715,7 +715,7 @@ function registerCommands(ctx) {
 							   用户明确要求"已经归档的，ai 仍然可以用工具查看"。 */
 							archived: head.archived === true,
 							/* 属于哪些分组（id 数组）。 */
-							groupsOf: groupOfTask.get(head.id) ?? [],
+							stategroupsOf: workgroupOfTask.get(head.id) ?? [],
 							/* 标签：多个，自由字符串。用于跨组检索。 */
 							tags: Array.isArray(head.tags) ? head.tags : [],
 							/* 标记：与状态正交（unread/read/needs-me/needs-review）。 */
@@ -728,7 +728,7 @@ function registerCommands(ctx) {
 	});
 
 	ctx.commands.register({
-		name: 'task-groups',
+		name: 'task-stategroups',
 		description: '输出状态组定义（面板读取；状态 → 组的映射，多组状态返回数组）',
 		recordInput: false,
 		async handler() {
@@ -736,7 +736,7 @@ function registerCommands(ctx) {
 				kind: 'success',
 				text: JSON.stringify({
 					groups: GROUPS,
-					status: STATUS.map((status) => ({ status, groups: groupsOf(status) })),
+					status: STATUS.map((status) => ({ status, groups: stategroupsOf(status) })),
 				}),
 			};
 		},
@@ -897,7 +897,7 @@ function registerExtraTools(ctx) {
 
 	ctx.tools.register(
 		defineTool({
-			name: 'task_group',
+			name: 'task_workgroup',
 			description:
 				'管理「工作组」：**一个工作组 = 一件事 / 一个项目**，不是主题分类。' +
 				'用户原话：「分组是没有关联的事情。一个程序做的怎么样跟另一个程序无关。' +
@@ -917,10 +917,10 @@ function registerExtraTools(ctx) {
 			},
 			async execute(args) {
 				const action = String(args.action ?? '').trim();
-				const groups = await listGroups();
+				const groups = await listWorkgroups();
 				if (action === 'list') {
-					if (groups.length === 0) return { text: '还没有分组。用 task_group action=create name=… 建一个。' };
-					const current = await readCurrentGroup(currentSessionId());
+					if (groups.length === 0) return { text: '还没有分组。用 task_workgroup action=create name=… 建一个。' };
+					const current = await readCurrentWorkgroup(currentSessionId());
 					const lines = groups.map((group) => {
 						const mark = group.id === current ? '★ ' : '  ';
 						const sample = group.members.slice(0, 6).join(', ');
@@ -941,14 +941,14 @@ function registerExtraTools(ctx) {
 					 * 就只是"列出有哪些组"，不是"看全部任务"。 */
 					const wanted = String(args.group ?? '').trim();
 					if (wanted === '') {
-						await writeCurrentGroup('', currentSessionId());
+						await writeCurrentWorkgroup('', currentSessionId());
 						return { text: '已取消激活的分组（现在没有当前组；tool 调用要显式传 group）' };
 					}
 					const hit = groups.find((entry) => entry.id === wanted);
 					if (hit === undefined) {
 						throw new Error(`没有这个分组：${wanted}。现有：${groups.map((entry) => `${entry.id}（${entry.name}）`).join(' / ') || '（没有）'}`);
 					}
-					await writeCurrentGroup(hit.id, currentSessionId());
+					await writeCurrentWorkgroup(hit.id, currentSessionId());
 					return { text: `当前分组已设为 ${hit.id} · ${hit.name}（${hit.members.length} 条）` };
 				}
 				if (action === 'create') {
@@ -959,7 +959,7 @@ function registerExtraTools(ctx) {
 						.map((group) => Number(/^g-(\d+)$/u.exec(group.id)?.[1] ?? 0))
 						.filter((value) => Number.isFinite(value));
 					const id = `g-${used.length === 0 ? 1 : Math.max(...used) + 1}`;
-					await saveGroup({ id, name, members: [] });
+					await saveWorkgroup({ id, name, members: [] });
 					return { text: `已建分组 ${id} · ${name}` };
 				}
 				const id = String(args.group ?? '').trim();
@@ -968,12 +968,12 @@ function registerExtraTools(ctx) {
 				if (action === 'rename') {
 					const name = String(args.name ?? '').trim();
 					if (name === '') throw new Error('rename 需要 name');
-					await saveGroup({ id, name, members: found.members, createdAt: found.createdAt });
+					await saveWorkgroup({ id, name, members: found.members, createdAt: found.createdAt });
 					return { text: `分组 ${id} 改名为「${name}」` };
 				}
 				if (action === 'delete') {
 					/* 删除 = 把名字记成墓碑，面板会过滤掉。成员不删，任务本身还在。 */
-					await saveGroup({ id, name: '', members: [], createdAt: found.createdAt });
+					await saveWorkgroup({ id, name: '', members: [], createdAt: found.createdAt });
 					return { text: `已删除分组 ${id}（成员任务本身没动）` };
 				}
 				if (action === 'add') {
@@ -1005,7 +1005,7 @@ function registerExtraTools(ctx) {
 					}
 					const members = new Set(found.members);
 					for (const member of wanted) members.add(member);
-					await saveGroup({ id, name: found.name, members: [...members], createdAt: found.createdAt });
+					await saveWorkgroup({ id, name: found.name, members: [...members], createdAt: found.createdAt });
 					return { text: `分组 ${id} · ${found.name} 现在有 ${members.size} 条（认领了 ${wanted.length} 条）` };
 				}
 				throw new Error(`不认识的 action：${action}`);
@@ -1386,18 +1386,18 @@ function registerExtraCommands(ctx) {
 	});
 
 	ctx.commands.register({
-		name: 'task-group-list',
+		name: 'task-workgroup-list',
 		description: '输出全部分组（面板读；JSON：[{id,name,members}]）',
 		recordInput: false,
 		async handler() {
 			/* 名字为空 = 墓碑（已删除），不返回给面板。 */
-			const groups = (await listGroups()).filter((group) => group.name !== '');
+			const groups = (await listWorkgroups()).filter((group) => group.name !== '');
 			return { kind: 'success', text: JSON.stringify(groups) };
 		},
 	});
 
 	ctx.commands.register({
-		name: 'task-group-archive',
+		name: 'task-workgroup-archive',
 		description: '归档 / 取回一个分组（面板调用；JSON：{group,archived}）。任务数据不动。',
 		input: { hint: '{"group":"g-1","archived":true}' },
 		recordInput: false,
@@ -1410,10 +1410,10 @@ function registerExtraCommands(ctx) {
 			}
 			const wanted = String(parsed?.group ?? '').trim();
 			if (wanted === '') return { kind: 'error', text: '要说明归档哪个分组' };
-			const groups = (await listGroups()).filter((entry) => entry.name !== '');
+			const groups = (await listWorkgroups()).filter((entry) => entry.name !== '');
 			const hit = groups.find((entry) => entry.id === wanted);
 			if (hit === undefined) return { kind: 'error', text: `没有这个分组：${wanted}` };
-			await saveGroup({
+			await saveWorkgroup({
 				id: hit.id,
 				name: hit.name,
 				members: hit.members,
@@ -1428,7 +1428,7 @@ function registerExtraCommands(ctx) {
 	});
 
 	ctx.commands.register({
-		name: 'task-group-select',
+		name: 'task-workgroup-select',
 		description: '设置「当前分组」（面板切换分组时调用；JSON：{group}，空 = 清空）',
 		input: { hint: '{"group":"g-2"}' },
 		recordInput: false,
@@ -1441,19 +1441,19 @@ function registerExtraCommands(ctx) {
 			}
 			const wanted = String(parsed?.group ?? '').trim();
 			if (wanted === '') {
-				await writeCurrentGroup('', parsed?.session);
+				await writeCurrentWorkgroup('', parsed?.session);
 				return { kind: 'success', text: JSON.stringify({ group: '' }) };
 			}
-			const groups = (await listGroups()).filter((entry) => entry.name !== '');
+			const groups = (await listWorkgroups()).filter((entry) => entry.name !== '');
 			const hit = groups.find((entry) => entry.id === wanted);
 			if (hit === undefined) return { kind: 'error', text: `没有这个分组：${wanted}` };
-			await writeCurrentGroup(hit.id, parsed?.session);
+			await writeCurrentWorkgroup(hit.id, parsed?.session);
 			return { kind: 'success', text: JSON.stringify({ group: hit.id, name: hit.name }) };
 		},
 	});
 
 	ctx.commands.register({
-		name: 'task-group-save',
+		name: 'task-workgroup-save',
 		description: '面板保存分组（JSON：{id?,name,members}；id 空 = 新建）',
 		input: { hint: '{"name":"插件开发","members":["WI-01"]}' },
 		recordInput: false,
@@ -1469,14 +1469,14 @@ function registerExtraCommands(ctx) {
 			const members = Array.isArray(parsed?.members) ? parsed.members.map(String) : [];
 			let id = String(parsed?.id ?? '').trim();
 			if (id === '') {
-				const groups = await listGroups();
+				const groups = await listWorkgroups();
 				const used = groups
 					.map((group) => Number(/^g-(\d+)$/u.exec(group.id)?.[1] ?? 0))
 					.filter((value) => Number.isFinite(value));
 				id = `g-${used.length === 0 ? 1 : Math.max(...used) + 1}`;
 			}
-			const existing = (await listGroups()).find((group) => group.id === id);
-			await saveGroup({ id, name, members, createdAt: existing?.createdAt });
+			const existing = (await listWorkgroups()).find((group) => group.id === id);
+			await saveWorkgroup({ id, name, members, createdAt: existing?.createdAt });
 			return { kind: 'success', text: JSON.stringify({ id, name, members }) };
 		},
 	});

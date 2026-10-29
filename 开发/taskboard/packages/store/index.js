@@ -30,10 +30,10 @@
  *   saveTask(task, meta)      → 追加一条 upsert 事件
  *   appendEvent(event)        → 底层追加（core 的 createNew 用）
  *   withWrite(fn)             → 写队列（串行化）
- *   listGroups()              → 分组列表
- *   saveGroup(group)          → 保存分组
- *   readCurrentGroup(sid)     → 当前组
- *   writeCurrentGroup(id,sid) → 设当前组
+ *   listWorkgroups()              → 分组列表
+ *   saveWorkgroup(group)          → 保存分组
+ *   readCurrentWorkgroup(sid)     → 当前组
+ *   writeCurrentWorkgroup(id,sid) → 设当前组
  *   migrateLegacy()           → 老格式一次性导入
  *   storeFile / groupsFile / currentFile  → 路径（面板要读）
  */
@@ -256,7 +256,7 @@ async function readCurrentMap() {
 	}
 }
 
-async function readCurrentGroup(sessionId) {
+async function readCurrentWorkgroup(sessionId) {
 	const map = await readCurrentMap();
 	const key = currentKey(sessionId);
 	/* 先按会话找；找不到再退回 `_default`（旧格式或没会话上下文的调用）。
@@ -266,11 +266,11 @@ async function readCurrentGroup(sessionId) {
 	 * 就会出现"设了当前组但新建仍然没归组"这种诡异现象。 */
 	const id = String(map[key] ?? map._default ?? '').trim();
 	if (id === '') return '';
-	const groups = (await listGroups()).filter((entry) => entry.name !== '');
+	const groups = (await listWorkgroups()).filter((entry) => entry.name !== '');
 	return groups.some((entry) => entry.id === id) ? id : '';
 }
 
-async function writeCurrentGroup(id, sessionId) {
+async function writeCurrentWorkgroup(id, sessionId) {
 	const map = await readCurrentMap();
 	const key = currentKey(sessionId);
 	const value = String(id ?? '').trim();
@@ -281,7 +281,7 @@ async function writeCurrentGroup(id, sessionId) {
 }
 
 /** 读全部分组（追加式 JSONL，按 id fold 最后一次）。 */
-async function listGroups() {
+async function listWorkgroups() {
 	await mkdir(dirname(GROUPS_FILE), { recursive: true });
 	let raw = '';
 	try {
@@ -317,7 +317,7 @@ async function listGroups() {
 }
 
 /** 写一个分组（追加一行）。 */
-async function saveGroup(group) {
+async function saveWorkgroup(group) {
 	await mkdir(dirname(GROUPS_FILE), { recursive: true });
 	/* 没显式传 archived 时沿用现有值。
 	 *
@@ -325,7 +325,7 @@ async function saveGroup(group) {
 	 * 之前每个调用点都要自己传 archived，漏一个就是隐形 bug。 */
 	let archived = group.archived;
 	if (archived === undefined) {
-		const existing = (await listGroups()).find((entry) => entry.id === group.id);
+		const existing = (await listWorkgroups()).find((entry) => entry.id === group.id);
 		archived = existing?.archived === true;
 	}
 	const event = {
@@ -551,10 +551,10 @@ const service = {
 	saveTask,
 	appendEvent,
 	withWrite,
-	listGroups,
-	saveGroup,
-	readCurrentGroup,
-	writeCurrentGroup,
+	listWorkgroups,
+	saveWorkgroup,
+	readCurrentWorkgroup,
+	writeCurrentWorkgroup,
 	migrateLegacy,
 	dedupeLinks,
 	parseTask,
@@ -578,10 +578,10 @@ export {
 	saveTask,
 	appendEvent,
 	withWrite,
-	listGroups,
-	saveGroup,
-	readCurrentGroup,
-	writeCurrentGroup,
+	listWorkgroups,
+	saveWorkgroup,
+	readCurrentWorkgroup,
+	writeCurrentWorkgroup,
 	migrateLegacy,
 	dedupeLinks,
 	parseTask,

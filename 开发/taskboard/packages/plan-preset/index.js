@@ -114,7 +114,7 @@ const DESCRIPTORS = {
 	'task_list': { write: false, destructive: false, external: false, idempotent: true },
 	'task_get': { write: false, destructive: false, external: false, idempotent: true },
 	'task_template': { write: false, destructive: false, external: false, idempotent: true },
-	'task_groups': { write: false, destructive: false, external: false, idempotent: true },
+	'task_workgroups': { write: false, destructive: false, external: false, idempotent: true },
 	'task_history': { write: false, destructive: false, external: false, idempotent: true },
 
 	// —— 任务管理（只改任务库自己的文件）——
@@ -213,7 +213,7 @@ const PLAN_TOOLS = new Set([
 	'task_update',
 	'task_template',
 	'task_note',
-	'task_groups',
+	'task_workgroups',
 	'task_history',
 ]);
 

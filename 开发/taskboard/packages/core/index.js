@@ -97,10 +97,10 @@ const readTask = storeFn('readTask');
 const saveTask = storeFn('saveTask');
 const appendEvent = storeFn('appendEvent');
 const withWrite = storeFn('withWrite');
-const listGroups = storeFn('listGroups');
-const saveGroup = storeFn('saveGroup');
-const readCurrentGroup = storeFn('readCurrentGroup');
-const writeCurrentGroup = storeFn('writeCurrentGroup');
+const listWorkgroups = storeFn('listWorkgroups');
+const saveWorkgroup = storeFn('saveWorkgroup');
+const readCurrentWorkgroup = storeFn('readCurrentWorkgroup');
+const writeCurrentWorkgroup = storeFn('writeCurrentWorkgroup');
 const readStore = storeFn('readStore');
 const migrateLegacy = storeFn('migrateLegacy');
 const parseTask = storeFn('parseTask');
@@ -540,7 +540,7 @@ const STATUS = ['未指定', '提交', '处理中', '需要信息', '需要授�
  *   完成：终结了（成功 / 失败 / 取消 / 拒绝）
  *
  * 「需要信息」「需要授权」同时属于「进行」和「搁置」——它们是**进行中的暂停**，
- * 不是终结。所以 GROUP_OF 的值是数组，判定用 hasGroup()，不要用 ===。
+ * 不是终结。所以 GROUP_OF 的值是数组，判定用 hasStategroup()，不要用 ===。
  *
  * 三分类（ACTIVE / DRAFT / FINAL，级联用的口径）由分组派生，不再各处手写：
  *   · 进行态 = 属于「进行」且不属于「结束」 → 活着，会被级联取消/搁置
@@ -567,21 +567,21 @@ const GROUPS = [
 ];
 
 /** 某个状态属于哪些组（拷贝，调用方改了不影响定义）。 */
-function groupsOf(status) {
+function stategroupsOf(status) {
 	return (GROUP_OF[status] || []).slice();
 }
 
 /** 状态是否属于某个组。多组状态用这个判，不要用 ===。 */
-function hasGroup(status, group) {
+function hasStategroup(status, group) {
 	return (GROUP_OF[status] || []).includes(group);
 }
 
 /** 进行态：属于「进行」且不属于「结束」。 */
-const ACTIVE = STATUS.filter((status) => hasGroup(status, '进行') && !hasGroup(status, '结束'));
+const ACTIVE = STATUS.filter((status) => hasStategroup(status, '进行') && !hasStategroup(status, '结束'));
 /** 成功态：属于「结束」。 */
-const FINAL = STATUS.filter((status) => hasGroup(status, '结束'));
+const FINAL = STATUS.filter((status) => hasStategroup(status, '结束'));
 /** 草稿：两组都不属于（目前只有「未指定」）。 */
-const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup(status, '结束'));
+const DRAFT = STATUS.filter((status) => !hasStategroup(status, '进行') && !hasStategroup(status, '结束'));
 
 /*
  * ---------------------------------------------------------------------------
@@ -2486,10 +2486,10 @@ function coreService(ctx) {
 		/* ── 读 ── */
 		listAll: () => listAll(),
 		readTask: (id) => readTask(id),
-		listGroups: () => listGroups(),
-		readCurrentGroup: (sessionId) => readCurrentGroup(sessionId),
-		writeCurrentGroup: (id, sessionId) => writeCurrentGroup(id, sessionId),
-		saveGroup: (group) => saveGroup(group),
+		listWorkgroups: () => listWorkgroups(),
+		readCurrentWorkgroup: (sessionId) => readCurrentWorkgroup(sessionId),
+		writeCurrentWorkgroup: (id, sessionId) => writeCurrentWorkgroup(id, sessionId),
+		saveWorkgroup: (group) => saveWorkgroup(group),
 		readHistory: (id, limit) => readHistory(id, limit),
 
 		/* ── 写（业务规则都在这些里面）── */
@@ -2515,7 +2515,7 @@ function coreService(ctx) {
 		linkPairs: (task) => linkPairs(task),
 	setProgress: (id, section, value) => setProgress(id, section, value),
 		kindOf: (task) => kindOf(task),
-		groupsOf: (status) => groupsOf(status),
+		stategroupsOf: (status) => stategroupsOf(status),
 		deriveGoalStatus: (task, all) => deriveGoalStatus(task, all),
 		isClaimable: (task) => isClaimable(task),
 		isActive: (status) => isActive(status),

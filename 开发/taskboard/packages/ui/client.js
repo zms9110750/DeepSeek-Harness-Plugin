@@ -2848,11 +2848,11 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       function statusA2A(status) {
         return A2A_STATES[status] || A2A_STATES["\u672A\u6307\u5B9A"];
       }
-      function groupsOf(status) {
+      function stategroupsOf(status) {
         return STATUS_GROUPS[status] || [];
       }
       function groupLabel(status) {
-        const groups = groupsOf(status);
+        const groups = stategroupsOf(status);
         return groups.length > 0 ? groups.join("/") : "\u8349\u7A3F";
       }
       function statusTone(status) {
@@ -2977,7 +2977,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           /* 归档（DP-04）：默认不在树/列表里显示。 */
           archived: row.archived === true,
           /* 属于哪些分组（id 数组）。面板从 groups.jsonl 反填，宿主 /tasks 也填。 */
-          groupsOf: Array.isArray(row.groupsOf) ? row.groupsOf.map(String) : [],
+          stategroupsOf: Array.isArray(row.stategroupsOf) ? row.stategroupsOf.map(String) : [],
           /* 标签：多个，自由字符串。用于跨组检索。 */
           tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
           /* 开放问题进度：树/列表上可以标「还差 2 条没答」。 */
@@ -3179,7 +3179,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         ];
         const bucket = function(node) {
           if (node.status === "\u672A\u6307\u5B9A") return "";
-          const groups = groupsOf(node.status);
+          const groups = stategroupsOf(node.status);
           if (groups.indexOf("\u6401\u7F6E") !== -1) return "\u6401\u7F6E";
           if (groups.indexOf("\u8FDB\u884C") !== -1) return "\u8FDB\u884C";
           return "\u6210\u529F";
@@ -5459,7 +5459,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 }
               }
               const rowsWithGroups = rows.map(function(row) {
-                return Object.assign({}, row, { groupsOf: ownerOf.get(row.id) || [] });
+                return Object.assign({}, row, { stategroupsOf: ownerOf.get(row.id) || [] });
               });
               const currentPath = String(paths.store || "").replace(/[\\/][^\\/]+$/u, "") + "\\current.json";
               return Promise.resolve(files.read(sessionId, currentPath, void 0, void 0)).then(function(currentRaw) {
@@ -5642,7 +5642,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           const name = newGroupName.trim();
           if (name === "") return;
           setNewGroupName("");
-          runCommand("/task-group-save " + JSON.stringify({ name, members: [] }), sessionId).then(function(settled) {
+          runCommand("/task-workgroup-save " + JSON.stringify({ name, members: [] }), sessionId).then(function(settled) {
             const text = commandText(settled);
             let saved = null;
             try {
@@ -5760,7 +5760,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           function() {
             const needle = search.trim().toLowerCase();
             return allTasks.filter(function(node) {
-              const ownGroups = Array.isArray(node.groupsOf) ? node.groupsOf : [];
+              const ownGroups = Array.isArray(node.stategroupsOf) ? node.stategroupsOf : [];
               if (!showArchived && ownGroups.length > 0) {
                 const live = ownGroups.some(function(id) {
                   const group = groups.find(function(item) {
@@ -5773,7 +5773,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               if (groupPick === "") return false;
               if (ownGroups.indexOf(groupPick) === -1) return false;
               if (groupFilter !== "") {
-                const groups2 = groupsOf(node.status);
+                const groups2 = stategroupsOf(node.status);
                 if (node.status === "\u672A\u6307\u5B9A") {
                   if (groupFilter !== "\u8349\u7A3F") return false;
                 } else if (groups2.indexOf(groupFilter) === -1) {
@@ -5992,7 +5992,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               });
               visible.forEach(function(group) {
                 const count = allTasks.filter(function(item) {
-                  return Array.isArray(item.groupsOf) && item.groupsOf.indexOf(group.id) !== -1;
+                  return Array.isArray(item.stategroupsOf) && item.stategroupsOf.indexOf(group.id) !== -1;
                 }).length;
                 const active = groupPick === group.id;
                 const isCurrent = currentGroup === group.id;
@@ -6086,7 +6086,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                     title: picked.archived ? "\u300C" + picked.name + "\u300D\u5DF2\u5F52\u6863\uFF0C\u70B9\u4E00\u4E0B\u53D6\u56DE" : "\u5F52\u6863\u300C" + picked.name + "\u300D\uFF08\u4E8B\u9879\u6570\u636E\u4E0D\u52A8\uFF09",
                     onClick: function() {
                       runCommand(
-                        "/task-group-archive " + JSON.stringify({ group: picked.id, archived: !picked.archived }),
+                        "/task-workgroup-archive " + JSON.stringify({ group: picked.id, archived: !picked.archived }),
                         sessionId
                       ).then(function() {
                         load();
@@ -6100,7 +6100,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               }
               const setCurrent = function(value) {
                 return runCommand(
-                  "/task-group-select " + JSON.stringify({ group: value, session: sessionId }),
+                  "/task-workgroup-select " + JSON.stringify({ group: value, session: sessionId }),
                   sessionId
                 ).then(function(settled) {
                   const text = commandText(settled);
