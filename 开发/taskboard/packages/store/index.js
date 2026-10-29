@@ -309,7 +309,7 @@ async function listGroups() {
 			name: String(group.name || id),
 			members: Array.isArray(group.members) ? group.members.map(String) : [],
 			createdAt: String(group.createdAt || ''),
-			/* 归档是对分组归档的。 */
+			/* 归档是对工作组归档的。 */
 			archived: group.archived === true,
 		});
 	}
@@ -321,7 +321,7 @@ async function saveGroup(group) {
 	await mkdir(dirname(GROUPS_FILE), { recursive: true });
 	/* 没显式传 archived 时沿用现有值。
 	 *
-	 * 为什么要这样：改名、加成员这些操作不该意外把分组从归档里拉出来。
+	 * 为什么要这样：改名、加成员这些操作不该意外把工作组从归档里拉出来。
 	 * 之前每个调用点都要自己传 archived，漏一个就是隐形 bug。 */
 	let archived = group.archived;
 	if (archived === undefined) {
@@ -337,8 +337,8 @@ async function saveGroup(group) {
 			name: group.name,
 			members: group.members,
 			createdAt: group.createdAt || new Date().toISOString(),
-			/* 归档是对**分组**归档的（用户要求）：
-			 * 「归档是对分组归档的。」所以在组上放一个布尔，
+			/* 归档是对**工作组**归档的（用户要求）：
+			 * 「归档是对工作组归档的。」所以在组上放一个布尔，
 			 * 而不是给每条任务都打 archived。 */
 			archived: archived === true,
 		},

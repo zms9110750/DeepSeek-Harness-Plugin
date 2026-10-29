@@ -278,7 +278,7 @@ function renderList(tasks) {
 	for (const task of tasks) lines.push(`- ${summarize(task)}`);
 	lines.push(
 		'',
-		'九态分组：进行=提交/处理中/需要信息/需要授权；搁置=需要信息/需要授权；结束=成功/失败/取消/拒绝。',
+		'状态组：进行=提交/处理中/需要信息/需要授权；搁置=需要信息/需要授权；结束=成功/失败/取消/拒绝。',
 		'需要信息与需要授权同时属于「进行」和「搁置」——是进行中的暂停，不是终结。',
 		'未指定=AI 提交但用户还没采纳，不能领取；提交=可以 task_claim。',
 	);
@@ -353,7 +353,7 @@ function registerTools(ctx) {
 				/* ① 没传 group → 列出所有分组（不列任务）。 */
 				if (wanted === '') {
 					if (groups.length === 0) {
-						return { text: '还没有任何分组。用 task_group action=create name=… 建一个。' };
+						return { text: '还没有任何工作组。用 task_group action=create name=… 建一个。' };
 					}
 					const lines = groups.map((group) => {
 						const live = group.members.filter((id) => all.some((item) => item.id === id));
@@ -477,7 +477,7 @@ function registerTools(ctx) {
 				workspaces: { type: 'string', description: '额外工作区，逗号分隔的绝对路径（可多个）' },
 				permission: { type: 'string', description: '仅可查看 / 工作区内修改 / 完全权限 / 工具全关' },
 				deny: { type: 'string', description: '按描述符再收窄，逗号分隔：write / destructive / external / idempotent' },
-				group: { type: 'string', description: '所属分组 id（可选；给了派生来源就跟随父的分组）' },
+				group: { type: 'string', description: '所属工作组 id（可选；给了派生来源就跟随父的工作组）' },
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
@@ -521,9 +521,9 @@ function registerTools(ctx) {
 				if (groupId === '') {
 					throw new Error(
 						'task_submit: 没有分组可归属。\n' +
-							'每个分组 = 一件事 / 一个项目；"闲聊不会创建出任务"，所以任务必须有归属。\n' +
+							'每个工作组 = 一件事 / 一个项目；"闲聊不会创建出任务"，所以任务必须有归属。\n' +
 							(groups.length === 0
-								? '现在一个分组都没有，先用 task_group action=create name=… 建一个。'
+								? '现在一个工作组都没有，先用 task_group action=create name=… 建一个。'
 								: '设一个「当前组」就不用每次指定了：task_group action=select group=…\n' +
 									`现有分组：${groups.map((entry) => `${entry.id}（${entry.name}）`).join(' / ')}`),
 					);
@@ -698,7 +698,7 @@ function registerCommands(ctx) {
 							.filter((line) => line !== '')[0];
 						return Object.assign(head, {
 							summary: firstLine ? firstLine.slice(0, 80) : '',
-							/* 九态分组：数组，一个状态可以属于多个组。面板按这个着色/分区。 */
+							/* 状态组：数组，一个状态可以属于多个组。面板按这个着色/分区。 */
 							groups: groupsOf(head.status),
 							/* kind 用**推断后**的值：老数据没存 kind，直接给 head.kind 会是空的，
 							   面板就没法按四类别显示。这里统一填好，面板不用自己推。 */
@@ -729,7 +729,7 @@ function registerCommands(ctx) {
 
 	ctx.commands.register({
 		name: 'task-groups',
-		description: '输出九态分组定义（面板读取；状态 → 组的映射，多组状态返回数组）',
+		description: '输出状态组定义（面板读取；状态 → 组的映射，多组状态返回数组）',
 		recordInput: false,
 		async handler() {
 			return {
@@ -899,10 +899,10 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_group',
 			description:
-				'管理「分组」：**一个分组 = 一件事 / 一个项目**，不是主题分类。' +
+				'管理「工作组」：**一个工作组 = 一件事 / 一个项目**，不是主题分类。' +
 				'用户原话：「分组是没有关联的事情。一个程序做的怎么样跟另一个程序无关。' +
 				'而用户一个时候只会验收一个程序，只有一个主要目标。」' +
-				'**硬规则：一个任务只能属于一个分组，且建好后不能迁移**（分组代表' +
+				'**硬规则：一个任务只能属于一个工作组，且建好后不能迁移**（工作组代表' +
 				'"这件事是哪次工作里提出的"，事后改归属会让历史失真）。' +
 				'action：list 列出 / create 新建 / rename 改名 / add 认领成员 / delete 删除。',
 			parameters: {
