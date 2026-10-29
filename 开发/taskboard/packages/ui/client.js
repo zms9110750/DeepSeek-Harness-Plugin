@@ -5055,7 +5055,9 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const PICKER_TEMPLATES = Object.keys(templates).map(function(code) {
           return {
             code,
-            name: (parseTemplateYaml(templates[code]).name || code),
+            /* 模板 YAML 里 name 是「GU · 用户需求」，编号已经单独显示了，
+               所以把前缀剥掉，只留中文名。 */
+            name: String(parseTemplateYaml(templates[code]).name || code).replace(new RegExp("^" + code + "\\s*[\u00B7\uFF1A:\\-]\\s*"), ""),
             domain: templateDomain(templates[code]),
             kind: kindOfTemplate(templates[code])
           };
@@ -5207,6 +5209,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             "div",
             { style: { display: "flex", gap: 18, flex: 1, minHeight: 0 } },
             h(
+              "div",
               { style: { width: 440, flex: "none", display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "auto", paddingRight: 6 } },
               /* 标题独占一行（用户要求）。 */
               h("input", {
@@ -5551,6 +5554,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                   )
                 )
               ] : null,
+              h(
               "div",
               { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "auto", paddingRight: 6, borderLeft: "1px solid var(--dsw-alias-border-l1)", paddingLeft: 16 } },
               /* 模板的一句话说明留在顶部：让人知道"这一类该写什么"，但不占输入框。 */
@@ -5612,7 +5616,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 },
                 style: Object.assign({}, formInputStyle, { flex: 1, minHeight: 200, resize: "vertical" })
               })
-            )
+            ))
           ),
           h(
             "div",
