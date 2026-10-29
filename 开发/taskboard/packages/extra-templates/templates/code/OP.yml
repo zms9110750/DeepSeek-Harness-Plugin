@@ -46,7 +46,7 @@ body:
     attributes:
       value: |
         这一份只写"哪不好、改成什么样"。
-        具体怎么改是子事项的事。
+        具体怎么改是派生任务的事。
 
   - type: [ask, textarea]
     id: aspect

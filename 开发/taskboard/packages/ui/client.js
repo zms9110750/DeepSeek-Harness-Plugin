@@ -2885,7 +2885,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
            *
            * 这里以前写的是 `templateDirCandidates()[0]` —— 一个指向
            * 本机开发目录的硬编码路径，改了名字之后就 ReferenceError，
-           * 表现是「读不到计划库: templateDirCandidates is not defined」。
+           * 表现是「读不到任务库: templateDirCandidates is not defined」。
            */
           templates: home + "\\taskboard\\templates.json"
         };
@@ -4040,12 +4040,12 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               );
             })()
           ) : null,
-          /* 开放问题：设计类事项正文里「要定的点 / 待定」小标题下编号的那些。
+          /* 开放问题：设计类任务正文里「要定的点 / 待定」小标题下编号的那些。
            *
            * 用户原话：「你的设计，里面有几个开放问题。而现在完全在备注里面打字。
            * 没法一一直接回答。」
            *
-           * 所以每条问题一个卡片 + 一个输入框，答完一条存一条。
+           * 所以每条问题一个任务 + 一个输入框，答完一条存一条。
            * 不与备注混在一起：备注是自由结论，这里是逐条应答。 */
           (props.questions || []).length > 0 ? section(
             "\u5F00\u653E\u95EE\u9898\uFF08\u5DF2\u7B54 " + Object.keys(node.answers || {}).filter(function(key) {
@@ -5978,7 +5978,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
            * 那是"能读哪个目录"的权限，用户为了读别的项目把它设成了仓库根目录。
            *
            * **没有「全部」**（用户要求）：「这个分组不能有全部。」
-           * 理由：分组是"一件事"，同时看所有事没有意义；而且每条事项必属某组，
+           * 理由：分组是"一件事"，同时看所有事没有意义；而且每条任务必属某组，
            * 「全部」等于把两件互不相关的事混在一起看。
            * 所以任何时候都**必须选中一个分组**。 */
           h(
@@ -6314,7 +6314,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             onRejectChoice: function() {
               runState("\u62D2\u7EDD");
             },
-            /* 开放问题：一问一答的卡片。 */
+            /* 开放问题：一问一答的任务。 */
             questions: questionsOf(data.bodies[activeNode.id] || ""),
             answerDraft,
             answerError,
@@ -6323,7 +6323,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             },
             onSaveAnswer: saveAnswer,
             /* 点派发按钮：直接开新建表单，parent 和模板都已填好。
-               用户只需要写标题和正文——不用去表单里选"父计划"。 */
+               用户只需要写标题和正文——不用去表单里选"派生来源"。 */
             onDispatch: function(item) {
               setCreate({
                 open: true,
@@ -6341,7 +6341,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             onEdit: function() {
               openEdit(activeNode, activeNode.status === "\u672A\u6307\u5B9A" ? "edit" : "fork");
             },
-            /* 备注草稿：切到另一张计划时自动换成那张的备注。 */
+            /* 备注草稿：切到另一个任务时自动换成那张的备注。 */
             noteDraft: note.id === activeNode.id ? note.draft : activeNode.note || "",
             noteError: note.id === activeNode.id ? note.error : "",
             history: historyInfo.id === activeNode.id ? historyInfo.entries : [],
@@ -6890,7 +6890,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
          * 参照 @local/bookmarks-tab10（那个「收藏」tab）：
          *   inject: ['slots', 'sidebarRightTabs']
          *
-         * `configForms` 同理：不声明就拿不到，设置页卡片注册不进去。 */
+         * `configForms` 同理：不声明就拿不到，设置页任务注册不进去。 */
         inject: [
           "slots",
           "remote",

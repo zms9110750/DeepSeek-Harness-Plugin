@@ -36,7 +36,7 @@ body:
     attributes:
       value: |
         这一份只定「测什么、为什么是它」。
-        具体写代码是子事项（WT 实现项）的事。
+        具体写代码是派生任务（WT 实现项）的事。
 
   - type: [ask, textarea]
     id: kind

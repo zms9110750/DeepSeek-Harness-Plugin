@@ -181,32 +181,32 @@ const GROUPS = [
 function promptText() {
 	return [
 
-	'本会话可能被切到「按计划」权限档。这一档下"能干什么"由你领取的计划决定：',
-	'- 先 `task_list` 看计划库；只有状态是「提交」的计划能被领取。',
-	'- 用 `task_claim` 领取（用户也可以在面板点「领取」）。领取后按该计划写的子工作空间与权限档位干活；计划没写就按会话当前目录与档位。',
-	'- 一次只做一张计划的事；同一会话同一时刻只能有一个「处理中」的计划，手上还有时领不了新的，先把它完成/失败/取消。',
-	'- 发现了不属于当前计划的活，用 `task_submit` 新建一张计划（parent 指向当前计划，links 写 依赖/派生/来源）挂上去，不要顺手做掉。',
+	'本会话可能被切到「按计划」权限档。这一档下"能干什么"由你领取的任务决定：',
+	'- 先 `task_list` 看任务库；只有状态是「提交」的任务能被领取。',
+	'- 用 `task_claim` 领取（用户也可以在面板点「领取」）。领取后按该任务写的子工作空间与权限档位干活；任务没写就按会话当前目录与档位。',
+	'- 一次只做一个任务的事；同一会话同一时刻只能有一个「处理中」的任务，手上还有时领不了新的，先把它完成/失败/取消。',
+	'- 发现了不属于当前任务的活，用 `task_submit` 新建一个任务（parent 指向当前任务，links 写 依赖/派生/来源）挂上去，不要顺手做掉。',
 	'- 做完 → `task_state` 改成「完成」；确认做不下去 → 「失败」；缺信息或要先调研 → 「需要信息」；代价大、要用户拍板 → 「需要授权」；用户明确否决 → 「拒绝」。',
 	'- 搁置（需要信息 / 需要授权）时用 `task_state` 的 `note` 参数写清为什么停在这里（在等谁、等什么）；事后补写用 `task_note`。',
-	'- 一张计划交付后会级联取消它下面停在「需要信息 / 需要授权」的子计划，所以子计划要赶在父计划完成前处理掉。',
-	'- 做完一张回到 `task_list` 继续领下一张，直到没有「提交」的计划；都没有就停下等用户，不要自己找事做。',
-	'- 计划太大或含糊：先用 `task_template` 取模板，再用 `task_submit` 拆成子事项，再执行。' +
+	'- 一个任务交付后会级联取消它下面停在「需要信息 / 需要授权」的派生任务，所以派生任务要赶在派生来源完成前处理掉。',
+	'- 做完一张回到 `task_list` 继续领下一张，直到没有「提交」的任务；都没有就停下等用户，不要自己找事做。',
+	'- 任务太大或含糊：先用 `task_template` 取模板，再用 `task_submit` 拆成派生任务，再执行。' +
 		`可用模板：${typeCatalog()}。`,
 	'- 领取前的硬规则：自己 `依赖:X` 的，X 必须「完成」。父节点是终结态时不能再派生。',
-	'- **四个大类（凭"谁能标完成"区分）**：目标（子事项全终结才算完，不占位）/ 设计（等用户点头，不占位）/ 记录（写完即完，不占位）/ 工作（AI 做出来，**占位**）。',
+	'- **四个大类（凭"谁能标完成"区分）**：目标（派生任务全终结才算完，不占位）/ 设计（等用户点头，不占位）/ 记录（写完即完，不占位）/ 工作（AI 做出来，**占位**）。',
 	'- **只有「工作」能被领取**，且一次只能做一个。目标/设计/记录根本不存在"领取"这个动作。',
 	'- **工作不能派工作**：「能一次做完」和「能再拆」互斥 —— 还要拆说明它是容器，那就升级为目标。',
 	'- 阻碍 = 记录类模板 `B`。它一出现，父工作从「处理中」转「需要信息」。阻碍解除后**不自动改状态**，靠查询判断能否继续（没有未终结的阻碍子节点就能继续）。',
 	'- 状态三分类：**进行态**＝提交 / 处理中 / 需要信息 / 需要授权；**草稿**＝未指定（没采纳，不作数）；**完成态**＝完成 / 失败 / 取消 / 拒绝（已交付，不销毁）。',
-	'- 派生就是父子结构：子计划还有进行态时不能完成父计划；父计划搁置（需要信息 / 需要授权）时，进行态的子计划一起转「需要授权」；父计划终止（完成 / 失败 / 取消 / 拒绝）时，进行态的子计划全部「取消」。草稿与完成态都不动。',
-	'- 依赖链单向终结：前者「完成」→ 后者照常可领；前者失败 / 取消 / 拒绝 → 进行态的下游全部「取消」（递归）。已采纳的计划不能改，要重来只能 fork 出新计划。',
-	'- 取代关系（新计划 links 写 `取代:X`）：新计划被采纳时，X 转「拒绝」，指向 X 的依赖自动转移到新计划，从 X 派生出去的下游全部「取消」。',
-	'- 计划上的子工作空间与权限只在「按计划」档生效；其它档位（仅可查看/工作区内修改/完全权限/工具全关）一律按会话档位走，与计划无关。',
-	'- 计划可以写两个工作区字段：`workspace`（子工作区，单个，主战场）与 `workspaces`（额外工作区，逗号分隔的绝对路径，可多个）。「工作区内修改」档下写在任一目录内都放行。',
-	'- 按计划档不会死锁：计划管理类工具（task_list / task_get / task_submit / task_claim / task_state / task_update / task_template / task_note）永远放行。',
-	'- 切任务不受计划权限限制：计划写「工具全关」或「仅可查看」时，工作区类工具被挡，但 task_state 永远能用——先结束或搁置当前计划，再 task_list + task_claim 领下一张。',
-	'- 宿主暴露了 `planClaims` 服务（按会话 id 领取/查询/释放计划），给"一个计划 fork 一个会话"的调度器用；子智能体/团队走自己的权限档，不受计划权限约束。',
-	'- 一个会话同一时刻只能做一个计划；不同会话可以并发各领一张，权限与工作空间各自独立、绝不并集。子 AI 可以用 `planClaims.claim(自己的id, 计划id)` 接入。',
+	'- 派生就是父子结构：派生任务还有进行态时不能完成派生来源；派生来源搁置（需要信息 / 需要授权）时，进行态的派生任务一起转「需要授权」；派生来源终止（完成 / 失败 / 取消 / 拒绝）时，进行态的派生任务全部「取消」。草稿与完成态都不动。',
+	'- 依赖链单向终结：前者「完成」→ 后者照常可领；前者失败 / 取消 / 拒绝 → 进行态的下游全部「取消」（递归）。已采纳的任务不能改，要重来只能 fork 出新任务。',
+	'- 取代关系（新任务 links 写 `取代:X`）：新任务被采纳时，X 转「拒绝」，指向 X 的依赖自动转移到新任务，从 X 派生出去的下游全部「取消」。',
+	'- 任务上的子工作空间与权限只在「按计划」档生效；其它档位（仅可查看/工作区内修改/完全权限/工具全关）一律按会话档位走，与任务无关。',
+	'- 任务可以写两个工作区字段：`workspace`（子工作区，单个，主战场）与 `workspaces`（额外工作区，逗号分隔的绝对路径，可多个）。「工作区内修改」档下写在任一目录内都放行。',
+	'- 按计划档不会死锁：任务管理类工具（task_list / task_get / task_submit / task_claim / task_state / task_update / task_template / task_note）永远放行。',
+	'- 切任务不受任务权限限制：任务写「工具全关」或「仅可查看」时，工作区类工具被挡，但 task_state 永远能用——先结束或搁置当前任务，再 task_list + task_claim 领下一张。',
+	'- 宿主暴露了 `planClaims` 服务（按会话 id 领取/查询/释放任务），给"一个任务 fork 一个会话"的调度器用；子智能体/团队走自己的权限档，不受任务权限约束。',
+	'- 一个会话同一时刻只能做一个任务；不同会话可以并发各领一张，权限与工作空间各自独立、绝不并集。子 AI 可以用 `planClaims.claim(自己的id, 任务id)` 接入。',
 ].join('\n');
 }
 
@@ -273,7 +273,7 @@ function summarize(task) {
 
 function renderList(tasks) {
 	if (tasks.length === 0) return '任务库是空的（存储：' + storeFilePath() + '）';
-	const lines = [`共 ${tasks.length} 份计划（存储：${storeFilePath()}）`];
+	const lines = [`共 ${tasks.length} 份任务（存储：${storeFilePath()}）`];
 	for (const task of tasks) lines.push(`- ${summarize(task)}`);
 	lines.push(
 		'',
@@ -284,8 +284,29 @@ function renderList(tasks) {
 	return lines.join('\n');
 }
 
-function renderFull(task) {
+function renderFull(task, all) {
 	const lines = [summarize(task), ''];
+
+	/*
+	 * 反向关系 —— 别人指向我的那一半。
+	 *
+	 * 没有它，「A 相关:D」在 D 那边完全看不见，无向就成了单行道。
+	 *
+	 * 相关是无向的，但按定法**只存后建的那一方**（先建的任务不可变），
+	 * 所以只能查询时双向展开。
+	 */
+	if (Array.isArray(all) && all.length > 0) {
+		const incoming = [];
+		for (const other of all) {
+			if (other.id === task.id) continue;
+			for (const link of linkPairs(other)) {
+				if (link.to !== task.id) continue;
+				incoming.push(link.label + ':' + other.id);
+			}
+		}
+		if (incoming.length > 0) lines.push('被别人指向=' + incoming.join(', '));
+	}
+
 	if (task.body) lines.push(task.body);
 	return lines.join('\n');
 }
@@ -308,14 +329,14 @@ function registerTools(ctx) {
 			name: 'task_list',
 			description:
 				'**不传 group 就列出所有分组**（各自几条、哪个是当前组）；' +
-				'**传了 group 就列出那一组里的事项**（只给头部：id、类型、状态、父、链接、标签、工作空间、权限档位）。' +
+				'**传了 group 就列出那一组里的任务**（只给头部：id、类型、状态、父、链接、标签、工作空间、权限档位）。' +
 				'这是两级跳：先看有哪些组，再进组看内容——' +
 				'理由（用户原话）：「你不可能在程序里面去查绘画的风格。」' +
 				'状态「未指定」是 AI 提交但用户还没采纳的，不能领取；「提交」才能 task_claim。',
 			parameters: {
 				group: {
 					type: 'string',
-					description: 'null/空 = 列出所有分组；给分组 id = 列出该组事项；"all" = 列出全部事项',
+					description: 'null/空 = 列出所有分组；给分组 id = 列出该组任务；"all" = 列出全部任务',
 				},
 			},
 			output: {
@@ -328,7 +349,7 @@ function registerTools(ctx) {
 				const current = await readCurrentGroup(currentSessionId());
 				const wanted = String(args?.group ?? '').trim();
 
-				/* ① 没传 group → 列出所有分组（不列事项）。 */
+				/* ① 没传 group → 列出所有分组（不列任务）。 */
 				if (wanted === '') {
 					if (groups.length === 0) {
 						return { text: '还没有任何分组。用 task_group action=create name=… 建一个。' };
@@ -348,10 +369,10 @@ function registerTools(ctx) {
 					};
 				}
 
-				/* ② all → 列出全部事项。 */
+				/* ② all → 列出全部任务。 */
 				if (wanted === 'all') return { text: renderList(all) };
 
-				/* ③ 给了分组 id → 列出该组事项。 */
+				/* ③ 给了分组 id → 列出该组任务。 */
 				const target = groups.find((entry) => entry.id === wanted);
 				if (target === undefined) {
 					throw new Error(`没有这个分组：${wanted}。现有：${groups.map((entry) => entry.id).join(' / ') || '（没有）'}`);
@@ -369,13 +390,13 @@ function registerTools(ctx) {
 		defineTool({
 			name: 'task_get',
 			description:
-				'读一份事项的全文（头部 + 正文）。' +
+				'读一个任务的全文（头部 + 正文）。' +
 				'**group 为 null 时按当前组查**：只在该组里找这个 id。' +
 				'给了 group 就只在那一个组里找。' +
-				'为什么加 group：不同组里可能有同编号的事项（例如两边都有 WI-01），' +
+				'为什么加 group：不同组里可能有同编号的任务（例如两边都有 WI-01），' +
 				'不指定范围会读到另一组的东西。',
 			parameters: {
-				id: { type: 'string', required: true, description: '事项 id，例如 WI-01' },
+				id: { type: 'string', required: true, description: '任务 id，例如 WI-01' },
 				group: {
 					type: 'string',
 					description: '在哪个分组里找（null/空 = 当前组；传 "all" = 不限分组）',
@@ -388,7 +409,7 @@ function registerTools(ctx) {
 			async execute(args) {
 				const wanted = String(args.id ?? '').trim();
 				const task = await readTask(wanted);
-				if (task === undefined) throw new Error(`task_get: 没有这份事项：${wanted}`);
+				if (task === undefined) throw new Error(`task_get: 没有这个任务：${wanted}`);
 				/* 归属校验：防止跨组读到同编号的东西。 */
 				const scope = String(args.group ?? '').trim();
 				if (scope !== 'all') {
@@ -402,12 +423,12 @@ function registerTools(ctx) {
 						if (!group.members.includes(wanted)) {
 							throw new Error(
 								`${wanted} 不在分组 ${group.id}（${group.name}）里。\n` +
-									'跨组读取要显式传 group="all"，或者传那个事项真正所属的 group。',
+									'跨组读取要显式传 group="all"，或者传那个任务真正所属的 group。',
 							);
 						}
 					}
 				}
-				return { text: renderFull(task) };
+				return { text: renderFull(task, await listAll()) };
 			},
 		}),
 	);
@@ -416,10 +437,10 @@ function registerTools(ctx) {
 		defineTool({
 			name: 'task_submit',
 			description:
-				'提交一份事项草稿。状态固定为「未指定」，用户在面板里采纳之后变成「提交」才能被领取。' +
+				'提交一个任务草稿。状态固定为「未指定」，用户在面板里采纳之后变成「提交」才能被领取。' +
 				`type 取其一：${typeCatalog()}；留空 = 空模板（正文自由写）。` +
 				'kind 取 goal(目标) / design(设计) / record(记录) / work(工作)，留空按 type 推断。' +
-				'四个大类的区别是**谁能标完成**：目标由子事项决定、设计等用户点头、记录写完即完、工作由 AI 做出来。' +
+				'四个大类的区别是**谁能标完成**：目标由派生任务决定、设计等用户点头、记录写完即完、工作由 AI 做出来。' +
 				'只有「工作」能被领取，且一次只能做一个。' +
 				'工作不能再派工作（能一次做完和能再拆互斥，要拆就先升级为目标）。' +
 				'workspace 填子工作空间（主战场，单个绝对路径，可空 = 会话目录）；' +
@@ -449,13 +470,13 @@ function registerTools(ctx) {
 						'如 {"want":{"action":"textarea","value":"…"}}；' +
 						'字符串形态：旧的 Markdown 全文（兼容）。',
 				},
-				parent: { type: 'string', description: '父计划 id，空 = 顶层' },
+				parent: { type: 'string', description: '派生来源 id，空 = 顶层' },
 				links: { type: 'string', description: '链接，例如「依赖:GD-01, 派生:GR-01」' },
 				workspace: { type: 'string', description: '子工作空间绝对路径（单个）' },
 				workspaces: { type: 'string', description: '额外工作区，逗号分隔的绝对路径（可多个）' },
 				permission: { type: 'string', description: '仅可查看 / 工作区内修改 / 完全权限 / 工具全关' },
 				deny: { type: 'string', description: '按描述符再收窄，逗号分隔：write / destructive / external / idempotent' },
-				group: { type: 'string', description: '所属分组 id（可选；给了父事项就跟随父的分组）' },
+				group: { type: 'string', description: '所属分组 id（可选；给了派生来源就跟随父的分组）' },
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
@@ -480,7 +501,7 @@ function registerTools(ctx) {
 				 *
 				 * 判定顺序：
 				 *   1. 显式 args.group
-				 *   2. parent 的分组（子事项跟随父）
+				 *   2. parent 的分组（派生任务跟随父）
 				 *   3. **当前组**（跟随会话）
 				 *   4. 都没有 → 拒绝（说明怎么设当前组）
 				 */
@@ -499,7 +520,7 @@ function registerTools(ctx) {
 				if (groupId === '') {
 					throw new Error(
 						'task_submit: 没有分组可归属。\n' +
-							'每个分组 = 一件事 / 一个项目；"闲聊不会创建出任务"，所以事项必须有归属。\n' +
+							'每个分组 = 一件事 / 一个项目；"闲聊不会创建出任务"，所以任务必须有归属。\n' +
 							(groups.length === 0
 								? '现在一个分组都没有，先用 task_group action=create name=… 建一个。'
 								: '设一个「当前组」就不用每次指定了：task_group action=select group=…\n' +
@@ -516,7 +537,7 @@ function registerTools(ctx) {
 				 * 正文校验 —— **落盘之前**。
 				 *
 				 * 用户原话：
-				 *   > 架构校验不能过，直接拒绝这个计划提案。工具返回就是报错的。
+				 *   > 架构校验不能过，直接拒绝这个任务提案。工具返回就是报错的。
 				 *   > 校验过了，才上任务板。然后解析器工作。
 				 *
 				 * 所以这里抛错 = 整个提案不成立，任务板上不会出现不合法的正文。
@@ -583,9 +604,9 @@ function registerTools(ctx) {
 		defineTool({
 			name: 'task_claim',
 			description:
-				'领取一份「提交」状态的计划，返回它的子工作空间与权限档位。' +
-				'未指定、拒绝、完成、需要信息、需要授权的计划都不能领取。领取后状态变成「处理中」，并在计划头上记下领取的会话。',
-			parameters: { id: { type: 'string', required: true, description: '计划 id，例如 MG-01' } },
+				'领取一份「提交」状态的任务，返回它的子工作空间与权限档位。' +
+				'未指定、拒绝、完成、需要信息、需要授权的任务都不能领取。领取后状态变成「处理中」，并在任务头上记下领取的会话。',
+			parameters: { id: { type: 'string', required: true, description: '任务 id，例如 MG-01' } },
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
 				render: (_args, value) => [{ type: 'text', text: value.text }],
@@ -596,17 +617,17 @@ function registerTools(ctx) {
 				   并且 CLAIMS / 级联 / 转移校验全部由 setStateInner 一处维护。 */
 				const task = await setState(args.id, '处理中', agent, false);
 				const lines = [`已领取 ${task.id}：${task.title}`, `类型：${task.type} ${typeNames()[task.type] || ''}`];
-				lines.push(`子工作空间：${task.workspace || '（计划没写，按会话当前工作目录）'}`);
+				lines.push(`子工作空间：${task.workspace || '（任务没写，按会话当前工作目录）'}`);
 				lines.push(`额外工作区：${task.workspaces || '（无）'}`);
-				lines.push(`权限档位：${task.permission || '（计划没写，按会话当前档位）'}`);
-				lines.push('', '提醒：计划的附属权限只在会话权限档位为「按计划」时生效；其它档位按会话当前权限执行。');
+				lines.push(`权限档位：${task.permission || '（任务没写，按会话当前档位）'}`);
+				lines.push('', '提醒：任务的附属权限只在会话权限档位为「按计划」时生效；其它档位按会话当前权限执行。');
 				/* 约束 / 参考：**不阻断领取，但要说出来**。
 				 *
-				 * 约束常常是外部条件（没梯子、没权限），硬拒会让事项永远领不了；
+				 * 约束常常是外部条件（没梯子、没权限），硬拒会让任务永远领不了；
 				 * 但也不能不提——用户要的是"领之前知道有这个限制"。 */
 				const hints = await claimHints(task);
 				if (hints.length > 0) {
-					lines.push('', '这条事项挂着：');
+					lines.push('', '这个任务挂着：');
 					for (const hint of hints) lines.push('  ' + hint);
 				}
 				return { text: lines.join('\n') };
@@ -653,11 +674,11 @@ function registerCommands(ctx) {
 
 	ctx.commands.register({
 		name: 'tasks',
-		description: '输出任务库全部计划头的 JSON（面板读取）',
+		description: '输出任务库全部任务头的 JSON（面板读取）',
 		recordInput: false,
 		async handler() {
 			const tasks = await listAll();
-			/* 每个事项属于哪些分组：反查一遍，别让面板自己拼。 */
+			/* 每个任务属于哪些分组：反查一遍，别让面板自己拼。 */
 			const groups = (await listGroups()).filter((group) => group.name !== '');
 			const groupOfTask = new Map();
 			for (const group of groups) {
@@ -722,13 +743,13 @@ function registerCommands(ctx) {
 
 	ctx.commands.register({
 		name: 'task-approve',
-		description: '用户采纳一份计划（未指定 → 提交，面板按钮调用）',
-		input: { hint: '<计划 id>' },
+		description: '用户采纳一个任务（未指定 → 提交，面板按钮调用）',
+		input: { hint: '<任务 id>' },
 		recordInput: false,
 		async handler({ rawInput }) {
 			const id = text(rawInput).trim();
 			const task = await readTask(id);
-			if (task === undefined) return { kind: 'error', text: `没有这份计划：${id}` };
+			if (task === undefined) return { kind: 'error', text: `没有这个任务：${id}` };
 			if (task.status === '提交') return { kind: 'success', text: `${task.id} 已经是「提交」` };
 			/* 走唯一入口：转移校验、from→to 事件、取代级联都在里面。 */
 			try {
@@ -742,8 +763,8 @@ function registerCommands(ctx) {
 
 	ctx.commands.register({
 		name: 'task-reject',
-		description: '用户打回一份计划（面板按钮调用）',
-		input: { hint: '<计划 id>' },
+		description: '用户打回一个任务（面板按钮调用）',
+		input: { hint: '<任务 id>' },
 		recordInput: false,
 		async handler({ rawInput }) {
 			const id = text(rawInput).trim();
@@ -763,14 +784,14 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_template',
 			description:
-				'取一种事项模板（GitHub issue forms 的 YAML）。写事项前先取模板，按 body 里的字段填。' +
+				'取一种任务模板（GitHub issue forms 的 YAML）。写任务前先取模板，按 body 里的字段填。' +
 				`可选模板：${typeCatalog()}。` +
 				'每个模板声明了 default_kind（默认大类）与 behavior（界面形态）。' +
-				'给了 `from`（父事项 id）时，会同时列出该父事项允许派发的模板——' +
+				'给了 `from`（派生来源 id）时，会同时列出该派生来源允许派发的模板——' +
 				'不允许的会说明原因（例如工作不能再派另一件要做的事）。',
 			parameters: {
 				type: { type: 'string', required: true, description: `${TYPES.join('/')}` },
-				from: { type: 'string', description: '父事项 id；给了就一并校验能否派发' },
+				from: { type: 'string', description: '派生来源 id；给了就一并校验能否派发' },
 			},
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
@@ -780,7 +801,7 @@ function registerExtraTools(ctx) {
 				const yaml = await loadTemplate(args.type);
 				const fromId = String(args.from ?? '').trim();
 				if (fromId === '') return { text: yaml };
-				/* 顺带把"这个模板能不能挂在那个父事项下"一起回答，
+				/* 顺带把"这个模板能不能挂在那个派生来源下"一起回答，
 				   省得模型取了模板、写完、提交时才被拒。 */
 				const options = await dispatchOptions(fromId);
 				const wanted = normalizeType(args.type);
@@ -797,10 +818,10 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_dispatch',
 			description:
-				'列出某个事项下面**允许派发**哪些模板（以及为什么另一些不行）。' +
+				'列出某个任务下面**允许派发**哪些模板（以及为什么另一些不行）。' +
 				'判定三层：大类规则（工作不能派另一件要做的事）、父模板的 dispatch 收窄、子模板的 default_kind。' +
 				'不给 id 时返回全部模板（等于没限制）。',
-			parameters: { id: { type: 'string', description: '父事项 id，例如 WI-01；空 = 全部模板' } },
+			parameters: { id: { type: 'string', description: '派生来源 id，例如 WI-01；空 = 全部模板' } },
 			output: {
 				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
 				render: (_args, value) => [{ type: 'text', text: value.text }],
@@ -813,7 +834,7 @@ function registerExtraTools(ctx) {
 						`${options.from.id}（${KINDS[options.parentKind]?.name ?? options.parentKind}）下面可以派发：`,
 					);
 				} else {
-					lines.push('全部可用模板（没指定父事项，等于没限制）：');
+					lines.push('全部可用模板（没指定派生来源，等于没限制）：');
 				}
 				for (const item of options.allowed) {
 					lines.push(`  ✅ ${item.type} · ${item.name}（${KINDS[item.kind]?.name ?? item.kind}）`);
@@ -833,11 +854,11 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_state',
 			description:
-				'改一份计划的状态（九态）：未指定 / 提交 / 处理中 / 需要信息 / 需要授权 / 完成 / 失败 / 取消 / 拒绝。' +
-				'改「完成」时，进行态的子计划会被自动取消；改「需要信息 / 需要授权」时，进行态的子计划转「需要授权」。' +
+				'改一个任务的状态（九态）：未指定 / 提交 / 处理中 / 需要信息 / 需要授权 / 完成 / 失败 / 取消 / 拒绝。' +
+				'改「完成」时，进行态的派生任务会被自动取消；改「需要信息 / 需要授权」时，进行态的派生任务转「需要授权」。' +
 				'可选 note 一起写下理由（搁置时最该填：为什么需要授权 / 为什么缺信息）。',
 			parameters: {
-				id: { type: 'string', required: true, description: '计划 id，例如 MG-01' },
+				id: { type: 'string', required: true, description: '任务 id，例如 MG-01' },
 				status: { type: 'string', required: true, description: '九态之一' },
 				note: { type: 'string', description: '备注 / 搁置理由（可选，写清为什么停在这里）' },
 			},
@@ -856,10 +877,10 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_history',
 			description:
-				'读一份计划的事件历史（时间、谁改的、状态从什么变成什么、备注）。**只读**，不改任何东西。' +
+				'读一个任务的事件历史（时间、谁改的、状态从什么变成什么、备注）。**只读**，不改任何东西。' +
 				'老事件没有时间戳/actor 时显示为「—」。',
 			parameters: {
-				id: { type: 'string', required: true, description: '计划 id，例如 MG-01' },
+				id: { type: 'string', required: true, description: '任务 id，例如 MG-01' },
 				limit: { type: 'integer', description: '返回最近多少条，默认 50' },
 			},
 			output: {
@@ -880,7 +901,7 @@ function registerExtraTools(ctx) {
 				'管理「分组」：**一个分组 = 一件事 / 一个项目**，不是主题分类。' +
 				'用户原话：「分组是没有关联的事情。一个程序做的怎么样跟另一个程序无关。' +
 				'而用户一个时候只会验收一个程序，只有一个主要目标。」' +
-				'**硬规则：一条事项只能属于一个分组，且建好后不能迁移**（分组代表' +
+				'**硬规则：一个任务只能属于一个分组，且建好后不能迁移**（分组代表' +
 				'"这件事是哪次工作里提出的"，事后改归属会让历史失真）。' +
 				'action：list 列出 / create 新建 / rename 改名 / add 认领成员 / delete 删除。',
 			parameters: {
@@ -916,7 +937,7 @@ function registerExtraTools(ctx) {
 					 *   「最多有一个当前组。但可以没有激活的。」
 					 *
 					 * 所以传空 = 取消激活。取消之后 task_list 不带 group
-					 * 就只是"列出有哪些组"，不是"看全部事项"。 */
+					 * 就只是"列出有哪些组"，不是"看全部任务"。 */
 					const wanted = String(args.group ?? '').trim();
 					if (wanted === '') {
 						await writeCurrentGroup('', currentSessionId());
@@ -950,9 +971,9 @@ function registerExtraTools(ctx) {
 					return { text: `分组 ${id} 改名为「${name}」` };
 				}
 				if (action === 'delete') {
-					/* 删除 = 把名字记成墓碑，面板会过滤掉。成员不删，事项本身还在。 */
+					/* 删除 = 把名字记成墓碑，面板会过滤掉。成员不删，任务本身还在。 */
 					await saveGroup({ id, name: '', members: [], createdAt: found.createdAt });
-					return { text: `已删除分组 ${id}（成员事项本身没动）` };
+					return { text: `已删除分组 ${id}（成员任务本身没动）` };
 				}
 				if (action === 'add') {
 					const wanted = String(args.ids ?? '')
@@ -960,14 +981,14 @@ function registerExtraTools(ctx) {
 						.map((part) => part.trim())
 						.filter((part) => part !== '');
 					if (wanted.length === 0) throw new Error('add 需要 ids');
-					/* **一条事项只能属于一个分组，且不能迁移。**
+					/* **一个任务只能属于一个分组，且不能迁移。**
 					 *
 					 * 用户原话：「任务只能在一个组里面创建。……
 					 * 但任务是不能迁移到另一个组的。」
 					 *
 					 * 所以这里不是"加进去"，是**认领**：已被别的组认领的直接拒绝，
 					 * 并告诉它现在在哪。这样分组代表的事实是稳定的——
-					 * 一条事项的归属不会因为后来有人点了另一个组而变。 */
+					 * 一个任务的归属不会因为后来有人点了另一个组而变。 */
 					const taken = new Map();
 					for (const group of groups) {
 						if (group.id === id) continue;
@@ -977,7 +998,7 @@ function registerExtraTools(ctx) {
 					if (conflicts.length > 0) {
 						const detail = conflicts.map((member) => `${member} 已在 ${taken.get(member)}`).join('、');
 						throw new Error(
-							`这些事项已经属于别的分组，不能迁移（${detail}）。\n` +
+							`这些任务已经属于别的分组，不能迁移（${detail}）。\n` +
 								'分组代表"这件事是哪次工作里提出的"，事后改归属会让历史失真。',
 						);
 					}
@@ -995,12 +1016,12 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_answer',
 			description:
-				'回答设计类计划里的**某一个开放问题**（正文「要定的点 / 待定」小标题下编号的那些）。' +
+				'回答设计类任务里的**某一个开放问题**（正文「要定的点 / 待定」小标题下编号的那些）。' +
 				'与 task_note 的区别：note 是一整段自由结论，answer 是**逐条应答**，' +
 				'面板会把它们渲染成一问一答，能看出哪几条还没答。' +
 				'question 用编号（"1" / "2"），空字符串表示删掉这条回答。',
 			parameters: {
-				id: { type: 'string', required: true, description: '计划 id，例如 DP-05' },
+				id: { type: 'string', required: true, description: '任务 id，例如 DP-05' },
 				question: { type: 'string', required: true, description: '第几问（正文里的编号，例如 "1"）' },
 				answer: { type: 'string', required: true, description: '回答内容；空串 = 删掉这条回答' },
 			},
@@ -1021,14 +1042,14 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_flag',
 			description:
-				'给事项打**标记**（与状态正交，四个固定枚举）。' +
+				'给任务打**标记**（与状态正交，四个固定枚举）。' +
 				'unread（新建/被改动，我没看过）/ read（看过了）/ ' +
 				'needs-me（卡在我这里，等我动手）/ needs-review（我做的，等你审）。' +
-				'与状态的区别：「已读」不是生命周期的一部分——一件「处理中」的事项可以已读也可以未读；' +
+				'与状态的区别：「已读」不是生命周期的一部分——一件「处理中」的任务可以已读也可以未读；' +
 				'而「需要处理」可能对应多个状态（需要授权/待选/需要信息），语义都是"等我"。' +
 				'read 与 unread 互斥（后设的覆盖前一个）。给空数组表示清空全部标记。',
 			parameters: {
-				id: { type: 'string', required: true, description: '事项 id' },
+				id: { type: 'string', required: true, description: '任务 id' },
 				flags: { type: 'string', required: true, description: '逗号分隔的标记；空串 = 清空' },
 			},
 			output: {
@@ -1053,14 +1074,14 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_tag',
 			description:
-				'给事项打**标签**（多个，自由字符串）。与分组的区别：' +
+				'给任务打**标签**（多个，自由字符串）。与分组的区别：' +
 				'分组 = 这件事属于哪次工作（一个，不能改）；tag = 这条讲的是什么（多个，随便加）。' +
 				'用途（用户原话）：「他可以被标记为什么 tag，例如用户风格。' +
 				'让 ai 看不是当前任务组的时候知道看什么。' +
 				'也可以看里面有没有描述了现在用的库的使用方法。」' +
 				'给空数组表示清掉全部标签。',
 			parameters: {
-				id: { type: 'string', required: true, description: '计划 id' },
+				id: { type: 'string', required: true, description: '任务 id' },
 				tags: { type: 'string', required: true, description: '标签，逗号分隔；空串 = 清空' },
 			},
 			output: {
@@ -1087,10 +1108,10 @@ function registerExtraTools(ctx) {
 		defineTool({
 			name: 'task_note',
 			description:
-				'改一份计划的备注（附加信息 / 搁置理由）。**不受「只有未指定可改」的限制**——' +
-				'进行中的计划也能补一句「我在等什么」。空字符串表示清空备注。',
+				'改一个任务的备注（附加信息 / 搁置理由）。**不受「只有未指定可改」的限制**——' +
+				'进行中的任务也能补一句「我在等什么」。空字符串表示清空备注。',
 			parameters: {
-				id: { type: 'string', required: true, description: '计划 id，例如 MG-01' },
+				id: { type: 'string', required: true, description: '任务 id，例如 MG-01' },
 				note: { type: 'string', required: true, description: '备注正文；空串 = 清空' },
 			},
 			output: {
@@ -1113,12 +1134,12 @@ function registerExtraTools(ctx) {
 function registerExtraCommands(ctx) {
 	ctx.commands.register({
 		name: 'task-history',
-		description: '输出一份计划的事件历史 JSON（面板读取时间线）',
-		input: { hint: '<计划 id> [limit]' },
+		description: '输出一个任务的事件历史 JSON（面板读取时间线）',
+		input: { hint: '<任务 id> [limit]' },
 		recordInput: false,
 		async handler({ rawInput }) {
 			const parts = String(rawInput ?? '').trim().split(/\s+/u);
-			if (parts.length < 1 || parts[0] === '') return { kind: 'error', text: '用法：/task-history <计划 id> [limit]' };
+			if (parts.length < 1 || parts[0] === '') return { kind: 'error', text: '用法：/task-history <任务 id> [limit]' };
 			try {
 				const limit = parts[1] === undefined ? undefined : Number(parts[1]);
 				const entries = await readHistory(parts[0], limit);
@@ -1133,11 +1154,11 @@ function registerExtraCommands(ctx) {
 	   面板现在已经不靠它了：沙箱只管工具调用、不管工具内部实现，Windows 也没有
 	   沙箱机制，所以面板直接读文件就行，不需要问宿主路径（发命令会写会话日志）。
 
-	   留着它是因为它对**人**有用：想看计划库落在哪、或者宿主按 $DSH_HOME
+	   留着它是因为它对**人**有用：想看任务库落在哪、或者宿主按 $DSH_HOME
 	   解析到了什么位置，敲一下就知道。 */
 	ctx.commands.register({
 		name: 'task-paths',
-		description: '输出计划库与模板的绝对路径（人工排查用；面板不依赖它）',
+		description: '输出任务库与模板的绝对路径（人工排查用；面板不依赖它）',
 		recordInput: false,
 		async handler() {
 			return {
@@ -1301,7 +1322,7 @@ function registerExtraCommands(ctx) {
 
 	ctx.commands.register({
 		name: 'task-archive',
-		description: '归档 / 取消归档一个事项（连它的整棵子树）。面板调用；JSON：{id,archived}',
+		description: '归档 / 取消归档一个任务（连它的整棵子树）。面板调用；JSON：{id,archived}',
 		input: { hint: '{"id":"T-001","archived":true}' },
 		recordInput: false,
 		async handler({ rawInput }) {
@@ -1312,7 +1333,7 @@ function registerExtraCommands(ctx) {
 				return { kind: 'error', text: '参数不是合法 JSON' };
 			}
 			const id = String(parsed?.id ?? '').trim();
-			if (id === '') return { kind: 'error', text: '要说明归档哪个事项' };
+			if (id === '') return { kind: 'error', text: '要说明归档哪个任务' };
 			try {
 				const touched = await archiveSubtree(id, parsed?.archived === true);
 				return {
@@ -1338,7 +1359,7 @@ function registerExtraCommands(ctx) {
 
 	ctx.commands.register({
 		name: 'task-group-archive',
-		description: '归档 / 取回一个分组（面板调用；JSON：{group,archived}）。事项数据不动。',
+		description: '归档 / 取回一个分组（面板调用；JSON：{group,archived}）。任务数据不动。',
 		input: { hint: '{"group":"g-1","archived":true}' },
 		recordInput: false,
 		async handler({ rawInput }) {
@@ -1423,7 +1444,7 @@ function registerExtraCommands(ctx) {
 
 	ctx.commands.register({
 		name: 'task-dispatch',
-		description: '列出某个事项下面允许派发的模板（面板读；JSON：{id} → {allowed,blocked}）',
+		description: '列出某个任务下面允许派发的模板（面板读；JSON：{id} → {allowed,blocked}）',
 		input: { hint: '{"id":"WI-01"}' },
 		recordInput: false,
 		async handler({ rawInput }) {
@@ -1463,7 +1484,7 @@ function registerExtraCommands(ctx) {
 
 	ctx.commands.register({
 		name: 'task-create',
-		description: '新建一份计划（面板调用；JSON：{title,type,body,parent,workspace,workspaces,permission,status}）',
+		description: '新建一个任务（面板调用；JSON：{title,type,body,parent,workspace,workspaces,permission,status}）',
 		input: { hint: '{"title":"…","type":"C","body":"…"}' },
 		recordInput: false,
 		async handler({ rawInput }) {
@@ -1511,12 +1532,12 @@ function registerExtraCommands(ctx) {
 
 	ctx.commands.register({
 		name: 'task-get',
-		description: '取一份计划的全文 JSON（面板读取正文）',
-		input: { hint: '<计划 id>' },
+		description: '取一个任务的全文 JSON（面板读取正文）',
+		input: { hint: '<任务 id>' },
 		recordInput: false,
 		async handler({ rawInput }) {
 			const task = await readTask(String(rawInput ?? '').trim());
-			if (task === undefined) return { kind: 'error', text: `没有这份计划：${rawInput}` };
+			if (task === undefined) return { kind: 'error', text: `没有这个任务：${rawInput}` };
 			return { kind: 'success', text: JSON.stringify(task) };
 		},
 	});
@@ -1545,14 +1566,14 @@ function registerExtraCommands(ctx) {
 	});
 	ctx.commands.register({
 		name: 'task-note',
-		description: '改一份计划的备注 / 搁置理由（面板调用；不受「只有未指定可改」限制）',
-		input: { hint: '<计划 id> <备注文本>' },
+		description: '改一个任务的备注 / 搁置理由（面板调用；不受「只有未指定可改」限制）',
+		input: { hint: '<任务 id> <备注文本>' },
 		recordInput: false,
 		async handler({ rawInput }) {
 			const raw = String(rawInput ?? '').trim();
 			/* 备注本身含空格，所以只把第一段当 id，其余整段是正文。 */
 			const cut = raw.indexOf(' ');
-			if (cut <= 0) return { kind: 'error', text: '用法：/task-note <计划 id> <备注文本>' };
+			if (cut <= 0) return { kind: 'error', text: '用法：/task-note <任务 id> <备注文本>' };
 			const id = raw.slice(0, cut).trim();
 			const note = raw.slice(cut + 1).trim();
 			try {
@@ -1568,13 +1589,13 @@ function registerExtraCommands(ctx) {
 	});
 	ctx.commands.register({
 		name: 'task-state',
-		description: '改一份计划的状态（面板调用；九态之一）',
-		input: { hint: '<计划 id> <状态> [备注]' },
+		description: '改一个任务的状态（面板调用；九态之一）',
+		input: { hint: '<任务 id> <状态> [备注]' },
 		recordInput: false,
 		async handler({ agent, rawInput }) {
 			const raw = String(rawInput ?? '').trim();
 			const parts = raw.split(/\s+/u);
-			if (parts.length < 2) return { kind: 'error', text: '用法：/task-state <计划 id> <状态> [备注]' };
+			if (parts.length < 2) return { kind: 'error', text: '用法：/task-state <任务 id> <状态> [备注]' };
 			/* 第三个参数起是备注（可能含空格），把它整段还给 note。 */
 			const rest = raw.slice(raw.indexOf(parts[1]) + parts[1].length).trim();
 			try {
@@ -1594,9 +1615,9 @@ function registerUpdate(ctx) {
 		defineTool({
 			name: 'task_update',
 			description:
-				'改一份已有计划的内容（标题 / 类型 / 父计划 / 关联 / 子工作空间 / 权限 / 正文）。只改内容，不改状态——状态用 task_state。',
+				'改一份已有任务的内容（标题 / 类型 / 派生来源 / 关联 / 子工作空间 / 权限 / 正文）。只改内容，不改状态——状态用 task_state。',
 			parameters: {
-				id: { type: 'string', required: true, description: '计划 id，例如 SQ-01' },
+				id: { type: 'string', required: true, description: '任务 id，例如 SQ-01' },
 				title: { type: 'string', description: '新标题' },
 				type: { type: 'string', description: 'A/B/C/D/R/F，或空串表示空模板' },
 				kind: { type: 'string', description: 'goal/design/record/work；空则按 type 推断' },
@@ -1605,7 +1626,7 @@ function registerUpdate(ctx) {
 					type: 'json',
 					description: '新正文。对象形态按章节 id 索引，字符串形态是旧的 Markdown 全文。',
 				},
-				parent: { type: 'string', description: '父计划 id，空 = 顶层' },
+				parent: { type: 'string', description: '派生来源 id，空 = 顶层' },
 				links: { type: 'string', description: '关联，例如「依赖:GD-01, 派生:GR-01」' },
 				workspace: { type: 'string', description: '子工作空间绝对路径' },
 				permission: { type: 'string', description: '仅可查看 / 工作区内修改 / 完全权限 / 工具全关' },
@@ -1651,7 +1672,7 @@ function registerUpdate(ctx) {
 
 	ctx.commands.register({
 		name: 'task-update',
-		description: '改一份已有计划的内容（面板调用；JSON：{id,title?,type?,body?,parent?,links?,workspace?,permission?}）',
+		description: '改一份已有任务的内容（面板调用；JSON：{id,title?,type?,body?,parent?,links?,workspace?,permission?}）',
 		input: { hint: '{"id":"SQ-01","title":"…"}' },
 		recordInput: false,
 		async handler({ rawInput }) {

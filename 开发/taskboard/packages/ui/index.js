@@ -17,7 +17,7 @@
  *     - id: ui-agent-team
  *       name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'   ← UI 独立包
  *
- * 三个包，一张卡片。所以「整个事情是一个任务库」和「UI 独立成包」不冲突。
+ * 三个包，一张任务。所以「整个事情是一个任务库」和「UI 独立成包」不冲突。
  *
  * ## 硬限制：包名必须是两段
  *

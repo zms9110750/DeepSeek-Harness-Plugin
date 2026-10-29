@@ -3,12 +3,12 @@
  *
  * 为什么独立（用户要求）：
  *   > 一个包里面可以有多个插件。以下内容放在一个包里，分插件：
- *   > 箭头面板，计划面板，"按计划"的权限状态，"子工作空间"，额外工作空间。
+ *   > 箭头面板，任务面板，"按计划"的权限状态，"子工作空间"，额外工作空间。
  *
  * 权限是**限制**，面板是**显示**。两者混在一个插件里，导致
  * "只想看面板"的人被迫接受权限注入，反之亦然。拆开之后各自可独立启停。
  *
- * 依赖：`core`（要读 planClaims / 事项数据）。
+ * 依赖：`core`（要读 planClaims / 任务数据）。
  * 不依赖：面板。
  */
 
@@ -25,11 +25,11 @@ const PLAN_SPEC = {
 /** 会话 id → 领取的任务（进程内快取）。 */
 const CLAIMS = new Map();
 
-/** 计划库里所有「处理中」的计划：进程重启后用它重建 claim。 */
+/** 任务库里所有「处理中」的任务：进程重启后用它重建 claim。 */
 let CLAIM_CACHE = [];
 
 /*
- * 读事项列表的入口，由 `core` 插件注入。
+ * 读任务列表的入口，由 `core` 插件注入。
  *
  * 为什么不直接 import：`listAll` 属于 core（它管存储）。如果这里 import 它，
  * 依赖方向就变成 plan-preset → core，而 core 又要用本模块的 CLAIMS / resolveClaim，
@@ -63,8 +63,8 @@ async function refreshClaims() {
  *
  * 只认**明确属于本会话**的：进程内快取，或 `claimed_by === 本会话 id`。
  *
- * 早期版本还有一条回落——「`claimed_by` 为空的处理中计划给任何会话用」。
- * 那是最危险的一处：两个会话会同时把同一份计划解析成自己的，于是
+ * 早期版本还有一条回落——「`claimed_by` 为空的处理中任务给任何会话用」。
+ * 那是最危险的一处：两个会话会同时把同一个任务解析成自己的，于是
  * A 的 workspace + B 的 permission 在同一个进程里同时生效，等于**权限并集**。
  * 现在直接不回落：认不出来就是没有 claim，按「失败即关」拒绝，
  * 让模型先 `task_claim` 认领（领取会写 `claimed_by`）。
@@ -117,7 +117,7 @@ const DESCRIPTORS = {
 	'task_groups': { write: false, destructive: false, external: false, idempotent: true },
 	'task_history': { write: false, destructive: false, external: false, idempotent: true },
 
-	// —— 计划管理（只改计划库自己的文件）——
+	// —— 任务管理（只改任务库自己的文件）——
 	'task_submit': { write: true, destructive: false, external: false, idempotent: false },
 	'task_claim': { write: true, destructive: false, external: false, idempotent: false },
 	'task_state': { write: true, destructive: false, external: false, idempotent: false },
@@ -170,10 +170,10 @@ function descriptorOf(toolName) {
 }
 
 /**
- * 计划的「描述符开关」：计划里可以显式关掉某一类能力，
+ * 任务的「描述符开关」：任务里可以显式关掉某一类能力，
  * 比整个「权限档位」细一档。
  *
- * 写法（计划字段 `deny`，逗号分隔）：`destructive, external`
+ * 写法（任务字段 `deny`，逗号分隔）：`destructive, external`
  * 语义是「在权限档位之上再收窄」——只能收窄，不能放宽。
  */
 const DESCRIPTOR_KEYS = ['write', 'destructive', 'external', 'idempotent'];
@@ -190,18 +190,18 @@ function parseDeny(raw) {
 /** 按描述符判定是否要拦；返回原因或空串。 */
 function descriptorBlocker(toolName, denySet) {
 	const desc = descriptorOf(toolName);
-	if (desc.write && denySet.has('write')) return '计划关闭了「写」类能力（write）';
-	if (desc.destructive && denySet.has('destructive')) return '计划关闭了「破坏」类能力（destructive）';
-	if (desc.external && denySet.has('external')) return '计划关闭了「外部」类能力（external）';
-	if (desc.idempotent === false && denySet.has('idempotent')) return '计划关闭了「不幂等」类能力（idempotent）';
+	if (desc.write && denySet.has('write')) return '任务关闭了「写」类能力（write）';
+	if (desc.destructive && denySet.has('destructive')) return '任务关闭了「破坏」类能力（destructive）';
+	if (desc.external && denySet.has('external')) return '任务关闭了「外部」类能力（external）';
+	if (desc.idempotent === false && denySet.has('idempotent')) return '任务关闭了「不幂等」类能力（idempotent）';
 	return '';
 }
 
 /**
- * 计划管理类工具：只读写计划库、不碰工作区。
+ * 任务管理类工具：只读写任务库、不碰工作区。
  *
- * **在「按计划」档下永远放行**，与领取的计划写了什么权限无关、与有没有领取无关。
- * 这是防死锁的关键：AI 能自己完成任务、搁置、再领下一张，否则「工具全关」的计划
+ * **在「按计划」档下永远放行**，与领取的任务写了什么权限无关、与有没有领取无关。
+ * 这是防死锁的关键：AI 能自己完成任务、搁置、再领下一张，否则「工具全关」的任务
  * 会把它锁死在里面，连 `task_state` 都调不了。
  */
 const PLAN_TOOLS = new Set([
@@ -250,7 +250,7 @@ export function installPlanPreset(ctx) {
 /**
  * 按计划的守卫：**只在会话档位是「按计划」时生效**。
  * 其它任何档位（仅可查看 / 工作区内修改 / 完全权限 / 工具全关）一律 return undefined，
- * 由宿主自己的档位说话——计划的附属权限不参与。
+ * 由宿主自己的档位说话——任务的附属权限不参与。
  */
 
 export function installGuard(ctx) {
@@ -267,7 +267,7 @@ export function installGuard(ctx) {
 			if (state?.preset !== PLAN_PRESET) return undefined;
 
 			const toolName = toolNameOf(exec);
-			/* 计划管理类工具只读写计划库、不碰工作区：任何档位都放行，
+			/* 任务管理类工具只读写任务库、不碰工作区：任何档位都放行，
 			   否则「按计划」档下连 task_list / task_claim 都被拒，永远领不到任务。 */
 			if (PLAN_TOOLS.has(toolName)) return undefined;
 
@@ -275,12 +275,12 @@ export function installGuard(ctx) {
 			if (claim === undefined) {
 				return (
 					'按计划：当前会话没有可用的领取（没有领取任务，或者任务不属于本会话）。\n' +
-					'先 task_list 找一份「提交」的计划，task_claim 领取，再动手。'
+					'先 task_list 找一份「提交」的任务，task_claim 领取，再动手。'
 				);
 			}
 
 			const permission = claim.permission || '工作区内修改';
-			/* 计划级描述符开关：比权限档位细一档，只能收窄。 */
+			/* 任务级描述符开关：比权限档位细一档，只能收窄。 */
 			const deny = parseDeny(claim.deny);
 
 			if (permission === '工具全关') {
@@ -291,7 +291,7 @@ export function installGuard(ctx) {
 				);
 			}
 			if (permission === '完全权限') {
-				/* 完全权限之上仍尊重计划自己写的 deny。 */
+				/* 完全权限之上仍尊重任务自己写的 deny。 */
 				const blocked = descriptorBlocker(toolName, deny);
 				return blocked === '' ? undefined : `按计划：任务 ${claim.id} 的 ${toolName} 被拒——${blocked}。`;
 			}
@@ -307,7 +307,7 @@ export function installGuard(ctx) {
 				if (desc.write) {
 					return (
 						`按计划：任务 ${claim.id} 只给「仅可查看」，${toolName} 会写东西（write=${desc.write}），不能调用。\n` +
-						'切任务不受限：先 task_state 结束或搁置这张计划，再领下一张。'
+						'切任务不受限：先 task_state 结束或搁置这张任务，再领下一张。'
 					);
 				}
 				/* external 也挡：只读档不该联网、不该起子智能体。 */
@@ -326,7 +326,7 @@ export function installGuard(ctx) {
 				if (!desc.write) return undefined;
 			}
 
-			// 工作区内修改（也是没写权限时的默认）：计划没写子工作空间时，按会话 cwd 兜底
+			// 工作区内修改（也是没写权限时的默认）：任务没写子工作空间时，按会话 cwd 兜底
 			const root = claim.workspace || String(session?.header?.cwd || '');
 			/* 额外工作区：允许多个，与主工作区一起构成「可写范围」。 */
 			const extras = Array.isArray(claim.workspaces)
@@ -334,7 +334,7 @@ export function installGuard(ctx) {
 				: splitWorkspaces(claim.workspaces);
 			const roots = (root === '' ? [] : [root]).concat(extras);
 
-			const allowed = () => roots.join('、') || '（计划没写工作区）';
+			const allowed = () => roots.join('、') || '（任务没写工作区）';
 
 			const rawPath = String(args.file_path ?? args.path ?? '');
 			const command = String(args.command ?? args.cmd ?? args.script ?? '');

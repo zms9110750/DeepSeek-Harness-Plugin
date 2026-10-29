@@ -1,7 +1,7 @@
 name: GU · 用户需求
 default_kind: goal
 behavior: answer
-description: 用户说了什么，原样记下来；拆成哪些事是子事项的事
+description: 用户说了什么，原样记下来；拆成哪些事是派生任务的事
 domain: core
 framed: false
 dispatch: [goal, design, record, work]
@@ -16,7 +16,7 @@ hints:
     而那句理由往往是后面判断"什么算做到了"的唯一依据。
 
     这一条只是「用户要什么」，不是「要做什么」。
-    拆成哪些事，是下面子事项的事 —— 不要在这里写方案。
+    拆成哪些事，是下面派生任务的事 —— 不要在这里写方案。
 
   fail: |
     这一条不会失败。它只会被「取消」或者被「拒绝」。

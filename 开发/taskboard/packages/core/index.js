@@ -1,13 +1,13 @@
 /**
  * 任务库 · 宿主侧。
  *
- * 计划既是文件（`任务\<id>.md`），也是对话面板里的卡片。
- * 这里只做三件事：读写计划文件、给模型四个任务工具、给面板三条命令。
+ * 任务既是文件（`任务\<id>.md`），也是对话面板里的任务。
+ * 这里只做三件事：读写任务文件、给模型四个任务工具、给面板三条命令。
  *
  * 硬规则：
  *   · 模型提交的一律是「未指定」，只有用户能把状态改成「提交」（/task-approve）；
- *   · `task_claim` 只接受「提交」的计划，未指定 / 拒绝 / 完成 都拒绝；
- *   · 计划的附属权限（子工作空间 + 权限档位）只在会话处于「按计划」档位时才生效，
+ *   · `task_claim` 只接受「提交」的任务，未指定 / 拒绝 / 完成 都拒绝；
+ *   · 任务的附属权限（子工作空间 + 权限档位）只在会话处于「按计划」档位时才生效，
  *     这一段由权限侧实现，这里只负责把值交出去。
  *
  * @module @local/taskboard
@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 /*
  * 这个包拆成四个插件（用户要求「一个包里面可以有多个插件」）：
  *
- *   core         本文件 —— 存储、事项模型、状态机、AI 工具、命令
+ *   core         本文件 —— 存储、任务模型、状态机、AI 工具、命令
  *   templates    附加模板（内置 4 个在 core/templates/，其余 23 个在这里）
  *   plan-preset  「按计划」权限档 + 守卫
  *   workspace    子工作空间 / 额外工作区 + 路径判定
@@ -145,7 +145,7 @@ export const name = 'taskboard';
  */
 export const inject = ['permissionPresets', 'sessionProjections', 'taskboardStore'];
 
-/** 老格式目录（一份计划一个 md），只在首次启动时迁移用。 */
+/** 老格式目录（一个任务一个 md），只在首次启动时迁移用。 */
 const LEGACY_DIR = process.env.TASKBOARD_ROOT || 'X:\\temp\\dsh\\任务';
 
 const HEAD_FIELDS = [
@@ -327,7 +327,7 @@ const TYPE_NAMES = {
  * 分类轴是「**什么时候算做完**」——四个定义互斥且穷尽，所以是真正的大类，
  * 而不是按行业角色乱切（那样必然互相重叠）。
  *
- *   goal   目标   子事项全部终结才算完         无自有状态，纯推导   不占位
+ *   goal   目标   派生任务全部终结才算完         无自有状态，纯推导   不占位
  *   design 设计   用户采纳/驳回了才算完        有状态              不占位
  *   record 记录   写出来就算完（没人动手）      有状态              不占位
  *   work   工作   真做出来了才算完             有状态              **占位**
@@ -338,7 +338,7 @@ const TYPE_NAMES = {
  * 「行为取决于具体的模板配置」。
  */
 const KINDS = {
-	goal: { name: '目标', who: '无（由子事项决定）', occupying: false, claimable: false },
+	goal: { name: '目标', who: '无（由派生任务决定）', occupying: false, claimable: false },
 	design: { name: '设计', who: '用户', occupying: false, claimable: false },
 	record: { name: '记录', who: '无（写出来即完）', occupying: false, claimable: false },
 	work: { name: '工作', who: 'AI', occupying: true, claimable: true },
@@ -355,7 +355,7 @@ const KIND_ORDER = ['goal', 'design', 'record', 'work'];
  * R（研究）      → work    调研也要动手查
  * F（复盘）      → record  复盘是写出来就完
  * H1..H8         → record  它们是"为什么停"，属于叙述，不是活
- * 空             → work    最安全：老数据里空 type 的多半是待办事项
+ * 空             → work    最安全：老数据里空 type 的多半是待办任务
  */
 /**
  * type → kind 的映射（新模板 + 老数据兼容）。
@@ -480,12 +480,12 @@ function kindOf(task) {
 	return 'work';
 }
 
-/** 一条事项的状态，缺省按草稿算。 */
+/** 一个任务的状态，缺省按草稿算。 */
 function statusOf(task) {
 	return String(task?.status || '未指定');
 }
 
-/** 一条事项的模板编号（双字母，老数据自动升级）。 */
+/** 一个任务的模板编号（双字母，老数据自动升级）。 */
 function typeOf(task) {
 	return normalizeType(task?.type);
 }
@@ -526,7 +526,7 @@ function resolveKindArg(raw, type) {
 	return wanted;
 }
 
-/* 计划状态复用 A2A 的九态（见 计划\19-A2A调研\README.md）。 */
+/* 任务状态复用 A2A 的九态（见 任务\19-A2A调研\README.md）。 */
 const STATUS = ['未指定', '提交', '处理中', '需要信息', '需要授权', '成功', '失败', '取消', '拒绝'];
 
 /* 领取决定的常量在 task_claim 里（CLAIMABLE_FROM），
@@ -585,7 +585,7 @@ const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup
 
 /*
  * ---------------------------------------------------------------------------
- * 目标的状态由子事项推导（DP-02）
+ * 目标的状态由派生任务推导（DP-02）
  * ---------------------------------------------------------------------------
  *
  * 用户原话（五条规则，按优先级从上往下）：
@@ -607,7 +607,7 @@ const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup
  */
 /*
  * ---------------------------------------------------------------------------
- * 目标的状态由子事项推导（GU-08 1.1–1.10）
+ * 目标的状态由派生任务推导（GU-08 1.1–1.10）
  * ---------------------------------------------------------------------------
  *
  * 用户原话（1.1–1.10，后者成立需前者不成立）：
@@ -667,7 +667,7 @@ const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup
  *     任意 --取消--> 取消
  *     任意 --拒绝(人)--> 拒绝
  *
- * **计算态** —— 不存，每次由子事项算出来：
+ * **计算态** —— 不存，每次由派生任务算出来：
  *
  *     需要信息 / 需要授权
  *
@@ -682,7 +682,7 @@ const DRAFT = STATUS.filter((status) => !hasGroup(status, '进行') && !hasGroup
  * 所以每类的规则分成三栏：
  *
  *     manual   人/AI 的动作（写 status）
- *     computed 从子事项算出来的梗阻（不写 status）
+ *     computed 从派生任务算出来的梗阻（不写 status）
  *     guard    手动动作的前置条件（不参与优先级）
  */
 
@@ -810,7 +810,7 @@ const COMPUTED_RULES = {
 };
 
 /**
- * 一条事项现在应该显示什么状态。
+ * 一个任务现在应该显示什么状态。
  *
  * 计算态优先于存储态：有梗阻时显示梗阻，没梗阻才显示 status 字段。
  *
@@ -882,22 +882,22 @@ function isFinal(status) {
  * 删键再 emit 一次——同 gate-switch12 / plan-lock 的做法。
  *
  * sandbox 取上限（danger-full-access）+ approval=never：这一档本身不做限制，
- * 真正收窄由下面的 guard 按"领取的任务"来做，否则计划里写「完全权限」也放不开。
+ * 真正收窄由下面的 guard 按"领取的任务"来做，否则任务里写「完全权限」也放不开。
  */
 
-/** 备注长度上限（字符）：够写清一段理由，又不至于让计划头变得无法展示。 */
+/** 备注长度上限（字符）：够写清一段理由，又不至于让任务头变得无法展示。 */
 const NOTE_LIMIT = 4000;
 
 /**
- * 改一份计划的备注（搁置理由等附加信息）。
+ * 改一个任务的备注（搁置理由等附加信息）。
  *
- * 与 task_update 的区别：备注不是「计划内容」，**不受「只有未指定可改」的限制**——
- * 进行中的计划正需要补一句「我在等什么」。
+ * 与 task_update 的区别：备注不是「任务内容」，**不受「只有未指定可改」的限制**——
+ * 进行中的任务正需要补一句「我在等什么」。
  */
 async function setNote(id, note) {
 	return withWrite(async () => {
 		const task = await readTask(id);
-		if (task === undefined) throw new Error(`没有这份计划：${id}`);
+		if (task === undefined) throw new Error(`没有这个任务：${id}`);
 		const value = String(note ?? '').trim();
 		if (value.length > NOTE_LIMIT) {
 			throw new Error(`备注太长（${value.length} 字），上限 ${NOTE_LIMIT} 字`);
@@ -913,13 +913,13 @@ async function setNote(id, note) {
  * 开放问题（answers）
  * ---------------------------------------------------------------------------
  *
- * 设计类事项正文里常有「## 两个要定的点」这种**开放问题**。
+ * 设计类任务正文里常有「## 两个要定的点」这种**开放问题**。
  * 以前只能整段堆在备注里，用户没法一条一条回答——他会说"完全在备注里面打字，
  * 没法一一直接回答"。
  *
- * 所以给事项加一个 `answers` 字段：`{ 问题键: 回答 }`。
+ * 所以给任务加一个 `answers` 字段：`{ 问题键: 回答 }`。
  *   · 问题键取自正文的编号（`1` / `2` / `3`…），稳定、不依赖标题文字
- *   · 面板按编号渲染成一问一答的卡片，每条一个输入框
+ *   · 面板按编号渲染成一问一答的任务，每条一个输入框
  *   · 与 note 正交：note 是自由结论，answers 是逐条应答
  *
  * 为什么不塞进 body：body 是 Markdown 交付物，回答是可被反复改写的状态。
@@ -956,7 +956,7 @@ function extractQuestions(body) {
 async function setAnswer(id, question, answer) {
 	return withWrite(async () => {
 		const task = await readTask(id);
-		if (task === undefined) throw new Error(`没有这份计划：${id}`);
+		if (task === undefined) throw new Error(`没有这个任务：${id}`);
 		const key = String(question ?? '').trim();
 		if (key === '') throw new Error('要说明回答的是第几问（question）');
 		const value = String(answer ?? '').trim();
@@ -995,7 +995,7 @@ async function setAnswer(id, question, answer) {
 async function setArchived(id, archived) {
 	return withWrite(async () => {
 		const task = await readTask(id);
-		if (task === undefined) throw new Error(`没有这份计划：${id}`);
+		if (task === undefined) throw new Error(`没有这个任务：${id}`);
 		const next = Object.assign({}, task, { archived: archived === true });
 		await saveTask(next);
 		return next;
@@ -1019,7 +1019,7 @@ async function archiveSubtree(id, archived) {
 			byParent.get(parent).push(item);
 		}
 		const root = all.find((item) => item.id === String(id || '').trim());
-		if (root === undefined) throw new Error(`没有这份计划：${id}`);
+		if (root === undefined) throw new Error(`没有这个任务：${id}`);
 		const seen = new Set();
 		const queue = [root];
 		const touched = [];
@@ -1061,7 +1061,7 @@ async function archiveSubtree(id, archived) {
 async function setTags(id, tags) {
 	return withWrite(async () => {
 		const task = await readTask(id);
-		if (task === undefined) throw new Error(`没有这份计划：${id}`);
+		if (task === undefined) throw new Error(`没有这个任务：${id}`);
 		const list = Array.isArray(tags)
 			? [...new Set(tags.map((tag) => String(tag).trim()).filter((tag) => tag !== ''))]
 			: [];
@@ -1086,11 +1086,11 @@ async function setTags(id, tags) {
  *
  *   unread        系统置：新建 / 被改动 → 我没看过
  *   read          我置：打开详情即置 → 看过了
- *   needs-me      事项自己声明 → 卡在我这里，等我动手
+ *   needs-me      任务自己声明 → 卡在我这里，等我动手
  *   needs-review  派发方置 → 我做的，等你审
  *
  * 为什么必须与状态分开：
- *   · 「已读」不是生命周期的一部分——一件「处理中」的事项可以已读也可以未读
+ *   · 「已读」不是生命周期的一部分——一件「处理中」的任务可以已读也可以未读
  *   · 「需要处理」可能对应多个状态（需要授权 / 待选 / 需要信息），
  *     但语义是同一个：**等我**
  *   · 塞进状态会数量爆炸（3 组 × 2 读 × 2 待 = 12 种，还要按 kind 再乘）
@@ -1127,7 +1127,7 @@ function normalizeFlags(list) {
 async function setFlags(id, flags) {
 	return withWrite(async () => {
 		const task = await readTask(id);
-		if (task === undefined) throw new Error(`没有这份事项：${id}`);
+		if (task === undefined) throw new Error(`没有这个任务：${id}`);
 		const list = normalizeFlags(Array.isArray(flags) ? flags.map(String) : []);
 		const next = Object.assign({}, task, { flags: list.join(',') });
 		await saveTask(next);
@@ -1225,7 +1225,7 @@ async function createNewInner(task) {
 		await saveTask(Object.assign({}, task, { id }));
 		return id;
 	}
-	throw new Error('新建事项失败：连续 50 次编号冲突');
+	throw new Error('新建任务失败：连续 50 次编号冲突');
 }
 
 function summarize(task) {
@@ -1255,7 +1255,7 @@ function summarize(task) {
 
 function renderList(tasks) {
 	if (tasks.length === 0) return '任务库是空的（存储：' + storeFilePath() + '）';
-	const lines = [`共 ${tasks.length} 份计划（存储：${storeFilePath()}）`];
+	const lines = [`共 ${tasks.length} 份任务（存储：${storeFilePath()}）`];
 	for (const task of tasks) lines.push(`- ${summarize(task)}`);
 	lines.push(
 		'',
@@ -1266,15 +1266,41 @@ function renderList(tasks) {
 	return lines.join('\n');
 }
 
-function renderFull(task) {
+function renderFull(task, all) {
 	const lines = [summarize(task), ''];
+
+	/*
+	 * 反向关系。
+	 *
+	 * 正向的 links 已经在 summarize 里输出了（"链接=依赖:WI-01"）。
+	 * 这里补的是**别人指向我**的那一半 —— 没有它，
+	 * 「A 相关:D」在 D 那边完全看不见，无向就成了单行道。
+	 *
+	 * 相关是无向的：A 写了「相关:D」，D 那边也应该看到 A。
+	 * 但按用户的定法，**只存后建的那一方**（先建的任务不可变，不改它）。
+	 * 所以只能查询时双向展开 —— 这就是这里在干的事。
+	 */
+	if (Array.isArray(all) && all.length > 0) {
+		const incoming = [];
+		for (const other of all) {
+			if (other.id === task.id) continue;
+			for (const link of linkPairs(other)) {
+				if (link.to !== task.id) continue;
+				incoming.push(link.label + ':' + other.id);
+			}
+		}
+		/* 自己的 parent 也是一种「别人指向我」——但那个已经在 summarize 里了，
+		   这里只补 links 里的反向。 */
+		if (incoming.length > 0) lines.push('被别人指向=' + incoming.join(', '));
+	}
+
 	if (task.body) lines.push(task.body);
 	return lines.join('\n');
 }
 
 
 
-/* 计划模板目录（GitHub issue forms 的 YAML）。
+/* 任务模板目录（GitHub issue forms 的 YAML）。
  *
  * ── 内置最小集 vs 附加模板 ──────────────────────────────────────────
  *
@@ -1564,7 +1590,7 @@ async function dispatchOptions(fromId) {
 				name: (meta.name || type).replace(/^[A-Z]{1,2}\s*[·・.]\s*/u, '').trim() || type,
 				reason:
 					parentMeta === null
-						? `父事项没有模板，只允许 ${declared.join('/')}`
+						? `派生来源没有模板，只允许 ${declared.join('/')}`
 						: `${parentType} 的 dispatch 只允许 ${declared.join('/')}`,
 			});
 			continue;
@@ -1580,16 +1606,16 @@ async function dispatchOptions(fromId) {
 
 
 /**
- * 一个计划进入终止态后，把整片下游一起收掉（递归、防环）。
+ * 一个任务进入终止态后，把整片下游一起收掉（递归、防环）。
  *
  * 下游有两种，都是「进行态 → 取消」，草稿与成功态一律不动：
- *   · 派生子计划：`parent` 指向我；
+ *   · 派生派生任务：`parent` 指向我；
  *   · 依赖方：`links` 里写着 `依赖:<我>`。
  *
- * 区别在根节点：我做成了（完成）→ 依赖我的人照常可领，只有子计划要收；
+ * 区别在根节点：我做成了（完成）→ 依赖我的人照常可领，只有派生任务要收；
  * 我没做成（失败 / 取消 / 拒绝）→ 依赖我的人也全是死路，一起取消。
  *
- * 被取消的下游自己也是「终止」，所以它的子计划和依赖方继续往下收——
+ * 被取消的下游自己也是「终止」，所以它的派生任务和依赖方继续往下收——
  * 用队列 + seen 集合，既保证递归完整，又不会在环上打转。
  */
 async function cascadeClose(rootId, rootStatus) {
@@ -1624,9 +1650,9 @@ async function cascadeClose(rootId, rootStatus) {
  *
  *   未指定（草稿） → 处理中   ❌ 禁止
  *
- * 为什么只禁这一条（T-016）：计划只有在「处理中」时才会把 `workspace` / `permission`
+ * 为什么只禁这一条（T-016）：任务只有在「处理中」时才会把 `workspace` / `permission`
  * 交给守卫。草稿是模型自己能写的，如果草稿能直接进「处理中」，模型就能绕过
- * 「采纳只能由用户做」，给自己发一张写着「完全权限」的计划 —— 已经实测复现。
+ * 「采纳只能由用户做」，给自己发一张写着「完全权限」的任务 —— 已经实测复现。
  *
  * 其它边按工作流放开（第一版写得太严，把正常用法也挡了）：
  *
@@ -1641,7 +1667,7 @@ const ACTIVE_ALL = ['提交', '处理中', '需要信息', '需要授权'];
 const TERMINAL = ['成功', '失败', '取消', '拒绝'];
 const DRAFT_STATUS = '未指定';
 
-/** 终态：重开这类计划属于「用户专属」动作，模型不能自己干。 */
+/** 终态：重开这类任务属于「用户专属」动作，模型不能自己干。 */
 const REOPEN_FROM = TERMINAL;
 
 /**
@@ -1725,7 +1751,7 @@ function transitionBlocker(from, to, byUser, task) {
 	/* 终态锁死，只能由用户重开回「提交」。 */
 	if (REOPEN_FROM.includes(from)) {
 		if (byUser !== true) {
-			return `「${from}」是终态，只有用户能重开：模型请新建一张计划（或用面板「分支」）。`;
+			return `「${from}」是终态，只有用户能重开：模型请新建一个任务（或用面板「分支」）。`;
 		}
 		if (to !== '提交') {
 			return `重开只能从「${from}」回到「提交」，不能直接到「${to}」。`;
@@ -1733,7 +1759,7 @@ function transitionBlocker(from, to, byUser, task) {
 		return '';
 	}
 
-	/* 其余都是进行态之间的转移：交给各自的前置校验（领取检查、父计划检查等）。 */
+	/* 其余都是进行态之间的转移：交给各自的前置校验（领取检查、派生来源检查等）。 */
 	if (to === '提交' && byUser !== true) {
 		return '采纳（→提交）只能由用户执行：模型请用 task_claim 领取，或让用户在面板点「采纳」。';
 	}
@@ -1757,7 +1783,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 	/* 注意：这里拿到的 task 是在 withWrite 锁内重新读出来的（readTask → readStore），
 	   所以串行的第二个调用能看到第一个的写入。下面所有校验都基于这份新快照。 */
 	const task = await readTask(id);
-	if (task === undefined) throw new Error(`没有这份计划：${id}`);
+	if (task === undefined) throw new Error(`没有这个任务：${id}`);
 
 	const from = String(task.status || '未指定');
 
@@ -1781,9 +1807,9 @@ async function setStateInner(id, next, agent, byUser, note) {
 		if (!allowed.has(wanted)) {
 			const derived = deriveGoalStatus(task, await listAll());
 			throw new Error(
-				`${task.id} 是「目标」，它的状态由子事项推导，不能手动设成「${wanted}」。\n` +
+				`${task.id} 是「目标」，它的状态由派生任务推导，不能手动设成「${wanted}」。\n` +
 					`现在推导出来是「${derived}」。\n` +
-					'要让目标往前走，去推进它的子事项；要放弃整个目标，用「拒绝」或「取消」。',
+					'要让目标往前走，去推进它的派生任务；要放弃整个目标，用「拒绝」或「取消」。',
 			);
 		}
 	}
@@ -1794,7 +1820,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 	 * 效果就是新建->记录->阻碍。不区分具体是什么记录。」
 	 *
 	 * 判定顺序（宽进）：
-	 *   1. 有记录类子事项（最好是 RB 阻碍）→ 通过
+	 *   1. 有记录类派生任务（最好是 RB 阻碍）→ 通过
 	 *   2. 或 note 写了东西 → 通过（AI 用工具时不一定走面板的弹窗）
 	 *   3. 都没有 → 拒绝，并说明该怎么做
 	 *
@@ -1842,8 +1868,8 @@ async function setStateInner(id, next, agent, byUser, note) {
 			throw new Error(
 				`${task.id} 要转「失败」，得先说明失败的原因。两个办法：\n` +
 					'  1. 派一条记录（推荐 RB 阻碍）把它写清楚：task_submit 时 parent 填这个 id、type 填 RB\n' +
-					'  2. 或者在这条事项的 note 里写清：卡在哪、为什么过不去、下一件该试什么\n' +
-					'理由：失败的原因常常很长、还会牵涉别的事项。塞进一句话里，后来的人看不出所以然。',
+					'  2. 或者在这个任务的 note 里写清：卡在哪、为什么过不去、下一件该试什么\n' +
+					'理由：失败的原因常常很长、还会牵涉别的任务。塞进一句话里，后来的人看不出所以然。',
 			);
 		}
 	}
@@ -1852,7 +1878,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 		/* 只有「工作」这一类才能被领取（四类别模型）。
 		 *
 		 * 目标、设计、记录都不存在「领取」这个动作：
-		 *   · 目标的状态由子事项推导，它自己不占位；
+		 *   · 目标的状态由派生任务推导，它自己不占位；
 		 *   · 设计是等用户回答/选择/过目，AI 领它没有意义；
 		 *   · 记录没人动手，写出来就完。
 		 *
@@ -1876,7 +1902,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 		 *
 		 * 「需要信息」「需要授权」的语义是**进行中的暂停**，不是终结
 		 * （见 GROUP_OF：它们同时属于「进行」和「搁置」）。暂停之后
-		 * 当然要能恢复，否则这张计划只能被取消重开。
+		 * 当然要能恢复，否则这张任务只能被取消重开。
 		 *
 		 * 并发双领仍由下面两道挡住：
 		 *   · 草稿进不来（transitionBlocker 拦了「未指定」→「处理中」）
@@ -1886,7 +1912,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 		if (!CLAIMABLE_FROM.includes(from)) {
 			throw new Error(
 				`${task.id} 当前状态是「${from}」，不能领取。` +
-					`只有「${CLAIMABLE_FROM.join('」/「')}」的计划能被领取` +
+					`只有「${CLAIMABLE_FROM.join('」/「')}」的任务能被领取` +
 					(from === '处理中' ? '（已被其他会话领走）' : ''),
 			);
 		}
@@ -1926,13 +1952,13 @@ async function setStateInner(id, next, agent, byUser, note) {
 			}
 		}
 
-		/* 上行：子计划里只要还有「进行态」，父计划就不能成功。
+		/* 上行：派生任务里只要还有「进行态」，派生来源就不能成功。
 		   草稿（未指定）不作数，结束态（成功/失败/取消/拒绝）不阻挡。 */
 		const open = all.filter((child) => child.parent === task.id && isActive(child.status));
 		if (open.length > 0) {
 			throw new Error(
-				`子计划还在进行中：${open.map((child) => `${child.id}（${child.status}）`).join('、')}；` +
-					'先把它们收掉（成功 / 失败 / 取消 / 拒绝）再完成父计划',
+				`派生任务还在进行中：${open.map((child) => `${child.id}（${child.status}）`).join('、')}；` +
+					'先把它们收掉（成功 / 失败 / 取消 / 拒绝）再完成派生来源',
 			);
 		}
 	}
@@ -1975,7 +2001,7 @@ async function setStateInner(id, next, agent, byUser, note) {
 }
 
 /**
- * 读某份计划的事件历史（T-019）。
+ * 读某份任务的事件历史（T-019）。
  *
  * **只读**：不改文件、不补字段、不迁移。老事件没有 ts/actor/from/to 就显示为「—」。
  * 这是「append-only JSONL 本来就存了全部历史，只是没人读」的兑现。
@@ -1995,18 +2021,18 @@ function renderHistory(id, entries) {
 }
 
 
-/** 计划驱动的执行约定：写进系统提示，模型每一步都能看到。 */
+/** 任务驱动的执行约定：写进系统提示，模型每一步都能看到。 */
 
-/** 覆盖式更新一份计划的内容字段（不动 status / claimed_by）；只有「未指定」的计划可改。 */
+/** 覆盖式更新一个任务的内容字段（不动 status / claimed_by）；只有「未指定」的任务可改。 */
 async function updateTask(id, patch) {
 	return withWrite(() => updateTaskInner(id, patch));
 }
 
 async function updateTaskInner(id, patch) {
 	const task = await readTask(id);
-	if (task === undefined) throw new Error(`没有这份计划：${id}`);
+	if (task === undefined) throw new Error(`没有这个任务：${id}`);
 	if (task.status !== '未指定') {
-		throw new Error(`${task.id} 现在的状态是「${task.status}」，已采纳的计划不能直接改；请用「分支」复制一份再改`);
+		throw new Error(`${task.id} 现在的状态是「${task.status}」，已采纳的任务不能直接改；请用「分支」复制一份再改`);
 	}
 	const next = Object.assign({}, task, patch, { id: task.id, status: task.status, claimed_by: task.claimed_by });
 	/* kind 变了要校验：它是四类别模型的核心字段，不能写进非法值。
@@ -2031,7 +2057,7 @@ async function updateTaskInner(id, patch) {
 	return next;
 }
 
-/** 一份新计划被采纳（提交）时，它 links 里「取代:X」的那些旧计划直接转「拒绝」。 */
+/** 一份新任务被采纳（提交）时，它 links 里「取代:X」的那些旧任务直接转「拒绝」。 */
 /*
  * ---------------------------------------------------------------------------
  * 关系类型（links）
@@ -2060,19 +2086,28 @@ async function updateTaskInner(id, patch) {
  *   「约束，是一个关系。阻碍，是一个性质，他可没说阻碍谁啊。
  *    不同的事情也可以被一个无关的东西阻碍。例如搜什么东西，然后约束于没有梯子。」
  *
- *   阻碍 = 事项的性质（"我被卡住了"），自身不指向谁
- *   约束 = 两个事项之间的关系，**可以跨树**指向一件完全无关的事
+ *   阻碍 = 任务的性质（"我被卡住了"），自身不指向谁
+ *   约束 = 两个任务之间的关系，**可以跨树**指向一件完全无关的事
  *
  * 所以约束存在 links 里，不是父子结构。
  */
 const RELATIONS = {
+	/* 有行为 */
 	依赖: { direction: 'forward', blocks: 'hard', cascades: true },
-	相关: { direction: 'none', blocks: 'none', cascades: false },
-	约束: { direction: 'forward', blocks: 'soft', cascades: false },
-	参考: { direction: 'forward', blocks: 'none', cascades: false },
 	取代: { direction: 'forward', blocks: 'none', cascades: true },
-	派生: { direction: 'forward', blocks: 'none', cascades: false },
-	来源: { direction: 'forward', blocks: 'none', cascades: false },
+	约束: { direction: 'forward', blocks: 'soft', cascades: false },
+
+	/* 只给人看的 */
+	相关: { direction: 'both', blocks: 'none', cascades: false },
+	参考: { direction: 'forward', blocks: 'none', cascades: false },
+
+	/*
+	 * 派生 = 父子结构。
+	 *
+	 * 它不是 links 里的标签（是 parent 字段），
+	 * 留在表里是为了让"七种关系"这个词表完整 —— 用户查关系类型时能看到它。
+	 */
+	派生: { direction: 'forward', blocks: 'none', cascades: false, viaParent: true },
 };
 /** 用户在 links 里能用的（派生/来源是系统写的，不拦手写）。 */
 const RELATION_LABELS = Object.keys(RELATIONS);
@@ -2120,13 +2155,13 @@ function linkPairs(task) {
  * 现在只查一件事：**依赖的东西完成了没有**。
  *
  * 以前这里还有两条：
- *   · 「父计划必须是处理中」
+ *   · 「派生来源必须是处理中」
  *   · 「派生源必须是处理中」
  * 四类别模型下**全删了**，因为它们正是死锁的来源：
  *
- *   父计划（目标/设计）根本不该处于「处理中」——目标没有自有状态，
+ *   派生来源（目标/设计）根本不该处于「处理中」——目标没有自有状态，
  *   设计是等用户回答。要求它们「处理中」等于要求一个不该存在的状态，
- *   于是凡是有父节点的计划都领不了。
+ *   于是凡是有父节点的任务都领不了。
  *
  * 派生关系不再额外限制：能不能派生由模板的 dispatch 表和 kind 决定，
  * 不由「父节点正在跑」决定。父节点是容器，容器不需要"在跑"。
@@ -2145,24 +2180,24 @@ async function claimBlocker(task, tasks) {
 	/* 约束（RELATIONS.约束 = soft）：**不硬拒，只往 text 里加提示**。
 	 *
 	 * 为什么软：约束常常是"外部条件不理想"（没梯子、没权限、数据量太大），
-	 * 硬拒会让事项永远领不了。用户能判断"这个约束现在绕得过去"。
+	 * 硬拒会让任务永远领不了。用户能判断"这个约束现在绕得过去"。
 	 * 所以领是可以领的，但要把约束明确说出来。
 	 *
 	 * 实现上不在这里返回——调用方拿不到"提示"这个返回值形态。
 	 * 约束的提示由 claim 工具自己拼（见 claimConstraints）。 */
 	if (task.parent) {
 		const parent = byId.get(task.parent);
-		if (parent === undefined) return `父计划 ${task.parent} 不存在`;
+		if (parent === undefined) return `派生来源 ${task.parent} 不存在`;
 		/* 已终结的父节点下面不能再开新活（父都收尾了，孩子不该冒出来）。 */
 		if (PARENT_CLOSED.has(parent.status)) {
-			return `父计划 ${parent.id} 已「${parent.status}」，不能再往下领取`;
+			return `派生来源 ${parent.id} 已「${parent.status}」，不能再往下领取`;
 		}
 	}
 	return '';
 }
 
 /**
- * 列出这条事项的「约束」和「参考」，给领取时做提示（不阻断）。
+ * 列出这个任务的「约束」和「参考」，给领取时做提示（不阻断）。
  *
  * 用户原话：「例如一个目标，一个工作，用约束/参考，联系到记录/阻碍/研究里面去。」
  * 约束跨树指向——它指向的东西可能完全不在同一棵树下，所以不能靠父子结构找。
@@ -2198,10 +2233,10 @@ async function activeClaimOf(agent) {
 
 /*
  * 这里曾经有 isAncestorOf / isDescendantOf 两个函数，用来做「祖先链内部交接」，
- * 目的是解开当时的死锁（领了父计划 → 子计划全领不了）。
+ * 目的是解开当时的死锁（领了派生来源 → 派生任务全领不了）。
  *
  * 四类别模型落地后它们是**多余的**，已经删除：
- *   · 能派工作的容器是「目标」，而目标不可领取（状态由子事项推导）；
+ *   · 能派工作的容器是「目标」，而目标不可领取（状态由派生任务推导）；
  *   · 所以「父节点占着会话位、子节点进不来」这个前提根本不会出现；
  *   · 死锁不是靠"允许换手"绕过去的，是在类别层面就不存在。
  *
@@ -2237,7 +2272,7 @@ async function assertParent(parentId, childKind, childType) {
 	const id = String(parentId ?? '').trim();
 	if (id === '') return;
 	const parent = await readTask(id);
-	if (parent === undefined) throw new Error(`父计划 ${id} 不存在`);
+	if (parent === undefined) throw new Error(`派生来源 ${id} 不存在`);
 	if (PARENT_CLOSED.has(parent.status)) {
 		throw new Error(`父节点 ${id} 已「${parent.status}」，不能再往下派生`);
 	}
@@ -2262,7 +2297,7 @@ async function assertParent(parentId, childKind, childType) {
 	}
 }
 /**
- * 父计划被搁置（需要信息/需要授权）时，进行态的子计划一起转「需要授权」（递归，防环）。
+ * 派生来源被搁置（需要信息/需要授权）时，进行态的派生任务一起转「需要授权」（递归，防环）。
  * 草稿（未指定）不作数、成功态是已交付的记录——两者都不动。
  */
 async function shelveChildren(parentId, visited) {
@@ -2308,11 +2343,11 @@ async function applySupersede(task) {
 		const old = all.find((item) => item.id === oldId);
 		if (old === undefined) continue;
 
-		/* 顺序有讲究：必须先把「指向旧计划」的依赖转移到新计划，再判旧计划死刑。
-		   反过来的话，旧计划一转「拒绝」就会把那些依赖方当成死路一起取消掉，
-		   而它们本来应该在替代关系里活下来、改指向新计划。 */
+		/* 顺序有讲究：必须先把「指向旧任务」的依赖转移到新任务，再判旧任务死刑。
+		   反过来的话，旧任务一转「拒绝」就会把那些依赖方当成死路一起取消掉，
+		   而它们本来应该在替代关系里活下来、改指向新任务。 */
 
-		/* 1) 依赖转移：凡是指向旧计划的「依赖」，改成指向新计划 */
+		/* 1) 依赖转移：凡是指向旧任务的「依赖」，改成指向新任务 */
 		for (const other of all) {
 			if (other.id === task.id) continue;
 			const pairs = linkPairs(other);
@@ -2323,7 +2358,7 @@ async function applySupersede(task) {
 			await saveTask(other);
 		}
 
-		/* 2) 旧计划转「拒绝」，并把它自己的下游一起收掉（子计划 + 剩下的依赖方）。
+		/* 2) 旧任务转「拒绝」，并把它自己的下游一起收掉（派生任务 + 剩下的依赖方）。
 		   这里不能调 setState：applySupersede 本身就在 withWrite 里，再进一次会自锁。 */
 		if (old.status !== '拒绝') {
 			old.status = '拒绝';
@@ -2332,18 +2367,18 @@ async function applySupersede(task) {
 			await cascadeClose(oldId, '拒绝');
 		}
 
-		/* 3) 旧计划 `links` 里「派生:X」写法的下游，也一并取消（递归） */
+		/* 3) 旧任务 `links` 里「派生:X」写法的下游，也一并取消（递归） */
 		await cancelDerived(oldId, await listAll());
 	}
 	await refreshClaims();
 }
 
 /**
- * 给「一个会话干一个计划」的调度器用的宿主服务。
+ * 给「一个会话干一个任务」的调度器用的宿主服务。
  *
  * 口径是**会话 id**，不要求是真实的 DSH 会话对象：外部调度器（含自管子 AI）
- * 给一个稳定的字符串 id 就行。一个 id 同一时刻只允许一个「处理中」的计划，
- * 不同 id 可以并发领取、各按自己那份计划的权限干活——**互不影响、不并集**。
+ * 给一个稳定的字符串 id 就行。一个 id 同一时刻只允许一个「处理中」的任务，
+ * 不同 id 可以并发领取、各按自己那份任务的权限干活——**互不影响、不并集**。
  *
  * 子智能体 / 团队 AI 走自己的权限档（不是「按计划」），守卫本来就不管它们；
  * 它们可以不接这个口子，也可以主动用 `claim(sessionId, planId)` 各领各的。
@@ -2361,7 +2396,7 @@ function planClaimsFor(ctx) {
 	});
 
 	const service = {
-		/** 该会话当前正在做的计划（处理中 + claimed_by 严格匹配）；没有就 undefined。 */
+		/** 该会话当前正在做的任务（处理中 + claimed_by 严格匹配）；没有就 undefined。 */
 		async current(sessionId) {
 			const id = String(sessionId ?? '');
 			if (id === '') return undefined;
@@ -2373,7 +2408,7 @@ function planClaimsFor(ctx) {
 		},
 
 		/**
-		 * 为某个会话领取一份「提交」的计划；一次只能一个。
+		 * 为某个会话领取一份「提交」的任务；一次只能一个。
 		 * sessionId 是任意稳定字符串，不要求是真实 DSH 会话。
 		 */
 		async claim(sessionId, planId) {
@@ -2391,8 +2426,8 @@ function planClaimsFor(ctx) {
 			const running = await service.current(sessionId);
 			if (running === undefined) return undefined;
 			const wanted = String(nextStatus ?? '');
-			/* 释放不能落到「处理中」：那会造出 claimed_by 为空的无主处理中计划 */
-			if (wanted === '处理中') throw new Error('release 不能把计划释放成「处理中」；要换手请先 release 再 claim');
+			/* 释放不能落到「处理中」：那会造出 claimed_by 为空的无主处理中任务 */
+			if (wanted === '处理中') throw new Error('release 不能把任务释放成「处理中」；要换手请先 release 再 claim');
 			/* 走唯一的改状态入口：释放到终止态时同样要触发派生/依赖级联。 */
 			const task = await setState(running.id, STATUS.includes(wanted) ? wanted : '提交', undefined, true);
 			/* 同步清快取：不清的话，这个会话下一次工具调用还会以为自己在做旧任务。 */
@@ -2409,7 +2444,7 @@ function planClaimsFor(ctx) {
 
 		/**
 		 * 外部调度器自检用：某个会话如果现在动手，会拿到哪份权限。
-		 * 返回 undefined 表示「没有可用领取」（守卫会拒掉除计划管理工具以外的一切）。
+		 * 返回 undefined 表示「没有可用领取」（守卫会拒掉除任务管理工具以外的一切）。
 		 */
 		async effective(sessionId) {
 			const running = await service.current(sessionId);
@@ -2431,7 +2466,7 @@ function planClaimsFor(ctx) {
  * ---------------------------------------------------------------------------
  *
  * 用户要求：「一个包里面可以有多个插件。以下内容放在一个包里，分插件：
- *   箭头面板，计划面板，"按计划"的权限状态，"子工作空间"，额外工作空间。」
+ *   箭头面板，任务面板，"按计划"的权限状态，"子工作空间"，额外工作空间。」
  *
  * `apply` 仍是默认入口，但它现在只做**组合**：按顺序启动四个子插件。
  * 每个子插件也有自己的 apply，可以单独在 cordis.patch.yml 里挂：
@@ -2447,7 +2482,7 @@ function planClaimsFor(ctx) {
  *
  * 用户要求：「任务板：有命令，ai 工具，后端实现。」
  *
- * 这个包只做**后端**：存储、事项模型、状态机、AI 工具、命令。
+ * 这个包只做**后端**：存储、任务模型、状态机、AI 工具、命令。
  * UI 是另外两个包（ui-drawer / ui-sidebar），权限与工作空间也是。
  *
  * 模板：内置四个（GU 用户任务 / WI 实现 / DP 方案 / RR 汇报）在

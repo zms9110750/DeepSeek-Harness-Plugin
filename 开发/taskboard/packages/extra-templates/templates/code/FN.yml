@@ -32,7 +32,7 @@ body:
     attributes:
       value: |
         这一份只写「要什么」和「要考虑什么」。
-        怎么做是子事项的事。
+        怎么做是派生任务的事。
 
   - type: textarea
     id: want

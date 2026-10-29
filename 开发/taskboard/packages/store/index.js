@@ -25,7 +25,7 @@
  *
  * ## 对外接口：ctx.taskboardStore
  *
- *   listAll()                 → 全部事项（已 fold）
+ *   listAll()                 → 全部任务（已 fold）
  *   readTask(id)              → 一条，或 undefined
  *   saveTask(task, meta)      → 追加一条 upsert 事件
  *   appendEvent(event)        → 底层追加（core 的 createNew 用）
@@ -41,7 +41,7 @@ import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promise
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 /*
- * 事项头的字段清单与顺序 —— **这是磁盘格式的一部分**，属于 store。
+ * 任务头的字段清单与顺序 —— **这是磁盘格式的一部分**，属于 store。
  *
  * 顺序就是 JSONL / 旧 md 文件里 `key: value` 行的顺序。
  * 改动它等于改动文件格式，所有读老数据的路径都要跟着改。
@@ -134,7 +134,7 @@ function renderTask(task) {
  *   2. `$DSH_HOME`（空串/纯空白视为没设，避免把 home 解析成当前目录）
  *   3. `~/.dsh`
  *
- * 计划库是**运行时数据**，跟会话消息一个地位，所以必须住在同一个根下（T-032）。
+ * 任务库是**运行时数据**，跟会话消息一个地位，所以必须住在同一个根下（T-032）。
  * 支持 `~` / `~/` / `~\` 前缀展开。
  */
 function expandHomePath(raw) {
@@ -177,7 +177,7 @@ export function provideStoreHooks(overrides) {
 }
 
 /*
- * 老格式目录（一份计划一个 md 文件）。
+ * 老格式目录（一个任务一个 md 文件）。
  *
  * 只在首次启动时扫一次，把老数据导进 JSONL，然后写 `.migrated` 标记。
  * 保留它是为了**不丢用户已有的数据** —— 迁移完就再也不碰了。
@@ -196,10 +196,10 @@ const STORE_FILE = process.env.TASKBOARD_STORE || join(STORE_DIR, 'plans.jsonl')
  *
  * 关键澄清：**`workspace` 不是分组**。那是"能读哪个目录"的权限字段，
  * 用户为了能读别的项目，把它设成了仓库根目录——所以按 workspace 分组
- * 会把所有事项挤进同一堆。分组必须是**独立的概念**。
+ * 会把所有任务挤进同一堆。分组必须是**独立的概念**。
  *
- * 设计：一个分组就是一个**命名的集合**，事项可以属于任意多个分组。
- *   · 与父子树正交（一条事项既可属于某分组，又在某棵树下）
+ * 设计：一个分组就是一个**命名的集合**，任务可以属于任意多个分组。
+ *   · 与父子树正交（一个任务既可属于某分组，又在某棵树下）
  *   · 与九态正交（分组不是状态）
  *   · 存独立文件 `groups.jsonl`，不污染 `plans.jsonl` 的行格式
  *     （用户明确要求过"不要随便改日志"；新建文件比改旧行安全）
@@ -222,7 +222,7 @@ const GROUPS_FILE = process.env.TASKBOARD_GROUPS || join(STORE_DIR, 'groups.json
  * 切一次，后面所有工具调用都默认在那一组里。
  *
  * 存一个单独的文件（`current.json`），因为它是**会话级偏好**，
- * 不是事项数据，混进 plans.jsonl 会把事件流搞脏。
+ * 不是任务数据，混进 plans.jsonl 会把事件流搞脏。
  */
 const CURRENT_FILE = process.env.TASKBOARD_CURRENT || join(STORE_DIR, 'current.json');
 
@@ -339,7 +339,7 @@ async function saveGroup(group) {
 			createdAt: group.createdAt || new Date().toISOString(),
 			/* 归档是对**分组**归档的（用户要求）：
 			 * 「归档是对分组归档的。」所以在组上放一个布尔，
-			 * 而不是给每条事项都打 archived。 */
+			 * 而不是给每条任务都打 archived。 */
 			archived: archived === true,
 		},
 	};
@@ -413,13 +413,13 @@ async function appendEvent(event) {
 
 
 /**
- * 读一份事项的事件历史。
+ * 读一个任务的事件历史。
  *
  * 这属于存储层：它要直接读 JSONL 原文，**只读**、不补字段、不迁移。
  * core 的 task_history 通过服务调它。
  */async function readHistory(id, limit) {
 	const wanted = String(id ?? '').trim();
-	if (wanted === '') throw new Error('task_history: 需要一个计划 id，例如 MG-01');
+	if (wanted === '') throw new Error('task_history: 需要一个任务 id，例如 MG-01');
 	let raw = '';
 	try {
 		raw = await readFile(STORE_FILE, 'utf8');
@@ -449,7 +449,7 @@ async function appendEvent(event) {
 	}
 	if (entries.length === 0) {
 		const any = await readTask(wanted);
-		if (any === undefined) throw new Error(`没有这份计划：${wanted}`);
+		if (any === undefined) throw new Error(`没有这个任务：${wanted}`);
 		return [];
 	}
 	const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50;
@@ -493,7 +493,7 @@ async function listAll() {
 
 async function readTask(id) {
 	const wanted = text(id).trim();
-	if (wanted === '') throw new Error('task_get: 需要一个计划 id，例如 MG-01');
+	if (wanted === '') throw new Error('task_get: 需要一个任务 id，例如 MG-01');
 	return (await readStore()).get(wanted);
 }
 
@@ -514,7 +514,7 @@ function dedupeLinks(raw) {
 	return out.join(', ');
 }
 /**
- * 写一份计划的当前状态。
+ * 写一个任务的当前状态。
  *
  * `meta` 可选：`{from, to}` 表示这次写是一次状态转移（只有 setState 会传）。
  * `from`/`to` 只在真的变化时才写，别的写入（改备注、改正文）不带这两个字段。

@@ -31,7 +31,7 @@
  * ## 和「传参」的关系
  *
  * 传参是工具调用面的事。工具面收到参数后，按章节声明的 action 取这里的
- * schema 校验；过不了就拒绝整个提案，计划根本不进任务板。
+ * schema 校验；过不了就拒绝整个提案，任务根本不进任务板。
  *
  * @module @local/taskboard-actions
  */
@@ -305,8 +305,8 @@ defineAction({
 	schema: {
 		required: ['options'],
 		properties: {
-			header: { type: 'string', description: '卡片副标题（小字）' },
-			question: { type: 'string', description: '卡片主标题（大字）' },
+			header: { type: 'string', description: '任务副标题（小字）' },
+			question: { type: 'string', description: '任务主标题（大字）' },
 
 			/*
 			 * 候选项。
