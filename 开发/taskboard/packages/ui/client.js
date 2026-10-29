@@ -2882,7 +2882,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         "\u53D6\u6D88": {
           code: "CANCELED",
           tone: "label-secondary",
-          desc: "\u7236\u4EFB\u52A1\u7EC8\u7ED3\u540E\uFF0C\u4ECD\u505C\u5728\u8FDB\u884C\u6001\u7684\u4E0B\u6E38\u88AB\u53D6\u6D88\u3002"
+          desc: "\u6D3E\u751F\u6765\u6E90\u7EC8\u7ED3\u540E\uFF0C\u4ECD\u505C\u5728\u8FDB\u884C\u6001\u7684\u4E0B\u6E38\u88AB\u53D6\u6D88\u3002"
         },
         "\u62D2\u7EDD": {
           code: "REJECTED",
@@ -2896,10 +2896,11 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       function stategroupsOf(status) {
         return STATUS_GROUPS[status] || [];
       }
-      function groupLabel(status) {
-        const groups = stategroupsOf(status);
-        return groups.length > 0 ? groups.join("/") : "\u8349\u7A3F";
-      }
+      /*
+       * groupLabel 删了 —— 它返回 "进行/搁置" 这种复合串，
+       * 除了显示没法用，而显示的地方都改成只显示状态了。
+       * 归类用 stategroupsOf() 拿数组判断。
+       */
       function statusTone(status) {
         return "var(--dsw-alias-" + statusA2A(status).tone + ")";
       }
@@ -3348,7 +3349,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                   h(
                     "span",
                     { style: { fontSize: 11, flex: "none", color: statusTone(node.status) } },
-                    node.status + " \xB7 " + groupLabel(node.status)
+                    node.status
                   )
                 );
               })
@@ -3710,7 +3711,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                   }
                 },
                 h("span", { style: { fontSize: 8 } }, "\u25CF"),
-                node.status + " \xB7 " + groupLabel(node.status),
+                /* 只显示状态 —— 组是筛选用的，不挂在状态后面。 */
+                node.status,
                 h("span", { style: { fontSize: 8, opacity: 0.7 } }, "\u25BE")
               ),
               menuOpen ? h(
@@ -3907,14 +3909,15 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                     color: "var(--dsw-alias-label-secondary)"
                   }
                 },
-                String(children.length + outLinks.length + inLinks.length + (node.parent ? 1 : 0))
+                /* 只数关系，不数结构 —— 派生来源单独显示在右边。 */
+                String(children.length + outLinks.length + inLinks.length)
               )
             ),
             node.parent ? h(
               "span",
               { style: { display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 } },
               h("span", { style: { width: 1, height: 16, background: "var(--dsw-alias-border-l2)", flex: "none" } }),
-              h("span", { style: { fontSize: 11, fontWeight: 600, color: "var(--dsw-alias-label-secondary)", flex: "none" } }, "\u7236\u4EFB\u52A1"),
+              h("span", { style: { fontSize: 11, fontWeight: 600, color: "var(--dsw-alias-label-secondary)", flex: "none" } }, "\u6D3E\u751F\u6765\u6E90"),
               h(
                 "button",
                 {
@@ -3944,7 +3947,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               "button",
               {
                 type: "button",
-                title: "\u4ECE\u8FD9\u4E00\u6761\u5F80\u4E0B\u5EFA\u4E00\u6761\u65B0\u7684\uFF0C\u7236\u4EFB\u52A1\u81EA\u52A8\u586B\u6210\u5B83",
+                title: "\u4ECE\u8FD9\u4E00\u6761\u5F80\u4E0B\u5EFA\u4E00\u6761\u65B0\u7684\uFF0C\u6D3E\u751F\u6765\u6E90\u81EA\u52A8\u586B\u6210\u5B83",
                 onClick: function() {
                   if (typeof props.onDeriveChild === "function") props.onDeriveChild(node.id);
                 },
@@ -3999,8 +4002,9 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 if (entries.length === 0) return null;
                 const cols = [[], [], []];
                 for (const entry of entries) {
-                  const group = groupLabel(entry.status);
-                  cols[group === "\u6401\u7F6E" ? 1 : group === "\u6210\u529F" ? 2 : 0].push(entry);
+                  /* 用数组判断，不能用 groupLabel 的复合串。 */
+                  const groups4 = stategroupsOf(entry.status);
+                  cols[groups4.indexOf("\u6401\u7F6E") !== -1 ? 1 : groups4.indexOf("\u7ED3\u675F") !== -1 ? 2 : 0].push(entry);
                 }
                 return h(
                   "div",
