@@ -2231,6 +2231,29 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
       }
     }
   });
+  /*
+   * text —— textarea 的**新名字**（宿主侧 action 表改过名）。
+   *
+   * 两个都留着：模板里可能写 text，也可能写 textarea。
+   * 渲染器是同一个（Textarea），只是注册名不同。
+   *
+   * aiWritable 也要认 —— 那是「这一章采纳后 AI 还能写」的标记。
+   */
+  defineAction({
+    name: "text",
+    summary: "\u4E00\u6BB5\u53EF\u8F93\u5165\u7684\u6587\u672C",
+    render: "Textarea",
+    schema: {
+      required: ["value"],
+      properties: {
+        value: { type: "string", description: "\u5B58\u4E0B\u6765\u7684\u5185\u5BB9" },
+        placeholder: { type: "string", description: "\u8F93\u5165\u6846\u7684\u7070\u5B57\u63D0\u793A" },
+        row: { type: "integer", minimum: 1, maximum: 40, description: "\u9AD8\u5EA6\uFF1B1 = \u5355\u884C" },
+        rows: { type: "integer", minimum: 1, maximum: 20, description: "\u65E7\u540D\uFF08\u517C\u5BB9\uFF09" },
+        aiWritable: { type: "boolean", description: "AI \u80FD\u4E0D\u80FD\u5199\u8FD9\u4E00\u7AE0" }
+      }
+    }
+  });
   defineAction({
     name: "input",
     summary: "\u5355\u884C\u6587\u672C\u8F93\u5165",
@@ -2268,6 +2291,28 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           type: "boolean",
           description: "\u5141\u8BB8\u300C\u5148\u4E0D\u9009\uFF0C\u8981\u66F4\u591A\u4FE1\u606F\u300D"
         }
+      }
+    }
+  });
+
+  /*
+   * ask —— choose 的**新名字**（宿主侧改过名）。
+   *
+   * 差别只有一个：宿主用 max_picks 表达单选/多选，
+   * 客户端这边继续读旧的 picked，但也要认 max_picks（99 = 多选）。
+   */
+  defineAction({
+    name: "ask",
+    summary: "\u4ECE\u9009\u9879\u91CC\u6311",
+    render: "Choose",
+    schema: {
+      required: ["options"],
+      properties: {
+        options: { type: "array", description: "\u5019\u9009\u9879" },
+        max_picks: { type: "integer", description: "\u6700\u591A\u80FD\u9009\u51E0\u4E2A\uFF1B1 = \u5355\u9009\uFF0C99 = \u591A\u9009" },
+        picked: { type: "array", description: "\u5DF2\u9009\uFF08\u65E7\u540D\uFF09" },
+        placeholder: { type: "string", description: "\u81EA\u586B\u6846\u7684\u7070\u5B57" },
+        label: { type: "string", description: "\u7AE0\u8282\u6807\u9898" }
       }
     }
   });

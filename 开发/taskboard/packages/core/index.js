@@ -190,18 +190,31 @@ const HEAD_FIELDS = [
  * **所有可能的模板**都有答案，否则关掉 templates 插件后，读老数据时
  * 连 `RB 阻碍` 都认不出来了。
  */
+/*
+ * 当前可用的模板编号。
+ *
+ * ## 这是**真源** —— tools 那份已经从 core 取
+ *
+ * 顺序按四类分组，不排序：界面和文档都按"大类"读，字母序会把四类搅在一起。
+ *
+ * ## 每个编号都必须有对应的 .yml 文件
+ *
+ *   core/templates/                  DP GU RR WI（core 自带，不装插件也能用）
+ *   ../templates/templates/          DC DQ GU RB RF RL RW WR WV
+ *   ../extra-templates/templates/    DI FN IM MM OP TS WT
+ *
+ * 改了这里要同时确认文件在不在，否则 task_submit 会以
+ * 「type 必须留空或取…」拒掉一个真实存在的模板。
+ */
 const TYPES = [
-	// 目标 Goal
-	'GU',
-	// 设计 Design
-	'DC', 'DQ',
-	// 记录 Record
+	// 目标
+	'GU', 'MM', 'FN', 'OP', 'TS',
+	// 设计
+	'DQ', 'DC', 'DP', 'DI', 'IM',
+	// 记录
 	'RB', 'RW', 'RF', 'RL', 'RR',
-	// 工作 Work
-	'WR', 'WV', 'WI',
-	// code 域（templates 扩展包提供）
-	'MM', 'FN', 'OP', 'TS',
-	'DI', 'IM', 'WT',
+	// 工作
+	'WR', 'WV', 'WT', 'WI',
 ];
 /** 旧类型：只用于读老数据（第一代单字母 + 第二代拼音前缀）。 */
 const LEGACY_TYPES = [
@@ -2537,6 +2550,7 @@ function coreService(ctx) {
 		templateDir: () => TEMPLATE_DIR,
 	TYPE_NAMES: () => TYPE_NAMES,
 	LEGACY_TYPES: () => LEGACY_TYPES,
+	TYPES: () => TYPES,
 		resolveDshHome: (c) => resolveDshHome(c),
 		splitWorkspaces: (raw) => splitWorkspaces(raw),
 

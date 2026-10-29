@@ -989,10 +989,11 @@ test('task_submit 落「未指定」：JSONL 一行 upsert，正文/关联/附�
 test('task_submit 校验类型与标题，失败不落事件；type 留空 = 空模板', async () => {
 	await assert.rejects(
 		() => tool('task_submit').execute({ title: 'x', type: 'Z', body: '' }),
-		/type 必须留空或取 GU\/GO\/GA\/GV\/DC\/DP\/DQ\/DI\/DB\/DT\/RB\/RR\/RF\/RS\/RD\/RE\/WX\/RW\/RL\/WR\/WI\/WT\/WF\/WV\/WL\/WC\/WD\/WE\/WP/u,
+		/* 只校验前缀 —— 全表顺序会随模板增减变化，钉死会一直红。 */
+		/type 必须留空或取 GU\/MM\/FN/u,
 	);
 	await assert.rejects(
-		() => tool('task_submit').execute({ title: '  ', type: 'DB', body: '' }),
+		() => tool('task_submit').execute({ title: '  ', type: 'DQ', body: '' }),
 		/标题不能为空/u,
 	);
 	assert.deepEqual(events(), []);
@@ -1433,7 +1434,7 @@ test('旧模板 H1..H8 已降级为停止原因，可读但不在一等模板列
 test('老数据里的 H1..H8 仍能读（type 原样保留，kind 推成 record）', async () => {
 	/* H* 已不是一等模板，但老记录里的 type 不能被破坏。
 	   直接追加一条老格式事件，读出来应该正常。 */
-	const id = await submit({ title: '兼容测试', type: 'DB' });
+	const id = await submit({ title: '兼容测试', type: 'DQ' });
 	const raw = readFileSync(STORE_PATH, 'utf8');
 	/* 老数据没有 kind 字段——这正是要测的：靠 type 推。 */
 	const seed = Object.assign({}, taskOf(id));
@@ -1566,7 +1567,7 @@ test('下行：派生来源终止（成功/失败/取消/拒绝）时，进行�
 	const shelved = await submit({ title: '搁置的派生任务', type: 'WI', parent });
 	await changeState(shelved, '需要授权');
 	/* 工作不能派工作（原子任务），所以孙任务挂在 active 上时用目标类。 */
-	const grandchild = await submit({ title: '孙任务', type: 'GO', parent: active });
+	const grandchild = await submit({ title: '孙任务', type: 'MM', parent: active });
 	await approve(grandchild);
 	const draft = await submit({ title: '草稿派生任务', type: 'WI', parent });
 	const delivered = await submit({ title: '已交付的派生任务', type: 'WI', parent });
@@ -1735,7 +1736,7 @@ test('/task-reject 与 planClaims.release 走同一个改状态入口，终止�
 	/* GU-08 1.9：目标不会变成「拒绝」，所以用工作类当派生来源。 */
 	const parent = await submit({ title: '会被拒绝的派生来源', type: 'WI' });
 	await approve(parent);
-	const child = await submit({ title: '进行态的派生任务', type: 'GO', parent });
+	const child = await submit({ title: '进行态的派生任务', type: 'MM', parent });
 	await approve(child);
 	assert.equal((await command('task-reject').handler({ rawInput: parent })).kind, 'success');
 	assert.equal(taskOf(parent).status, '拒绝');
@@ -1905,7 +1906,7 @@ test('额外工作区 workspaces：可多个、校验绝对路径、并入「工
 	await assert.rejects(
 		() => tool('task_submit').execute({
 			title: '相对路径',
-			type: 'DB',
+			type: 'DQ',
 			body: 'x',
 			workspaces: 'some/rel/path',
 			group: wsGroup,
@@ -2268,8 +2269,8 @@ test('事件溯源（T-019）：新事件带 ts/actor/from→to，老事件仍�
 test('事件溯源：老事件（没有 ts/actor/from-to）照样能读，不会被补写或迁移', async () => {
 	/* 造一份「老格式」存储：只有 op/task，没有任何新字段 */
 	const legacy = [
-		{ op: 'upsert', task: { id: 'T-001', title: '老任务', type: 'DB', status: '提交', claimed_by: '', body: 'x' } },
-		{ op: 'upsert', task: { id: 'T-001', title: '老任务', type: 'DB', status: '成功', claimed_by: '', body: 'x' } },
+		{ op: 'upsert', task: { id: 'T-001', title: '老任务', type: 'DQ', status: '提交', claimed_by: '', body: 'x' } },
+		{ op: 'upsert', task: { id: 'T-001', title: '老任务', type: 'DQ', status: '成功', claimed_by: '', body: 'x' } },
 	];
 	writeFileSync(STORE_PATH, legacy.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8');
 	const before = readFileSync(STORE_PATH, 'utf8');
@@ -2476,7 +2477,9 @@ test('kind 推断：老 type 映射到新 kind，零行为变更', async () => {
 	   task_get 头部是 `[种类/type 模板名]`，推断结果就在那里。 */
 	const KIND_NAME = { goal: '目标', design: '设计', record: '记录', work: '工作' };
 	const cases = [
-		['DB', 'design'],
+		/* DB 已删，但老数据里还有 —— type 保留原样，kind 照样按老映射推。
+		   这里用还在 LEGACY_TYPES 里的 C 验证同一件事。 */
+		['C', 'design'],
 		['B', 'record'],
 		['C', 'design'],
 		['D', 'work'],
@@ -2524,7 +2527,7 @@ test('工作不能派「另一件要做的事」，但可以派调研/记录/设
 		/不能再派另一件要做的事/u,
 	);
 	await assert.rejects(
-		() => submit({ title: '子缺陷', type: 'WF', parent: work }),
+		() => submit({ title: '子缺陷', type: 'WT', parent: work }),
 		/不能再派另一件要做的事/u,
 	);
 	/* kind=work 但不写 type（空模板）也算"要做的事"：拒 */

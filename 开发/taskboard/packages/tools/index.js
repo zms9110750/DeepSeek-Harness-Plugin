@@ -161,15 +161,19 @@ const splitWorkspaces = coreFn('splitWorkspaces');
  * 业务判断（能不能改状态、怎么编号）在 core。
  * 放在这里是因为工具描述要列出来给模型看。
  */
-const TYPES = [
-	'GU', 'GO', 'GA', 'GV',
-	'DC', 'DP', 'DQ', 'DI', 'DB', 'DT',
-	'RB', 'RR', 'RF', 'RS', 'RD', 'RE', 'WX', 'RW', 'RL',
-	'WR', 'WI', 'WT', 'WF', 'WV', 'WL', 'WC', 'WD', 'WE', 'WP',
-];
+/*
+ * 当前可用的模板编号 —— **从 core 取，不手抄**。
+ *
+ * 手抄过两次，两次都漂了：
+ *   · 第一次漏了 MM/FN/OP/TS/IM，五个 code 域模板被 task_submit 拒掉
+ *   · 第二次 core 自己漏了 DP，两边各错各的
+ *
+ * 现在 core 是唯一真源。
+ */
+const types = lazyTable('TYPES');
 /** 全部编号（含老类型）。函数而非常量：LEGACY_TYPES 在后面才定义。 */
 function allTypes() {
-	return TYPES.concat(legacyTypes());
+	return types().concat(legacyTypes());
 }
 /* 三组的定义（顺序即面板展示顺序）。与 core 的 GROUPS 保持一致。 */
 const GROUPS = [
@@ -449,7 +453,7 @@ function registerTools(ctx) {
 				'permission 填 仅可查看/工作区内修改/完全权限/工具全关，可空。',
 			parameters: {
 				title: { type: 'string', required: true, description: '一句话标题' },
-				type: { type: 'string', description: `${TYPES.join('/')}，或留空 = 空模板` },
+				type: { type: 'string', description: `${types().join('/')}，或留空 = 空模板` },
 				kind: { type: 'string', description: 'goal/design/record/work；留空则按 type 推断' },
 				body: {
 					/*
@@ -791,7 +795,7 @@ function registerExtraTools(ctx) {
 				'给了 `from`（派生来源 id）时，会同时列出该派生来源允许派发的模板——' +
 				'不允许的会说明原因（例如工作不能再派另一件要做的事）。',
 			parameters: {
-				type: { type: 'string', required: true, description: `${TYPES.join('/')}` },
+				type: { type: 'string', required: true, description: `${types().join('/')}` },
 				from: { type: 'string', description: '派生来源 id；给了就一并校验能否派发' },
 			},
 			output: {
