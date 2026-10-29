@@ -46,10 +46,10 @@ body:
     attributes:
       label: 结论
       description: |
+        **结题时填。** 创建时还没查，写不出结论。
+
         直接回答问题。不确定的部分要明说"不确定"。
         结论里有依赖假设的 → 派子调研，不要把假设当结论。
-    validations:
-      required: true
   - type: textarea
     id: evidence
     attributes:

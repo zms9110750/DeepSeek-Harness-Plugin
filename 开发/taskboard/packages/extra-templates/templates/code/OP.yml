@@ -92,6 +92,29 @@ body:
       required: true
 
   - type: textarea
+    id: baseline
+    attributes:
+      label: 现在的数字（或现在的样子）
+      description: |
+        **这一栏是事后能不能证明"真的变好了"的唯一依据。**
+
+        必须在动手**之前**写，因为改完就回不去了。
+
+        按方向写：
+
+          性能      改之前是多少（P95 800ms）、怎么测的、测几遍
+          可读性    现在最难读的是哪段、多少行、几个人说过看不懂
+          扩展性    现在加一件事要改几个文件（列出来）
+          一致性    同一个概念在几个地方叫什么（列出来）
+          依赖      现在有几个依赖、总体积多大
+
+        写"感觉慢"不算 —— 没有数字就没法对比，事后也没法验收。
+
+        「项目优化」的价值全在对比上，而对比的前提是基线。
+    validations:
+      required: true
+
+  - type: textarea
     id: target
     attributes:
       label: 优化到什么程度算完

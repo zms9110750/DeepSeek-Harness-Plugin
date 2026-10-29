@@ -99,6 +99,31 @@ body:
       required: true
 
   - type: [ask, textarea]
+    id: want
+    attributes:
+      label: 我希望怎么收场
+      max_picks: 1
+      options:
+        - 修掉：我按依据用，结果不对
+        - 改文档：东西没问题，是说明没写清
+        - 讨论设计：我理解现状，但不同意
+        - 帮我判断：先看看这是不是用法问题
+        - 不确定
+      description: |
+        **这是报告者的诉求，不是处理者的判断。**
+
+        报告者能可靠回答"我想要什么"，不能可靠回答"这是什么问题"。
+        所以两者要分开：
+
+          want          我希望怎么收场        ← 创建时，报告者填
+          disposition   怎么处理              ← 结题时，处理者填
+
+        两者不一致是正常的 —— 报告者说"改文档"，处理者判断该修代码。
+        但有了 want，triage 至少知道对方想要什么。
+    validations:
+      required: true
+
+  - type: [ask, textarea]
     id: repro
     attributes:
       label: 能复现吗
@@ -141,6 +166,8 @@ body:
         - 搁置：现在不处理，记着
         - 不是问题：意图如此，是乌龙
       description: |
+        **结题时填。** 创建时可以先有倾向，真值查完才定。
+
         **这一栏决定后面派什么。**
 
         ▸ 修    派 DC 决策（怎么修，2-4 个方案）→ 派 WT 实现项
@@ -151,8 +178,6 @@ body:
 
         为什么"绕"也要 DC 决策：绕过不是一种实现，是一种取舍。
         放弃了什么、什么时候会再犯 —— 这个判断要用户认。
-    validations:
-      required: true
 
   - type: textarea
     id: other

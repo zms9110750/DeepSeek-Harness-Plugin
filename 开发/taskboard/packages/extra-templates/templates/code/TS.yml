@@ -98,6 +98,26 @@ body:
     validations:
       required: true
 
+  - type: [ask, textarea]
+    id: blocking
+    attributes:
+      label: 不通过会怎样
+      max_picks: 1
+      options:
+        - 阻塞发布：没通过就不发
+        - 阻塞某个改动：这条过了才能合
+        - 只做记录：记录了，人工判断
+        - 还不确定
+      description: |
+        这一栏让测试**有后果**。
+
+        同样一条「P95 必须 < 500ms」，如果是「只做记录」，
+        不过也就记一笔；如果是「阻塞发布」，不过就得停下来修。
+
+        不写它，测试跑完没人知道该不该放行。
+    validations:
+      required: true
+
   - type: textarea
     id: environment
     attributes:

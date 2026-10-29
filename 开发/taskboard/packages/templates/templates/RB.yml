@@ -70,6 +70,24 @@ body:
       required: true
 
   - type: textarea
+    id: tried
+    attributes:
+      label: 已经试过什么
+      description: |
+        **这一栏是为了让别人不重复你的路。**
+
+        不写它，接手的人第一句话一定是"你试过重启吗"。
+
+        一条一行，写清"试了什么 → 结果"：
+
+          重装依赖 → 无效
+          换 node 18 → 无效
+          查了 RB-03，情况不同（那条是权限，这条是网络）
+
+        只写**最后排除的那几条**，不要罗列全部。
+        全列出来是流水账，不是记录。
+
+  - type: textarea
     id: consequence
     attributes:
       label: 不解决会怎么样

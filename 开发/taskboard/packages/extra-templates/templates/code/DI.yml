@@ -98,6 +98,32 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: nongoal
+    attributes:
+      label: 明确不承诺什么
+      description: |
+        **这一栏比"承诺什么"更重要。**
+
+        接口设计失败几乎总是**承诺太多**：实现者被逼着兼容本来没人要的东西。
+
+        写三类：
+          · 边界：什么输入不接、什么情况不处理
+          · 不支持的用法：别人可能会这么用，但这次不支持
+          · 留给以后的事：知道要做，但不在这一版
+
+        好：
+          不承诺并发调用时文件的顺序
+          不承诺跨时区边界的行为（见 #88）
+          超长输入不保证不截断
+
+        坏：
+          没有（等于什么都承诺了）
+
+        写不出"不承诺什么"，说明还没想清边界在哪。
+    validations:
+      required: true
+
   - type: [ask, textarea]
     id: visible
     attributes:
