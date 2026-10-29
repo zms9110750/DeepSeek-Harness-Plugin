@@ -3,7 +3,7 @@ default_kind: work
 behavior: execute
 domain: core
 framed: true
-description: 做完的东西要验；跑一遍看结果对不对
+description: 检查是否符合预期；可能没有前期工作，直接验
 dispatch: [goal, design, record, work]
 hints:
   create: |
@@ -26,8 +26,14 @@ body:
     attributes:
       label: 验什么
       description: |
-        指到具体的东西：哪个功能、哪个文件、哪个契约。
+        指到具体的东西：哪个功能、哪个文件、哪个契约、哪个外部程序。
         写"整体验一下"等于没验。
+
+        **不一定是我们自己做的。**
+        下载别人的程序、用第三方服务、接手一个没源码的东西，同样要校验 ——
+        这时候没有"自己身上的前期工作"，但不代表不用验。
+
+        所以要写清：这东西是哪来的（我们写的 / 别人给的 / 外部的）。
     validations:
       required: true
   - type: [ask, textarea]
