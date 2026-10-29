@@ -286,7 +286,7 @@ export function installGuard(ctx) {
 			if (permission === '工具全关') {
 				return (
 					`按计划：任务 ${claim.id} 要求「工具全关」，本会话不能调用工作区类工具。\n` +
-					'但切任务不受限：用 task_state 把它改成「完成 / 失败 / 需要信息 / 需要授权」，' +
+					'但切任务不受限：用 task_state 把它改成「成功 / 失败 / 需要信息 / 需要授权」，' +
 					'再用 task_list + task_claim 领下一张。'
 				);
 			}
