@@ -5012,6 +5012,15 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         const domainState = React.useState(init.domain || REMEMBERED_DOMAIN || "code");
         const domain = domainState[0];
         const setDomain = domainState[1];
+        const pickerOpenState = React.useState(false);
+        const pickerOpen = pickerOpenState[0];
+        const setPickerOpen = pickerOpenState[1];
+        const relOpenState = React.useState(false);
+        const relOpen = relOpenState[0];
+        const setRelOpen = relOpenState[1];
+        const advancedState = React.useState(false);
+        const advanced = advancedState[0];
+        const setAdvanced = advancedState[1];
         const valuesState = React.useState(initialValues);
         const values = valuesState[0];
         const setValues = valuesState[1];
@@ -5042,6 +5051,53 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             return t2 === "markdown";
           }) : item.type !== "markdown";
         }) : [];
+        /* 三栏弹层要的清单：从 templates 算，不手写。 */
+        const PICKER_TEMPLATES = Object.keys(templates).map(function(code) {
+          return {
+            code,
+            name: (parseTemplateYaml(templates[code]).name || code),
+            domain: templateDomain(templates[code]),
+            kind: kindOfTemplate(templates[code])
+          };
+        }).sort(function(x, y2) {
+          return x.code.localeCompare(y2.code);
+        });
+
+        const pickerHeadStyle = {
+          fontSize: 10.5,
+          fontWeight: 700,
+          color: "var(--dsw-alias-label-tertiary)",
+          padding: "2px 6px 6px",
+          letterSpacing: ".03em"
+        };
+        const pickerItemStyle = function(on) {
+          return {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            width: "100%",
+            padding: "5px 7px",
+            marginBottom: 2,
+            font: "inherit",
+            fontSize: 11.5,
+            textAlign: "left",
+            cursor: "pointer",
+            borderRadius: 6,
+            border: "1px solid " + (on ? "var(--dsw-alias-brand-primary)" : "transparent"),
+            background: on ? "rgba(59,125,216,.08)" : "transparent",
+            color: on ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-label-primary)"
+          };
+        };
+        const pickerCodeStyle = {
+          fontSize: 10,
+          fontWeight: 700,
+          padding: "0 4px",
+          borderRadius: 3,
+          background: "var(--dsw-alias-bg-layer-2)",
+          color: "var(--dsw-alias-label-secondary)",
+          flex: "none"
+        };
+
         const templateMissing = type !== "" && template === null;
         const fallbackToPlainText = templateMissing && String(init.body || "").trim() !== "";
         const updateLink = function(index, patch) {
@@ -5127,7 +5183,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           h(
             "div",
             { style: { display: "flex", alignItems: "center", gap: 8, padding: "10px 0 8px" } },
-            h("span", { style: titleStyle }, props.title || "\u65B0\u5EFA\u8BA1\u5212"),
+            h("span", { style: titleStyle }, props.title || "\u65B0\u5EFA\u4EFB\u52A1"),
             h("span", { style: { flex: 1 } }),
             h("button", { type: "button", onClick: props.onCancel, style: Object.assign({}, buttonBase(false), { padding: "2px 12px" }) }, "\u53D6\u6D88")
           ),
@@ -5151,7 +5207,6 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
             "div",
             { style: { display: "flex", gap: 18, flex: 1, minHeight: 0 } },
             h(
-              "div",
               { style: { width: 440, flex: "none", display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "auto", paddingRight: 6 } },
               /* 标题独占一行（用户要求）。 */
               h("input", {
@@ -5162,209 +5217,340 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 },
                 style: Object.assign({}, formInputStyle, { width: "100%", flex: "none" })
               }),
-              h(
-                "div",
-                { style: { display: "flex", gap: 8 } },
-                /* 领域在**最左**：它是筛选器，先排除"我现在不想看到的东西"。
-                   用户原话：「左边再放一个领域。作为筛选。我写程序的时候不想看到小说的模板。」
-                   领域记在内存里，下次打开沿用上次选的。 */
-                h(
-                  "select",
-                  {
-                    value: domain,
-                    onChange: function(event) {
-                      const next = event.target.value;
-                      setDomain(next);
-                      rememberDomain(next);
-                      if (type !== "" && templateDomain(templates[type]) !== next) setType("");
-                    },
-                    title: "\u9886\u57DF\uFF1A\u53EA\u5F71\u54CD\u6A21\u677F\u4E0B\u62C9\u663E\u793A\u4EC0\u4E48\uFF0C\u4E0D\u5F71\u54CD\u5DF2\u5B58\u5728\u7684\u4E8B\u9879",
-                    style: Object.assign({}, formInputStyle, { width: 96, flex: "none" })
-                  },
-                  DOMAIN_OPTIONS.map(function(pair) {
-                    return h("option", { key: "domain-" + pair[0], value: pair[0] }, pair[1]);
-                  })
-                ),
-                /* 大类：先决定"这是哪一类"，模板列表跟着被筛。
-                                 用户原话：「大类在左边，而且大类是筛选。大类下拉框在目标的时候只能显示类别为目标的模板。」
-                
-                                 模板编号是 `大类前缀 + 模板字母`（MG / SQ / JB / GR…），
-                                 所以按首字母就能筛，不用额外查表。 */
-                h(
-                  "select",
-                  {
-                    value: kind,
-                    onChange: function(event) {
-                      const next = event.target.value;
-                      setKind(next);
-                      if (type !== "" && next !== "") {
-                        const prefix = { goal: "G", design: "D", record: "R", work: "W" }[next];
-                        if (prefix && type.charAt(0) !== prefix) setType("");
-                      }
-                    },
-                    title: "\u5927\u7C7B\u51B3\u5B9A\u8C01\u80FD\u6807\u5B8C\u6210\uFF1A\u76EE\u6807\u7531\u5B50\u4E8B\u9879\u63A8\u5BFC\u3001\u8BBE\u8BA1\u7B49\u4F60\u70B9\u5934\u3001\u8BB0\u5F55\u5199\u5B8C\u5373\u5B8C\u3001\u5DE5\u4F5C\u7531 AI \u505A\u51FA\u6765",
-                    style: Object.assign({}, formInputStyle, { width: 104, flex: "none" })
-                  },
-                  [["", "\u5168\u90E8\u5927\u7C7B"]].concat(
-                    Object.keys(KIND_LABELS).map(function(key) {
-                      return [key, KIND_LABELS[key]];
-                    })
-                  ).map(function(pair) {
-                    return h(
-                      "option",
-                      { key: "kind-" + (pair[0] || "all"), value: pair[0] },
-                      pair[0] === "" ? pair[1] : pair[0] + " \xB7 " + pair[1]
-                    );
-                  })
-                ),
-                /* 模板：只列「所选大类」下的。大类为空时列全部。 */
-                h(
-                  "select",
-                  {
-                    value: type,
-                    onChange: function(event) {
-                      const next = event.target.value;
-                      setType(next);
-                      if (next === "") return;
-                      const declared = kindOfTemplate(templates[next]);
-                      if (declared !== "") setKind(declared);
-                    },
-                    style: Object.assign({}, formInputStyle, { flex: 1, minWidth: 0 })
-                  },
-                  [["", "\u7A7A\u6A21\u677F"]].concat(
-                    templateLabelSet(templates).filter(function(pair) {
-                      const own = templateDomain(templates[pair[0]]);
-                      if (domain !== "" && own !== domain && own !== "core") return false;
-                      if (kind === "") return true;
-                      return kindOfTemplate(templates[pair[0]]) === kind;
-                    })
-                  ).map(function(pair) {
-                    return h(
-                      "option",
-                      { key: "type-" + (pair[0] || "blank"), value: pair[0] },
-                      /* 不重复拼编号：模板名已去掉前缀，这里补上编号一次。 */
-                      pair[0] === "" ? pair[1] : pair[0] + " \xB7 " + pair[1]
-                    );
-                  })
-                )
-              ),
-              h(
-                "div",
-                { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u7236\u8BA1\u5212"),
-                h(
-                  "select",
-                  {
-                    value: parent,
-                    onChange: function(event) {
-                      setParent(event.target.value);
-                    },
-                    style: Object.assign({}, formInputStyle, { flex: 1 })
-                  },
-                  optionsFor("\uFF08\u65E0\uFF0C\u9876\u5C42\uFF09")
-                )
-              ),
-              h(
-                "div",
-                { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u5DE5\u4F5C\u7A7A\u95F4"),
-                h("input", {
-                  value: workspace,
-                  placeholder: "\u5B50\u5DE5\u4F5C\u7A7A\u95F4\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u7A7A = \u4F1A\u8BDD\u76EE\u5F55\uFF09",
-                  onChange: function(event) {
-                    setWorkspace(event.target.value);
-                  },
-                  style: Object.assign({}, formInputStyle, { flex: 1 })
-                })
-              ),
-              h(
-                "div",
-                { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u989D\u5916"),
-                h("input", {
-                  value: workspaces,
-                  placeholder: "\u989D\u5916\u5DE5\u4F5C\u533A\uFF0C\u9017\u53F7\u5206\u9694\u7684\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u8981\u8BFB\u5199\u7684\u5176\u5B83\u76EE\u5F55\uFF0C\u53EF\u7A7A\uFF09",
-                  onChange: function(event) {
-                    setWorkspaces(event.target.value);
-                  },
-                  style: Object.assign({}, formInputStyle, { flex: 1 })
-                })
-              ),
-              h(
-                "div",
-                { style: { display: "flex", gap: 8, alignItems: "center" } },
-                h("span", { style: Object.assign({ width: 48, flex: "none" }, lineStyle) }, "\u6743\u9650"),
-                h(
-                  "select",
-                  {
-                    value: permission,
-                    onChange: function(event) {
-                      setPermission(event.target.value);
-                    },
-                    style: Object.assign({}, formInputStyle, { flex: 1 })
-                  },
-                  ["", "\u4EC5\u53EF\u67E5\u770B", "\u5DE5\u4F5C\u533A\u5185\u4FEE\u6539", "\u5B8C\u5168\u6743\u9650", "\u5DE5\u5177\u5168\u5173"].map(function(value) {
-                    return h("option", { key: "perm-" + (value || "none"), value }, value === "" ? "\uFF08\u4E0D\u6307\u5B9A\uFF0C\u6309\u4F1A\u8BDD\u6863\u4F4D\uFF09" : value);
-                  })
-                )
-              ),
-              h("span", { style: lineStyle }, "\u5173\u8054\uFF08\u7BAD\u5934\u4ECE\u5148\u51B3\u6307\u5411\u4F9D\u8D56\u65B9\uFF09"),
-              links.map(function(link, index) {
+              /*
+               * 模板选择器 —— 三栏弹层。
+               *
+               * 用户原话（对三个并排下拉）：
+               *   > 三个并排下拉都没有 label，只能靠猜哪个是领域、哪个是模板。
+               *
+               * 合成一个按钮，点开是「领域 / 类别 / 模板」三栏。
+               */
+              (function() {
+                const current = PICKER_TEMPLATES.find(function(entry) {
+                  return entry.code === type;
+                });
                 return h(
                   "div",
-                  { key: "link-row-" + index, style: { display: "flex", gap: 6, alignItems: "center" } },
-                  h(
-                    "select",
-                    {
-                      value: link.label,
-                      onChange: function(event) {
-                        updateLink(index, { label: event.target.value });
-                      },
-                      style: Object.assign({}, formInputStyle, { width: 128, flex: "none" })
-                    },
-                    [["\u4F9D\u8D56", "\u4F9D\u8D56\uFF08\u5B83\u5B8C\u6210\u6211\u624D\u80FD\u9886\uFF09"], ["\u6D3E\u751F", "\u6D3E\u751F\uFF08\u6211\u6D3E\u751F\u5B83\uFF09"], ["\u53D6\u4EE3", "\u53D6\u4EE3\uFF08\u66FF\u4EE3\u5B83\uFF09"], ["\u6765\u6E90", "\u6765\u6E90\uFF08\u6211\u6765\u81EA\u5B83\uFF09"]].map(function(pair) {
-                      return h("option", { key: "kind-" + pair[0], value: pair[0] }, pair[1]);
-                    })
-                  ),
-                  h(
-                    "select",
-                    {
-                      value: link.to,
-                      onChange: function(event) {
-                        updateLink(index, { to: event.target.value });
-                      },
-                      style: Object.assign({}, formInputStyle, { flex: 1 })
-                    },
-                    optionsFor("\uFF08\u9009\u62E9\u76EE\u6807\uFF09")
-                  ),
+                  { style: { position: "relative" } },
                   h(
                     "button",
                     {
                       type: "button",
                       onClick: function() {
-                        const next = links.slice();
-                        next.splice(index, 1);
-                        setLinks(next);
+                        setPickerOpen(!pickerOpen);
                       },
-                      style: Object.assign({}, buttonBase(false), { padding: "2px 10px" })
+                      style: Object.assign({}, formInputStyle, {
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        width: "100%",
+                        cursor: "pointer",
+                        textAlign: "left"
+                      })
                     },
-                    "\u5220\u9664"
-                  )
+                    h("span", { style: pickerCodeStyle }, current ? current.code : "\u2014"),
+                    h(
+                      "span",
+                      { style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                      current ? current.name : "\u7A7A\u6A21\u677F"
+                    ),
+                    h("span", { style: { fontSize: 9, color: "var(--dsw-alias-label-tertiary)" } }, "\u25BE")
+                  ),
+                  pickerOpen ? h(
+                    "div",
+                    {
+                      style: {
+                        position: "absolute",
+                        left: 0,
+                        top: "calc(100% + 6px)",
+                        zIndex: 40,
+                        width: 520,
+                        maxHeight: 340,
+                        overflow: "auto",
+                        padding: 10,
+                        borderRadius: 10,
+                        border: "1px solid var(--dsw-alias-border-l1)",
+                        background: "var(--dsw-alias-bg-layer-1)",
+                        boxShadow: "0 8px 24px rgba(16,18,22,.14), 0 20px 48px rgba(16,18,22,.18)"
+                      }
+                    },
+                    h(
+                      "div",
+                      { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1.6fr", gap: 8 } },
+                      h(
+                        "div",
+                        null,
+                        h("div", { style: pickerHeadStyle }, "\u9886\u57DF"),
+                        DOMAIN_OPTIONS.map(function(pair) {
+                          return h(
+                            "button",
+                            {
+                              key: "pd-" + (pair[0] || "all"),
+                              type: "button",
+                              onClick: function() {
+                                setDomain(pair[0]);
+                                rememberDomain(pair[0]);
+                              },
+                              style: pickerItemStyle(domain === pair[0])
+                            },
+                            pair[1]
+                          );
+                        })
+                      ),
+                      h(
+                        "div",
+                        null,
+                        h("div", { style: pickerHeadStyle }, "\u7C7B\u522B"),
+                        [["", "\u5168\u90E8"]].concat(
+                          Object.keys(KIND_LABELS).map(function(key) {
+                            return [key, KIND_LABELS[key]];
+                          })
+                        ).map(function(pair) {
+                          return h(
+                            "button",
+                            {
+                              key: "pk-" + (pair[0] || "all"),
+                              type: "button",
+                              onClick: function() {
+                                setKind(pair[0]);
+                                if (type !== "" && pair[0] !== "" && kindOfTemplate(templates[type]) !== pair[0]) setType("");
+                              },
+                              style: pickerItemStyle(kind === pair[0])
+                            },
+                            pair[1]
+                          );
+                        })
+                      ),
+                      h(
+                        "div",
+                        null,
+                        h("div", { style: pickerHeadStyle }, "\u6A21\u677F"),
+                        h(
+                          "button",
+                          {
+                            type: "button",
+                            onClick: function() {
+                              setType("");
+                              setPickerOpen(false);
+                            },
+                            style: pickerItemStyle(type === "")
+                          },
+                          h("span", { style: pickerCodeStyle }, "\u2014"),
+                          h("span", null, "\u7A7A\u6A21\u677F")
+                        ),
+                        PICKER_TEMPLATES.filter(function(entry) {
+                          if (domain !== "" && entry.domain !== domain && entry.domain !== "core") return false;
+                          if (kind === "") return true;
+                          return entry.kind === kind;
+                        }).map(function(entry) {
+                          return h(
+                            "button",
+                            {
+                              key: "pt-" + entry.code,
+                              type: "button",
+                              onClick: function() {
+                                setType(entry.code);
+                                if (entry.kind !== "") setKind(entry.kind);
+                                setPickerOpen(false);
+                              },
+                              style: pickerItemStyle(type === entry.code)
+                            },
+                            h("span", { style: pickerCodeStyle }, entry.code),
+                            h(
+                              "span",
+                              { style: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                              entry.name
+                            )
+                          );
+                        })
+                      )
+                    )
+                  ) : null
                 );
-              }),
+              })(),
+              /*
+               * 两个折叠按钮并排：关系 / 高级设置。
+               *
+               * 用户原话：
+               *   > 那个折叠是有两个按钮的。一个关系，一个高级设置。
+               */
               h(
-                "button",
-                {
-                  type: "button",
-                  onClick: function() {
-                    setLinks(links.concat([{ label: "\u4F9D\u8D56", to: "" }]));
+                "div",
+                { style: { display: "flex", gap: 6, alignItems: "center" } },
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: function() {
+                      setRelOpen(!relOpen);
+                    },
+                    style: Object.assign({}, buttonBase(false), {
+                      padding: "2px 10px",
+                      fontSize: 11.5,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6
+                    })
                   },
-                  style: Object.assign({}, buttonBase(false), { alignSelf: "flex-start" })
-                },
-                "\uFF0B \u6DFB\u52A0\u5173\u8054"
-              )
-            ),
-            h(
+                  "\u5173\u7CFB",
+                  h(
+                    "span",
+                    {
+                      style: {
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "0 5px",
+                        borderRadius: 8,
+                        lineHeight: "15px",
+                        background: "var(--dsw-alias-bg-layer-2)",
+                        color: "var(--dsw-alias-label-secondary)"
+                      }
+                    },
+                    String(links.length)
+                  )
+                ),
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: function() {
+                      setAdvanced(!advanced);
+                    },
+                    style: Object.assign({}, buttonBase(false), {
+                      padding: "2px 10px",
+                      fontSize: 11.5,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5
+                    })
+                  },
+                  "\u9AD8\u7EA7\u8BBE\u7F6E"
+                )
+              ),
+              /* 关系区：展开才显示。 */
+              relOpen ? [
+                h(
+                  "div",
+                  { style: { display: "flex", flexDirection: "column", gap: 6 } },
+                  links.map(function(link, index) {
+                    return h(
+                      "div",
+                      { key: "link-row-" + index, style: { display: "flex", gap: 6, alignItems: "center" } },
+                      h(
+                        "select",
+                        {
+                          value: link.label,
+                          onChange: function(event) {
+                            updateLink(index, { label: event.target.value });
+                          },
+                          style: Object.assign({}, formInputStyle, { width: 96, flex: "none" })
+                        },
+                        [["\u4F9D\u8D56", "\u4F9D\u8D56"], ["\u53D6\u4EE3", "\u53D6\u4EE3"], ["\u7EA6\u675F", "\u7EA6\u675F"], ["\u76F8\u5173", "\u76F8\u5173"], ["\u53C2\u8003", "\u53C2\u8003"]].map(function(pair) {
+                          return h("option", { key: "rel-" + pair[0], value: pair[0] }, pair[1]);
+                        })
+                      ),
+                      h(
+                        "select",
+                        {
+                          value: link.to,
+                          onChange: function(event) {
+                            updateLink(index, { to: event.target.value });
+                          },
+                          style: Object.assign({}, formInputStyle, { flex: 1 })
+                        },
+                        optionsFor("\uFF08\u9009\u62E9\u76EE\u6807\uFF09")
+                      ),
+                      h(
+                        "button",
+                        {
+                          type: "button",
+                          onClick: function() {
+                            const next = links.slice();
+                            next.splice(index, 1);
+                            setLinks(next);
+                          },
+                          style: Object.assign({}, buttonBase(false), { padding: "2px 8px" })
+                        },
+                        "\u2715"
+                      )
+                    );
+                  }),
+                  h(
+                    "button",
+                    {
+                      type: "button",
+                      onClick: function() {
+                        setLinks(links.concat([{ label: "\u4F9D\u8D56", to: "" }]));
+                      },
+                      style: Object.assign({}, buttonBase(false), { alignSelf: "flex-start", padding: "2px 10px" })
+                    },
+                    "\uFF0B \u6DFB\u52A0\u5173\u8054"
+                  )
+                )
+              ] : null,
+              /* 高级设置：派生来源 / 工作空间 / 额外 / 权限。 */
+              advanced ? [
+                h(
+                  "div",
+                  { style: { display: "flex", gap: 8, alignItems: "center" } },
+                  h("span", { style: Object.assign({ width: 56, flex: "none" }, lineStyle) }, "\u6D3E\u751F\u6765\u6E90"),
+                  h(
+                    "select",
+                    {
+                      value: parent,
+                      onChange: function(event) {
+                        setParent(event.target.value);
+                      },
+                      style: Object.assign({}, formInputStyle, { flex: 1 })
+                    },
+                    optionsFor("\uFF08\u65E0\uFF0C\u9876\u5C42\uFF09")
+                  )
+                ),
+                h(
+                  "div",
+                  { style: { display: "flex", gap: 8, alignItems: "center" } },
+                  h("span", { style: Object.assign({ width: 56, flex: "none" }, lineStyle) }, "\u5DE5\u4F5C\u7A7A\u95F4"),
+                  h("input", {
+                    value: workspace,
+                    placeholder: "\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u7A7A = \u4F1A\u8BDD\u76EE\u5F55\uFF09",
+                    onChange: function(event) {
+                      setWorkspace(event.target.value);
+                    },
+                    style: Object.assign({}, formInputStyle, { flex: 1 })
+                  })
+                ),
+                h(
+                  "div",
+                  { style: { display: "flex", gap: 8, alignItems: "center" } },
+                  h("span", { style: Object.assign({ width: 56, flex: "none" }, lineStyle) }, "\u989D\u5916"),
+                  h("input", {
+                    value: workspaces,
+                    placeholder: "\u9017\u53F7\u5206\u9694\u7684\u7EDD\u5BF9\u8DEF\u5F84\uFF08\u53EF\u7A7A\uFF09",
+                    onChange: function(event) {
+                      setWorkspaces(event.target.value);
+                    },
+                    style: Object.assign({}, formInputStyle, { flex: 1 })
+                  })
+                ),
+                h(
+                  "div",
+                  { style: { display: "flex", gap: 8, alignItems: "center" } },
+                  h("span", { style: Object.assign({ width: 56, flex: "none" }, lineStyle) }, "\u6743\u9650"),
+                  h(
+                    "select",
+                    {
+                      value: permission,
+                      onChange: function(event) {
+                        setPermission(event.target.value);
+                      },
+                      style: Object.assign({}, formInputStyle, { flex: 1 })
+                    },
+                    ["", "\u4EC5\u53EF\u67E5\u770B", "\u5DE5\u4F5C\u533A\u5185\u4FEE\u6539", "\u5B8C\u5168\u6743\u9650", "\u5DE5\u5177\u5168\u5173"].map(function(value) {
+                      return h("option", { key: "perm-" + (value || "none"), value }, value === "" ? "\uFF08\u4E0D\u6307\u5B9A\uFF0C\u6309\u4F1A\u8BDD\u6863\u4F4D\uFF09" : value);
+                    })
+                  )
+                )
+              ] : null,
               "div",
               { style: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "auto", paddingRight: 6, borderLeft: "1px solid var(--dsw-alias-border-l1)", paddingLeft: 16 } },
               /* 模板的一句话说明留在顶部：让人知道"这一类该写什么"，但不占输入框。 */
