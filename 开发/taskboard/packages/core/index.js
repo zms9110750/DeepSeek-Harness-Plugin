@@ -908,6 +908,72 @@ async function setNote(id, note) {
 	});
 }
 
+/**
+ * 写一个「进展」章节。
+ *
+ * ## 它和 updateTask 的区别
+ *
+ * updateTask 有一道锁：只有「未指定」的任务能改。
+ * 这条**没有锁** —— 任务采纳之后能写，终结之后也能写。
+ *
+ * 因为它的用途本来就是"随时间变化"：AI 自己定的阶段目标、
+ * 阶段性进展、卡住时的临时说明。写完就锁死的话它就没用了。
+ *
+ * ## 什么时候允许
+ *
+ * 只有模板里给那一章标了 `aiWritable: true`（或者 `progress: true`）
+ * 才允许。没标的章节，AI 照样写不进去 —— 否则整份正文就全开放了。
+ *
+ * @param {string} id
+ * @param {string} sectionId  章节 id
+ * @param {string} value
+ * @returns {Promise<object>} 更新后的任务
+ */
+async function setProgress(id, sectionId, value) {
+	return withWrite(async () => {
+		const task = await readTask(id);
+		if (task === undefined) throw new Error(`没有这个任务：${id}`);
+
+		const wanted = String(sectionId ?? '').trim();
+		if (wanted === '') throw new Error('要写哪一章？（section 不能为空）');
+
+		/* 正文必须是对象形态才分得清章节。旧字符串正文没有章节概念。 */
+		if (task.body === null || typeof task.body !== 'object' || Array.isArray(task.body)) {
+			throw new Error(
+				`${task.id} 的正文是老格式（一整段 Markdown），没有章节可以写。` +
+					'进展只能写进对象形态的正文。',
+			);
+		}
+
+		const section = task.body[wanted];
+		if (section === undefined) {
+			throw new Error(`${task.id} 没有「${wanted}」这一章`);
+		}
+
+		/* 标了 aiWritable / progress 才放行。 */
+		const allowed = section.aiWritable === true || section.progress === true;
+		if (!allowed) {
+			throw new Error(
+				`${task.id} 的「${wanted}」这一章不允许 AI 写。\n` +
+					'只有模板里标了 aiWritable: true 的章节才能写进展 —— ' +
+					'否则任务一被采纳，整份正文就全开放了。',
+			);
+		}
+
+		const text = String(value ?? '');
+		if (text.length > NOTE_LIMIT) {
+			throw new Error(`进展太长（${text.length} 字），上限 ${NOTE_LIMIT} 字`);
+		}
+
+		const body = Object.assign({}, task.body, {
+			[wanted]: Object.assign({}, section, { value: text }),
+		});
+		const next = Object.assign({}, task, { body });
+		await saveTask(next);
+		return next;
+	});
+}
+
 /*
  * ---------------------------------------------------------------------------
  * 开放问题（answers）
@@ -2447,6 +2513,7 @@ function coreService(ctx) {
 		normalizeType: (raw) => normalizeType(raw),
 		normalizeLinks: (raw) => normalizeLinks(raw),
 		linkPairs: (task) => linkPairs(task),
+	setProgress: (id, section, value) => setProgress(id, section, value),
 		kindOf: (task) => kindOf(task),
 		groupsOf: (status) => groupsOf(status),
 		deriveGoalStatus: (task, all) => deriveGoalStatus(task, all),

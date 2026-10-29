@@ -241,6 +241,33 @@ defineAction({
 		properties: {
 			value: { type: 'string', description: '存下来的内容' },
 			row: { type: 'integer', minimum: 1, maximum: 40, description: '高度；1 = 单行' },
+			/*
+			 * aiWritable —— 这一章 AI 能不能写。
+			 *
+			 * 默认 false：任务一被采纳，整个正文就锁死，谁都不能改。
+			 *
+			 * 置 true 之后它变成「进展」：
+			 *   · AI 能写
+			 *   · 用户也能写
+			 *   · **任务采纳之后照样能写，终结之后也能写**
+			 *
+			 * ## 为什么是 text 的一个属性，不是一个新 action
+			 *
+			 * 因为文本框前面本来就要有 label / description 说清"这是啥"。
+			 * 新开一个 action 只是换个名字，其余全一样 —— 白白多一个名字要记。
+			 *
+			 * ## 什么时候用
+			 *
+			 * 这一章的内容是**随时间变化的**，而不是"填一次就定"。
+			 * 比如：AI 自己定的阶段目标、阶段性进展记录、卡住时的临时说明。
+			 *
+			 * 判断标准：这件事在任务被采纳之后还会变吗？
+			 * 会 → 置 true。不会 → 保持默认。
+			 */
+			aiWritable: {
+				type: 'boolean',
+				description: 'AI 能不能写这一章（true = 采纳后仍可写，终结态也可写）',
+			},
 		},
 	},
 });

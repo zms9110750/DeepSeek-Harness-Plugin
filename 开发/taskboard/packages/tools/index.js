@@ -108,6 +108,7 @@ const createNew = coreFn('createNew');
 const updateTask = coreFn('updateTask');
 const setState = coreFn('setState');
 const setNote = coreFn('setNote');
+const setProgress = coreFn('setProgress');
 const setAnswer = coreFn('setAnswer');
 const setTags = coreFn('setTags');
 const setFlags = coreFn('setFlags');
@@ -1125,6 +1126,44 @@ function registerExtraTools(ctx) {
 						text(task.note) === ''
 							? `已清空 ${task.id} 的备注`
 							: `已更新 ${task.id} 的备注（${task.note.length} 字）`,
+				};
+			},
+		}),
+	);
+
+	/*
+	 * task_progress —— 写一个「进展」章节。
+	 *
+	 * 和 task_update 的区别：那个有一道锁，只有「未指定」能改。
+	 * 这个**没有锁**，任务采纳之后能写、终结之后也能写。
+	 *
+	 * 因为它本来就是"随时间变化"的东西：AI 自己定的阶段目标、阶段性进展。
+	 * 写一次就锁死的话它就没意义了。
+	 */
+	ctx.tools.register(
+		defineTool({
+			name: 'task_progress',
+			description:
+				'写一个"进展"章节。**不受「只有未指定可改」的限制** —— 任务采纳之后能写，' +
+				'终结之后也能写。只有模板里标了 aiWritable: true 的章节允许。' +
+				'用来记：我自己定的阶段目标、阶段性进展、卡住时的临时说明。',
+			parameters: {
+				id: { type: 'string', required: true, description: '任务 id' },
+				section: { type: 'string', required: true, description: '章节 id（模板里那一章的 id）' },
+				value: { type: 'string', required: true, description: '写什么；空串 = 清空' },
+			},
+			output: {
+				schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } } },
+				render: (_args, value) => [{ type: 'text', text: value.text }],
+			},
+			async execute(args) {
+				const task = await setProgress(args.id, args.section, args.value);
+				const written = String(task.body?.[String(args.section)]?.value ?? '');
+				return {
+					text:
+						written === ''
+							? `已清空 ${task.id} 的「${args.section}」`
+							: `已写入 ${task.id} 的「${args.section}」（${written.length} 字）`,
 				};
 			},
 		}),
