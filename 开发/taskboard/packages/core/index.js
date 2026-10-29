@@ -1227,79 +1227,6 @@ async function createNewInner(task) {
 	}
 	throw new Error('新建任务失败：连续 50 次编号冲突');
 }
-
-function summarize(task) {
-	const groups = groupsOf(task.status);
-	const kind = kindOf(task);
-	const bits = [
-		`${task.id} [${KINDS[kind]?.name ?? kind}/${task.type || '?'} ${TYPE_NAMES[task.type] || ''}] ${task.title}`,
-		`状态=${task.status}` + (groups.length > 0 ? `（${groups.join('/')}）` : '（草稿）'),
-	];
-	if (task.parent) bits.push(`父=${task.parent}`);
-	if (task.links) bits.push(`链接=${task.links}`);
-	/* 标记放前面（紧挨状态），因为它们决定"要不要我现在看"。
-	 * 用符号而不是文字，扫一眼就能看出哪几条在等我。 */
-	const flags = parseFlags(task.flags);
-	if (flags.length > 0) {
-		const mark = flags
-			.map((flag) => ({ unread: '●未读', read: '✓已读', 'needs-me': '◉待我', 'needs-review': '◇待审' })[flag] || flag)
-			.join(' ');
-		bits.splice(2, 0, mark);
-	}
-	if (task.workspace) bits.push(`子工作空间=${task.workspace}`);
-	if (text(task.workspaces) !== '') bits.push(`额外工作区=${task.workspaces}`);
-	if (task.permission) bits.push(`权限=${task.permission}`);
-	if (text(task.note) !== '') bits.push('备注=' + task.note.replace(/\s+/gu, ' ').slice(0, 40));
-	return bits.join(' · ');
-}
-
-function renderList(tasks) {
-	if (tasks.length === 0) return '任务库是空的（存储：' + storeFilePath() + '）';
-	const lines = [`共 ${tasks.length} 份任务（存储：${storeFilePath()}）`];
-	for (const task of tasks) lines.push(`- ${summarize(task)}`);
-	lines.push(
-		'',
-		'九态分组：进行=提交/处理中/需要信息/需要授权；搁置=需要信息/需要授权；结束=成功/失败/拒绝/取消。',
-		'需要信息与需要授权同时属于「进行」和「搁置」——是进行中的暂停，不是终结。',
-		'未指定=AI 提交但用户还没采纳，不能领取；提交=可以 task_claim。',
-	);
-	return lines.join('\n');
-}
-
-function renderFull(task, all) {
-	const lines = [summarize(task), ''];
-
-	/*
-	 * 反向关系。
-	 *
-	 * 正向的 links 已经在 summarize 里输出了（"链接=依赖:WI-01"）。
-	 * 这里补的是**别人指向我**的那一半 —— 没有它，
-	 * 「A 相关:D」在 D 那边完全看不见，无向就成了单行道。
-	 *
-	 * 相关是无向的：A 写了「相关:D」，D 那边也应该看到 A。
-	 * 但按用户的定法，**只存后建的那一方**（先建的任务不可变，不改它）。
-	 * 所以只能查询时双向展开 —— 这就是这里在干的事。
-	 */
-	if (Array.isArray(all) && all.length > 0) {
-		const incoming = [];
-		for (const other of all) {
-			if (other.id === task.id) continue;
-			for (const link of linkPairs(other)) {
-				if (link.to !== task.id) continue;
-				incoming.push(link.label + ':' + other.id);
-			}
-		}
-		/* 自己的 parent 也是一种「别人指向我」——但那个已经在 summarize 里了，
-		   这里只补 links 里的反向。 */
-		if (incoming.length > 0) lines.push('被别人指向=' + incoming.join(', '));
-	}
-
-	if (task.body) lines.push(task.body);
-	return lines.join('\n');
-}
-
-
-
 /* 任务模板目录（GitHub issue forms 的 YAML）。
  *
  * ── 内置最小集 vs 附加模板 ──────────────────────────────────────────
@@ -2006,21 +1933,6 @@ async function setStateInner(id, next, agent, byUser, note) {
  * **只读**：不改文件、不补字段、不迁移。老事件没有 ts/actor/from/to 就显示为「—」。
  * 这是「append-only JSONL 本来就存了全部历史，只是没人读」的兑现。
  */
-
-
-function renderHistory(id, entries) {
-	if (entries.length === 0) return `${id} 没有可读的历史事件（可能是老数据，或还没被改过）。`;
-	const lines = [`${id} 的历史（最近 ${entries.length} 条，时间顺序）：`];
-	for (const entry of entries) {
-		const when = entry.ts === '' ? '（无时间戳）' : entry.ts.replace('T', ' ').replace(/\..*$/u, '');
-		const who = entry.actor === '' ? '—' : entry.actor;
-		const move = entry.from !== '' && entry.to !== '' ? `${entry.from} → ${entry.to}` : `状态=${entry.status}`;
-		lines.push(`- ${when}  ${who}  ${move}` + (entry.note ? `  备注：${entry.note.slice(0, 40)}` : ''));
-	}
-	return lines.join('\n');
-}
-
-
 /** 任务驱动的执行约定：写进系统提示，模型每一步都能看到。 */
 
 /** 覆盖式更新一个任务的内容字段（不动 status / claimed_by）；只有「未指定」的任务可改。 */
