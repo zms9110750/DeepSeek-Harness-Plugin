@@ -35,10 +35,10 @@ body:
         这一份只写"哪不好、改成什么样"。
         具体怎么改是子事项的事。
 
-  - type: [ask, rank, textarea]
+  - type: [ask, textarea]
     id: aspect
     attributes:
-      label: 优化什么
+      label: 要动哪些方向
       max_picks: 99
       options:
         - 性能优化：更快 / 更省内存
@@ -48,12 +48,34 @@ body:
         - 扩展性优化：加一件事要改很多地方
         - 一致性优化：同一个概念在不同地方叫不同名字
       description: |
-        勾出这次要动哪些方向，**按主次排序**。
+        勾出这次要动哪些方向。**可以多选。**
 
-        主次很重要：主要的那个必须达标，顺带的那个不做也可以。
-        所以排序比勾选更要紧。
+        勾完在下一章钉住"哪一个决定验收"。
+        三个方向同时"必须达标"等于没有标准 —— 所以只要一个说了算。
 
         勾不出来，先派一条调研去查"到底哪不好"。
+    validations:
+      required: true
+
+  - type: [ask, textarea]
+    id: aspect_primary
+    attributes:
+      label: 哪个方向决定验收
+      max_picks: 1
+      options:
+        - 性能优化
+        - 语义优化
+        - 可读性优化
+        - 接口界面优化
+        - 扩展性优化
+        - 一致性优化
+      description: |
+        上面勾了哪些方向，这里钉住**哪一个说了算**。
+
+        判据只看主要的那个：它达标就算做完，其余的不达标可以记下来。
+        为什么只要一个：三个方向同时"必须达标"，等于没有标准。
+
+        这个必须是上面勾过的之一。
     validations:
       required: true
 

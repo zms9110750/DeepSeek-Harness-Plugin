@@ -69,7 +69,7 @@ body:
     validations:
       required: true
 
-  - type: [rank, textarea]
+  - type: textarea
     id: magic
     attributes:
       label: 一拍脑袋定的数

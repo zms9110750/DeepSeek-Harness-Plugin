@@ -31,10 +31,10 @@ body:
         这一份只写"测什么、什么算过"。
         怎么测是子事项的事。
 
-  - type: [ask, rank, textarea]
+  - type: [ask, textarea]
     id: kind
     attributes:
-      label: 测什么
+      label: 要跑哪几种
       max_picks: 99
       options:
         - 冒烟测试：跑一遍主路径，看有没有明显坏
@@ -43,11 +43,31 @@ body:
         - 回归测试：改完确认旧的还能用
         - 兼容测试：旧数据 / 旧客户端还能不能用
       description: |
-        勾出这次要跑哪几种，**按主次排序**。
+        勾出这次要跑哪几种。**可以多选。**
 
-        主次决定放行标准：主要的那个必须过，顺带的那个不过可以记下来。
+        勾完在下一章钉住"哪一种决定放行"。
+        通常会勾两个：主要跑冒烟，顺手试几个边缘。
+    validations:
+      required: true
 
-        通常会同时勾两个：主要跑冒烟，顺手试几个边缘。
+  - type: [ask, textarea]
+    id: kind_primary
+    attributes:
+      label: 哪种决定放行
+      max_picks: 1
+      options:
+        - 冒烟测试
+        - 边缘测试
+        - 性能测试
+        - 回归测试
+        - 兼容测试
+      description: |
+        上面勾了哪些，这里钉住**哪一种决定放行**。
+
+        判据只看主要的那个：它过了就算通过。
+        其余的不通过可以记下来，但不拦流程。
+
+        必须是上面勾过的之一。
     validations:
       required: true
 
