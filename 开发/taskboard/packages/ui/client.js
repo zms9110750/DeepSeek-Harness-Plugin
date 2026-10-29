@@ -3239,7 +3239,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         };
         return h(
           "div",
-          { style: { height: 336, overflow: "auto", display: "flex", flexDirection: "column", gap: 10, paddingRight: 4 } },
+          /* 高度跟着窗口走，不写死 336 —— 写死会把卡片挤成一条缝。 */
+          { style: { flex: 1, minHeight: 240, overflow: "auto", display: "flex", flexDirection: "column", gap: 10, paddingRight: 4 } },
           byGroup.map(function(group) {
             const rows = tasks.filter(function(node) {
               return bucket(node) === group.id;
@@ -3274,6 +3275,12 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                       alignItems: "center",
                       gap: 8,
                       padding: "5px 8px",
+                      /*
+                       * minHeight + flexShrink:0 —— 不加这两行，卡片会被父容器压成一条缝。
+                       * 表现是标题只露出上半截，看起来像被裁掉了。
+                       */
+                      minHeight: 28,
+                      flexShrink: 0,
                       borderRadius: 8,
                       cursor: "pointer",
                       background: props.selected === node.id ? "var(--dsw-alias-bg-layer-2)" : "var(--dsw-alias-bg-layer-1)",
@@ -3306,7 +3313,7 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               })
             );
           }),
-          tasks.length === 0 ? h("div", { style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" } }, "\u6CA1\u6709\u7B26\u5408\u6761\u4EF6\u7684\u4E8B\u9879\u3002") : null
+          tasks.length === 0 ? h("div", { style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)" } }, "\u6CA1\u6709\u7B26\u5408\u6761\u4EF6\u7684\u4EFB\u52A1\u3002") : null
         );
       }
       function TechTree(props) {
@@ -5995,8 +6002,8 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               },
               "\u6837\u4F8B\u6570\u636E" + (data.error ? "\uFF1A" + data.error : "")
             ),
-            legendItem("parent", false, "\u7236\u5B50"),
-            legendItem("link", true, "\u94FE\u63A5"),
+            legendItem("parent", false, "\u6D3E\u751F"),
+            legendItem("link", true, "\u5173\u8054"),
             h("span", { style: { flex: 1 } }),
             /* 视图切换（T-020）：树看关系，列表看密度。 */
             h(
@@ -6247,7 +6254,9 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
           h(
             "div",
             { style: { display: "flex", alignItems: "center", gap: 6 } },
-            ["", "\u8FDB\u884C", "\u6401\u7F6E", "\u6210\u529F", "\u8349\u7A3F"].map(function(key) {
+            /* 三个状态组 + 草稿。第三组叫「结束」不是「成功」——
+               它是兜底组，失败/取消/拒绝都在这儿。 */
+            ["", "\u8FDB\u884C", "\u6401\u7F6E", "\u7ED3\u675F", "\u8349\u7A3F"].map(function(key) {
               const label = key === "" ? "\u5168\u90E8" : key;
               const active = groupFilter === key;
               return h(
