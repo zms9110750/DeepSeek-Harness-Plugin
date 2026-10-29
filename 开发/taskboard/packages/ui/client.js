@@ -3155,7 +3155,48 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         );
       }
       const NODE_W = 168;
-      const NODE_H = 52;
+      /*
+       * 62 不是随便取的：
+       *   62 - 6(边框) - 14(内边距) - 3(gap) = 39
+       *   两行各 ~19px，装得下 11px 标签和 12px 标题。
+       * 52 的时候只有 32，第二行会被裁掉半截。
+       */
+      const NODE_H = 62;
+
+      /*
+       * 关系类型 → 线型和颜色。
+       *
+       * 用户原话：
+       *   > 这个图例只有父子和链接。但既然链接关系不多，
+       *   > 那就可以给每个关系都做一种图例。
+       *
+       * 六种关系各一种，图例全列出来。颜色是照沙盘那份取的。
+       *
+       *   parent    父子结构（就是 parent 字段）  灰实线
+       *   依赖      硬阻断 + 级联                橙实线
+       *   取代      旧转拒绝                    紫实线
+       *   约束      软提示，不阻断               红实线
+       *   相关      无向，只是有关系             绿虚线
+       *   参考      有向，看看就行               灰虚线
+       */
+      const LINK_KINDS = [
+        { key: "parent", label: "派生", color: "var(--dsw-alias-border-l2)", dashed: false },
+        { key: "依赖", label: "依赖", color: "#c98a20", dashed: false },
+        { key: "取代", label: "取代", color: "#7c5cd6", dashed: false },
+        { key: "约束", label: "约束", color: "#c0392b", dashed: false },
+        { key: "相关", label: "相关", color: "#2e9e6b", dashed: true },
+        { key: "参考", label: "参考", color: "#8a9099", dashed: true }
+      ];
+
+      /** 按关系名字取配色。认不出就退回「参考」那档。 */
+      function linkStyle(kind, label) {
+        /* parent 那档按 kind 认；其余按 label 认。 */
+        const key = kind === "parent" ? "parent" : (label || "参考");
+        const found = LINK_KINDS.find(function(entry) {
+          return entry.key === key;
+        });
+        return found || LINK_KINDS[LINK_KINDS.length - 1];
+      }
       function buildGraph(tasks) {
         const taskById = {};
         tasks.forEach(function(item) {
@@ -3361,14 +3402,19 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                 const y2 = to.y + NODE_H / 2;
                 const dx = Math.max(28, Math.abs(x2 - x1) / 2);
                 const active = hovered === edge.src || hovered === edge.dst;
+                const style = linkStyle(edge.kind, edge.label);
                 return h("path", {
-                  key: "edge-" + edge.src + "-" + edge.dst + "-" + edge.kind,
+                  key: "edge-" + edge.src + "-" + edge.dst + "-" + style.key,
                   d: "M" + x1 + " " + y1 + " C" + (x1 + dx) + " " + y1 + " " + (x2 - dx) + " " + y2 + " " + x2 + " " + y2,
                   fill: "none",
-                  stroke: edge.kind === "link" ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)",
-                  strokeWidth: active ? 2 : 1.2,
-                  strokeDasharray: edge.kind === "link" ? "4 3" : "none",
-                  opacity: hovered === "" ? 0.5 : active ? 1 : 0.14,
+                  stroke: style.color,
+                  strokeWidth: active ? 2.2 : 1.4,
+                  strokeDasharray: style.dashed ? "4 3" : "none",
+                  /*
+                   * 没有 hover 时也要看得清颜色 —— 图例的用途就是
+                   * 让人对着图认线。0.6 太淡，六种颜色糊成一片灰。
+                   */
+                  opacity: hovered === "" ? 0.85 : active ? 1 : 0.12,
                   markerEnd: "url(#tt-arrow)"
                 });
               })
@@ -3395,7 +3441,9 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
                     top: placed.y,
                     width: NODE_W,
                     height: NODE_H,
+                    minHeight: NODE_H,
                     boxSizing: "border-box",
+                    overflow: "hidden",
                     padding: "7px 9px",
                     cursor: "pointer",
                     border: "3px solid " + (isHovered || props.selected === node.id ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)"),
@@ -5944,27 +5992,35 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
         tasks.forEach(function(node) {
           if (node.on) enabledCount += 1;
         });
-        const legendItem = function(key, dashed, label) {
+        /*
+         * 图例一项：一段线 + 名字。
+         *
+         * 用户要求「每个关系都做一种图例」—— 所以这里吃的是
+         * LINK_KINDS 里的一条，颜色和虚实都从那里来，
+         * 保证图例和图上画的线永远一致。
+         */
+        const legendItem = function(kind) {
           return h(
             "span",
             {
-              key: "legend-" + key,
+              key: "legend-" + kind.key,
+              title: kind.label,
               style: { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--dsw-alias-label-secondary)" }
             },
             h(
               "svg",
-              { width: 18, height: 8, style: { display: "block" } },
+              { width: 18, height: 8, style: { display: "block", flex: "none" } },
               h("line", {
                 x1: 0,
                 y1: 4,
                 x2: 18,
                 y2: 4,
-                stroke: dashed ? "var(--dsw-alias-brand-primary)" : "var(--dsw-alias-border-l2)",
-                strokeWidth: 1.5,
-                strokeDasharray: dashed ? "4 3" : "none"
+                stroke: kind.color,
+                strokeWidth: 1.6,
+                strokeDasharray: kind.dashed ? "4 3" : "none"
               })
             ),
-            label
+            kind.label
           );
         };
         return h(
@@ -6002,8 +6058,17 @@ window.__TASKBOARD_UI_PARTS__ = ["drawer", "sidebar"];
               },
               "\u6837\u4F8B\u6570\u636E" + (data.error ? "\uFF1A" + data.error : "")
             ),
-            legendItem("parent", false, "\u6D3E\u751F"),
-            legendItem("link", true, "\u5173\u8054"),
+            /*
+             * 六种关系各一个图例项。
+             *
+             * 之前只有两项（派生 / 关联）—— 图上所有非父子边都画成
+             * 同一条蓝虚线，看不出是依赖还是约束。
+             *
+             * 现在每种关系一种颜色和线型，图例全列。
+             */
+            LINK_KINDS.map(function(kind) {
+              return legendItem(kind);
+            }),
             h("span", { style: { flex: 1 } }),
             /* 视图切换（T-020）：树看关系，列表看密度。 */
             h(
