@@ -1,0 +1,16 @@
+# 编辑器 / 工具产物
+.vs/
+*.vsidx
+*.suo
+
+# 依赖
+node_modules/
+
+# 日志
+*.log
+
+# 二进制产物（可重新生成）
+*.db
+*.db-shm
+*.db-wal
+*.zstd

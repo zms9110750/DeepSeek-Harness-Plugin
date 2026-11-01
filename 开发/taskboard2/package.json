@@ -1,0 +1,41 @@
+{
+  "name": "@local/taskboard2",
+  "version": "0.1.0-a.0",
+  "private": true,
+  "type": "module",
+  "description": "任务板 2：重构版。十一个可替换的实现领域。",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./icon": "./icon.svg",
+    "./locale/*.json": "./locale/*.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json",
+    "README.md"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@local/taskboard2-store": "*",
+    "@local/taskboard2-action": "*",
+    "@local/taskboard2-types": "*",
+    "@local/taskboard2-relation": "*",
+    "@local/taskboard2-search": "*",
+    "@local/taskboard2-workgroup": "*",
+    "@local/taskboard2-taskcard": "*",
+    "@local/taskboard2-core": "*",
+    "@local/taskboard2-ai-tool": "*",
+    "@local/taskboard2-ui": "*",
+    "@local/taskboard2-dsh-command": "*"
+  }
+}

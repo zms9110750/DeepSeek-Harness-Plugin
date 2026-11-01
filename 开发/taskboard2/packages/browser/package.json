@@ -1,0 +1,37 @@
+{
+  "name": "@local/taskboard2-browser",
+  "version": "0.1.0-a.0",
+  "private": true,
+  "type": "module",
+  "description": "任务板 2 的浏览器入口：不起 dsh、不加载会话、不写日志。用于测试。不是插件。",
+  "bin": {
+    "taskboard2-browser": "./bin.js"
+  },
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "bin.js",
+    "server.js",
+    "public"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@local/taskboard2-store": "*",
+    "@local/taskboard2-action": "*",
+    "@local/taskboard2-types": "*",
+    "@local/taskboard2-relation": "*",
+    "@local/taskboard2-search": "*",
+    "@local/taskboard2-workgroup": "*",
+    "@local/taskboard2-taskcard": "*",
+    "@local/taskboard2-core": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  }
+}

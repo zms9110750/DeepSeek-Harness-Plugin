@@ -1,0 +1,81 @@
+# 任务板 2 —— 一个 bundle，按依赖顺序装配。
+#
+# 顺序就是层序：下标小的不依赖下标大的。
+#
+#   ① store        持久化（jsonl.zstd）
+#   ② action       行为：JSON 架构 + 渲染器
+#   ③ types        类型体系：状态 / 分类 / 模板 / 编号
+#   ④ relation     关系：边 + 沿边传播的计划
+#   ⑤ search       搜索：只读查询
+#   ⑥ workgroup    工作组：容器
+#   ⑦ taskcard     任务卡：任务对象本身
+#   ⑧ core         核心：唯一编排入口
+#   ⑨ ai-tool      给模型的工具
+#   ⑩ ui           UI 提供层 + 两个入口
+#   ⑪ dsh-command  dsh 斜杠命令适配
+#
+# ## 硬规矩（README.md）
+#
+#   patch 里的条目数 = 插件包数。一个插件包可以包含多个开发期模块。
+#   本文件 11 条 = packages/ 下 11 个插件包。
+#
+#   packages/browser/ 是独立浏览器入口，**不在这里**，也永远不会在这里 ——
+#   它不是插件，dsh 不认识它。
+#
+# ## 为什么每行都是独立包名、不用子路径
+#
+#   带浏览器端代码（`dsh.client`）的包**必须是两段式包名**：
+#
+#     @local/taskboard2-ui      ✅ 两段，可以带 client.js
+#     @local/taskboard2/ui      ❌ 三段子路径，客户端永不加载
+#
+#   依据 dsh-client-modules 的 exactPackageSpecifier()。宿主侧的包用独立包名
+#   也一样能跑，所以这里统一全部独立包名，不混用。
+
+- insert:
+    # ① 持久化
+    - id: taskboard2-store
+      name: '@local/taskboard2-store'
+
+    # ② 行为：零依赖
+    - id: taskboard2-action
+      name: '@local/taskboard2-action'
+
+    # ③ 类型体系：零依赖，包内四块严格单向
+    - id: taskboard2-types
+      name: '@local/taskboard2-types'
+
+    # ④ 关系：依赖 ①
+    - id: taskboard2-relation
+      name: '@local/taskboard2-relation'
+
+    # ⑤ 搜索：依赖 ①
+    - id: taskboard2-search
+      name: '@local/taskboard2-search'
+
+    # ⑥ 工作组：依赖 ①③
+    - id: taskboard2-workgroup
+      name: '@local/taskboard2-workgroup'
+
+    # ⑦ 任务卡：依赖 ③④
+    - id: taskboard2-taskcard
+      name: '@local/taskboard2-taskcard'
+
+    # ⑧ 核心：依赖 0–1 层全部
+    - id: taskboard2-core
+      name: '@local/taskboard2-core'
+
+    # ⑨ AI 工具：依赖 ⑧ + 宿主的 tools 服务
+    - id: taskboard2-ai-tool
+      name: '@local/taskboard2-ai-tool'
+
+    # ⑩ UI：宿主侧只承载入口开关。两个 bool 在这条 row 的 config 里。
+    - id: taskboard2-ui
+      name: '@local/taskboard2-ui'
+      config:
+        workspace: true
+        drawer: true
+
+    # ⑪ dsh 斜杠命令：依赖 ⑧ + 宿主的 commands 服务
+    - id: taskboard2-dsh-command
+      name: '@local/taskboard2-dsh-command'

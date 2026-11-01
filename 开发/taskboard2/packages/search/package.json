@@ -1,0 +1,24 @@
+{
+  "name": "@local/taskboard2-search",
+  "version": "0.1.0-a.0",
+  "private": true,
+  "type": "module",
+  "description": "⑤ 搜索：按条件查、按关系反查、按树取后代。只读。",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.host.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\""
+  }
+}

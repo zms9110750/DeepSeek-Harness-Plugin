@@ -1,0 +1,24 @@
+{
+  "name": "@local/taskboard2-workgroup",
+  "version": "0.1.0-a.0",
+  "private": true,
+  "type": "module",
+  "description": "⑥ 工作组：容器本身。组、成员、归档、当前指针；不关心里面是什么。",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.host.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\""
+  }
+}

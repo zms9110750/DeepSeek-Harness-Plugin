@@ -1,0 +1,24 @@
+{
+  "name": "@local/taskboard2-relation",
+  "version": "0.1.0-a.0",
+  "private": true,
+  "type": "module",
+  "description": "④ 关系：事项之间的边，以及沿边传播的计划。只算不写。",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.host.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\""
+  }
+}
