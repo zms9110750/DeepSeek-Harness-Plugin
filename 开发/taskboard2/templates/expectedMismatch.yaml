@@ -71,7 +71,7 @@ derive:
     relations: # 可选：预填的 relations
       parent: "{{ parent }}" # 父任务指向当前卡
       links:
-        - label: 依赖
+        - label: dependsOn # 关系类型写英文标识（显示名由 ④ 的词汇表提供）
           to: "{{ parent }}"
 
   - label: 开调研（快捷） # 同一个目标的预设版本，内容已填好，一键创建
@@ -81,7 +81,7 @@ derive:
     relations:
       parent: "{{ parent }}"
       links:
-        - label: 依赖
+        - label: dependsOn # 关系类型写英文标识
           to: "{{ parent }}"
 
 # ── 章节 ──
