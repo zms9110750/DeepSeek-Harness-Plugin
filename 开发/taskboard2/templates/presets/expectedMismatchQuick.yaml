@@ -1,0 +1,82 @@
+# ═══════════════════════════════════════════════════════════
+#  预设模板 —— 预期不符
+#  形状草稿，本地随你改。
+#
+#  预设 = 内容已经填好的模板。不在新建面板的模板列表里显示，
+#  只能被 derive 按钮弄出来，或者由 AI 直接按名字创建。
+#
+#  ⚠ sections 这里用 object（章节名 → action payload），不是数组。
+#     因为预设的 sections 就是「将来传给建卡的参数」，形状必须与传参一致。
+# ═══════════════════════════════════════════════════════════
+
+# ── 预设标识 ──
+#   没有 preset 字段。判据就是下面有没有 template：
+#   预设必有 template，普通模板必无 —— 双射，不需要再标一次。
+#   （普通模板若误写 template，会被 additionalProperties: false 拒掉，不会静默变预设。）
+
+template: expectedMismatch
+#   必填。指向一个**已存在**的普通模板。
+#   注册时校验：目标不存在 → 拒绝注册。
+#   章节集必须与目标模板一致（同样的 id）。
+#   kind / domain / codePrefix 全部继承自目标模板，这里不写。
+
+name: expectedMismatchQuick
+#   必填。稳定英文标识。derive 按钮靠它指向。
+
+displayName: 预期不符（快捷）
+#   必填。显示名。derive 按钮的默认文字可以取这个。
+
+sections:
+  summary:
+    $type: text
+    value: ""
+    row: 1
+    #   一句话描述：留空，让用户自己写。
+
+  expect:
+    $type: text
+    value: ""
+    row: 3
+    #   希望发生什么：留空。
+
+  expectSource:
+    $type: ask
+    items:
+      - header: 你为什么觉得应该这样？
+        question: 选一个最接近的
+        options:
+          - label: 望文生义
+            description: 从语义说，这个东西在这里长这样就应该这样做才有道理
+          - label: 同类产品
+            description: 具有类似功能的项目实现，具有这样的行为
+          - label: 附随文档
+            description: 这个项目自己表示会这样说，包括更新说明和 readme
+          - label: 社区传阅
+            description: wiki、视频、论坛，有记录表明很多人这样认为
+          - label: 历史惯性
+            description: 曾经是这样的行为，更新没说会变，但变了
+          - label: 官方暗示
+            description: 开发者访谈、笔记、博客，或维护者在社区宣称支持
+        placeholder: 自己填一个…
+    #   ★ 这一章就是预设的意义所在：
+    #     · 选定了 ask（而不是 text）
+    #     · 六个标准选项已经填好
+    #     用户点一下就行，不用每次自己敲。
+
+  actual:
+    $type: text
+    value: ""
+    row: 3
+    #   实际发生什么：留空。
+
+  locate:
+    $type: text
+    value: ""
+    row: 3
+    #   怎么定位：留空。目标模板限定了 accepts: [text]，这里只能给 text。
+
+  note:
+    $type: text
+    value: ""
+    row: 2
+    #   补充说明：留空。

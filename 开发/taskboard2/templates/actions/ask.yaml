@@ -1,0 +1,79 @@
+# ═══════════════════════════════════════════════════════════
+#  Action —— ask
+#  一个 ask 里可以装复数个提问。
+# ═══════════════════════════════════════════════════════════
+
+$type: ask
+
+summary: 选项选择，单选或多选，恒有「未选择」和自填框
+
+# ── 架构 ──
+schema:
+  type: object
+  required: [$type, items]
+  properties:
+    $type:
+      const: ask
+    items: # 一个 ask 可以装复数个提问
+      type: array
+      minItems: 1
+      items:
+        type: object
+        required: [options]
+        properties:
+          header:
+            type: string # 副标题，灰小字
+          question:
+            type: string # 主标题，大字
+          options:
+            type: array
+            items:
+              type: object
+              required: [label]
+              properties:
+                label:
+                  type: string # 选项名
+                description:
+                  type: string # 选项小字
+              additionalProperties: true
+          multi_select:
+            type: boolean
+            default: false
+            #   false = 单选：至多一项，且可以取消到一项都不选
+            #   true  = 多选：可以有任意多项，包括 0
+            #
+            #   单选/多选是两个字段，不是一个上限。
+            #   多选就算只剩一个选项，也仍然是多选 —— 它可以「一个都不选」。
+            #   不设上限：多选就是不限，没有"最多选 N 个"这回事。
+          picked: # 答案。三态见下方
+            type: array
+            items:
+              type: string
+          placeholder:
+            type: string # 自填框的灰字
+        additionalProperties: true
+  additionalProperties: true
+
+# ── picked 的三态（这是「未选择」能被表达出来的地方）──
+#   字段不存在       → 未选择（我没看这张卡）
+#   []              → 看了，但都不要
+#   ["A"]           → 选了 A
+#   ["A", "自定义"]  → 选了 A，还自己填了一条
+#
+#   ⚠ 选项值和自填值混在同一个数组里，靠 options 反查来区分。
+#     这是原型里就有的做法，不是新设计。
+
+# ── 渲染 ──
+render:
+  edit: |
+    渲染器**始终**提供这两样（不是参数开关）：
+      · 「未选择」按钮  → picked = undefined
+      · 自填输入框      → 自填的串并入 picked
+
+    选项按 multi_select 分支：
+      false → 点一下选中，再点同一项取消（至多一项）
+      true  → 点一下加入 / 移出 picked（可多项，也可一项都不选）
+
+  view: |
+    选项逐行列出，被选中的高亮；自填的值作为额外一行显示。
+    无按钮、无输入框。
