@@ -36,14 +36,16 @@ import type { SearchCondition } from './condition.js';
  * 用结构类型的好处：⑦ 的 `Card` 只要满足这些字段，**无需任何适配**就能直接传进来。
  */
 export interface SearchCard {
-	/** 编号。参与关键词匹配（用户 13:18：搜索可搜标题、编号）。 */
+	/** 编号。**不参与匹配** —— 编号走 ⑧ 的精确搜索（`get(cardId)`）。保留它只为结果可引。 */
 	readonly id: string;
-	/** 标题。参与关键词匹配。 */
+	/** 标题。参与 `title` 模糊搜索。 */
 	readonly title: string;
-	/** 状态。参与 `status` / `group` 两个筛选（`group` 由调用方展开成状态列表）。 */
+	/** 状态。参与 `status` 筛选（组已由 ⑨⑩ 展开成状态列表，⑤ 不收"组"）。 */
 	readonly status: string;
 	readonly template: {
+		/** 模板 name。参与 `template` 筛选。 */
 		readonly ref: string;
+		/** 分类 `goal` / `design` / `record` / `work`。参与 `kind` 筛选。 */
 		readonly kind: string;
 		/**
 		 * 领域。**存在卡上**（用户 `2026-11-02 00:23`「template 要有领域的」），
@@ -51,7 +53,7 @@ export interface SearchCard {
 		 */
 		readonly domain: string;
 	};
-	/** 历史事件。**只用于排序**，不参与关键词、不参与筛选。 */
+	/** 历史事件。**只用于排序**，不参与模糊搜索、不参与筛选。 */
 	readonly history: readonly {
 		readonly at: number;
 		readonly action: string;
@@ -122,10 +124,22 @@ export function orderByAdoption(cards: readonly SearchCard[]): {
 	return { ordered: withTime.map((item) => item.card), missingAdoption };
 }
 
-/** 关键词匹配：**标题 + 编号**，子串匹配，不做大小写折叠、不 trim。 */
-function matchesKeyword(card: SearchCard, keyword: string): boolean {
-	if (keyword === '') return true;
-	return card.title.includes(keyword) || card.id.includes(keyword);
+/**
+ * 标题模糊匹配：**只看标题**，子串匹配，不折叠大小写、不 trim。
+ *
+ * **同一字段内 OR**（用户 `2026-11-02 17:50`「都是or」）：
+ * 传 `['foo', 'bar']` 表示标题含 foo **或** 含 bar —— 命中任一即通过。
+ *
+ * - `undefined` / 空数组 ⇒ **该维度不设限**（返回 `true`）；
+ * - 数组里的**空串**按"含空串"字面处理 = 恒真。**这是调用方传值的责任**，⑤ 不做防御性裁剪 ——
+ *   裁掉空串等于"悄悄忽略了一个筛选项"，比按字面执行更难排查。
+ *
+ * ⚠ **不匹配编号** —— 用户 `2026-11-02 17:37`：「精确搜索由 core 提供。参数是编号。」
+ * 按编号取卡是 ⑧ 的 `get(cardId)`，不是模糊搜。
+ */
+function matchesTitle(card: SearchCard, keywords: readonly string[] | undefined): boolean {
+	if (keywords === undefined || keywords.length === 0) return true;
+	return keywords.some((keyword) => card.title.includes(keyword));
 }
 
 function matchesAny(value: string, allowed: readonly string[] | undefined): boolean {
@@ -136,25 +150,20 @@ function matchesAny(value: string, allowed: readonly string[] | undefined): bool
 /**
  * 按条件筛选。**纯函数**，无副作用、无状态、不排序（顺序由 `orderByAdoption` 决定）。
  *
- * - 字段之间 **AND**；同字段数组内 **OR**；
+ * - **字段之间 AND**；**同一字段数组内 OR**（用户：筛选按钮与搜索框可同时用）；
  * - 空条件 `{}` ⇒ 返回全集；
- * - **`domain` 精确比较，不做归一化**（不 trim、不折叠大小写、不合并别名）。
- *
- * ⚠ **不返回**"没有采纳记录"的卡 —— 它们无法确定位置。要连它们一起拿，
- * 请用 `searchAll` 或自行调 `orderByAdoption`。见该函数的注释。
+ * - `title` 是子串匹配，其余四项是集合成员判断，**一律不归一化**。
  */
 export function filterCards(
 	cards: readonly SearchCard[],
 	condition: SearchCondition,
 ): readonly SearchCard[] {
-	const keyword = condition.keyword;
-
 	return cards.filter((card) => {
-		if (keyword !== undefined && !matchesKeyword(card, keyword)) return false;
-		if (!matchesAny(card.status, condition.status)) return false;
-		/* `group` 是"状态组"，由调用方展开成状态列表后传进来 —— ⑤ 不解释组。 */
-		if (!matchesAny(card.status, condition.group)) return false;
+		if (!matchesTitle(card, condition.title)) return false;
 		if (!matchesAny(card.template.domain, condition.domain)) return false;
+		if (!matchesAny(card.template.kind, condition.kind)) return false;
+		if (!matchesAny(card.status, condition.status)) return false;
+		if (!matchesAny(card.template.ref, condition.template)) return false;
 		return true;
 	});
 }
@@ -162,8 +171,8 @@ export function filterCards(
 /**
  * 搜索：筛选 + 按采纳顺序返回。
  *
- * 用户的 UI 形态是「搜索框 + 三个按钮」，AI 工具形态是「一个方法，搜索的同时筛选」——
- * 两者都落到这一个函数：`condition` 里可以只有 `keyword`、只有筛选、或两者都有。
+ * 用户的 UI 形态是「搜索框 + 筛选按钮」，AI 工具形态是「一个方法，搜索的同时筛选」——
+ * 两者都落到这一个函数：`condition` 里可以只有 `title`、只有筛选、或两者都有。
  */
 export function search(cards: readonly SearchCard[], condition: SearchCondition): SearchCard[] {
 	const matched = filterCards(cards, condition);

@@ -27,6 +27,7 @@ import { updateBody, updateCard } from './edit.js';
 import { coreError, type CoreError } from './errors.js';
 import { forkCard } from './fork.js';
 import type { Actor, Card, Ports, Principal, SearchCondition } from './ports.js';
+import { SEARCH_CONDITION_KEYS } from './ports.js';
 import type { ActiveWorkspace } from './workspace.js';
 import { findCard, loadWorkspace, resolveCurrentWorkspace, visibleCards } from './workspace.js';
 
@@ -55,6 +56,18 @@ export interface CoreService {
 	activate(wsId: string): { readonly ok: true; readonly count: number } | Failure;
 	/* ── 读 ── */
 	list(): readonly Card[];
+	/**
+	 * **精确搜索：参数是编号**（用户 11-02 17:37「精确搜索由core提供。参数是编号。」）。
+	 *
+	 * ⇒ 这就是精确搜索的实现 —— **不需要另加 `searchById`**：
+	 *   用户要的是"按编号查一张卡"，`get(cardId)` 就是它，**且跨空间一致性更好**
+	 *   （它按 id 直查当前空间内存，不过滤墓碑）。
+	 *
+	 * ⚠ 与 `search(condition)` 的分工：
+	 *   · `get(cardId)` —— **精确**（编号），不经过 ⑤，不筛不模糊；
+	 *   · `search(condition)` —— **模糊 / 筛选**（标题模糊 + 领域/分类/状态/模板），走 ⑤。
+	 * ⇒ 两条路**不互相替代**：编号是身份，条件是筛选。
+	 */
 	get(cardId: string): { readonly ok: true; readonly card: Card } | Failure;
 	/**
 	 * 模板可用状态（给 ⑩ 展示降级提示用）。
@@ -66,7 +79,18 @@ export interface CoreService {
 	 *   失败的是"有行为的操作"（它们各自返回 `TEMPLATES_UNAVAILABLE`）。
 	 */
 	templatesStatus(): { readonly ok: true; readonly ready: boolean };
-	/** 搜索（走 ⑤；⑤ 缺省 ⇒ 报 `SEARCH_UNAVAILABLE`，不自己实现一套筛法）。 */
+	/**
+	 * 模糊 / 筛选搜索（走 ⑤；⑤ 缺省 ⇒ 报 `SEARCH_UNAVAILABLE`，不自己实现一套筛法）。
+	 *
+	 * ⚠ **搜索不过滤墓碑是有意的**（`【Lead 决定，2026-11-02 18:00】`）：
+	 *   · 用户 03:32「墓碑默认读路径过滤，但按 id 直查可见」；
+	 *   · **搜索 = 读路径** ⇒ 该过滤；
+	 *   · **`get` = 按 id 直查** ⇒ 不过滤。
+	 * ⇒ 所以"搜不到墓碑"**不是漏了**，是**两条路径的分工**。别在这里加墓碑。
+	 *
+	 * ⇒ 给 ⑤ 的卡集用 `visibleCards(...)`（**只滤墓碑、保留草稿**，
+	 *   与 `list()` 同源）—— 草稿**可以搜到**。
+	 */
 	search(condition: SearchCondition): {
 		readonly ok: true;
 		readonly matched: readonly Card[];
@@ -194,6 +218,61 @@ export function createFacade(options: FacadeOptions): CoreService {
 	}
 
 	/**
+	 * 搜索条件字段白名单守卫。
+	 *
+	 * ## 为什么需要（这不是重复校验）
+	 *
+	 * 本包的 `SearchCondition`（`ports.ts`）是 ⑤ 的条件的**第二份声明** ——
+	 * ⑧ 零 `@local/*` import，收不到 ⑤ 的类型。
+	 * ⇒ ⑤ 改了字段名而这里没跟上时：**编译不报错、运行不报错**，
+	 *   条件被 ⑤ **静默忽略**（筛出全集）—— **这份漂移已经发生过一次**
+	 *   （旧版是 `keyword` / `group`，新版是 `title` / `kind` / `template`）。
+	 *
+	 * ⇒ 这个守卫是**两份声明之间唯一的连接点**：让"字段名变了"变成**显式错误**。
+	 *
+	 * ⚠ **不接受"重复"这个批评**：两份声明是零依赖约束的**必要代价**；
+	 *   我们要拒绝的是**静默失效**，不是重复。
+	 *
+	 * @returns 非法时返回 `CoreError`，合法时返回 `undefined`
+	 */
+	function assertSearchCondition(condition: SearchCondition): CoreError | undefined {
+		const allowed = new Set<string>(SEARCH_CONDITION_KEYS);
+		const record = condition as Readonly<Record<string, unknown>>;
+
+		for (const key of Object.keys(record)) {
+			/* ── ① 字段名白名单（防"⑤ 改了字段名而这里没跟上"） ── */
+			if (!allowed.has(key)) {
+				return coreError(
+					'SEARCH_CONDITION_INVALID',
+					`未知的搜索条件字段「${key}」；合法字段：${SEARCH_CONDITION_KEYS.join(' / ')}。` +
+						'（若 ⑤ 刚改过字段名，⑧ 的 ports.ts 要同步对齐）',
+					{ key, allowed: SEARCH_CONDITION_KEYS },
+				);
+			}
+
+			/*
+			 * ── ② 值是数组（防"传了字符串"这种同类的静默失效） ──
+			 *
+			 * 用户 17:50：「这几个过滤都要是数组。因为不排除多选的情况」「都是or。」
+			 * ⇒ 若 ⑨⑩ 传 `title: '字符串'`，⑤ 按数组逻辑处理会**静默筛出空**，
+			 *   看起来像"没找到"，实际是**参数形状错**。
+			 * ⇒ 与"字段名漂移"是**同一类问题**：不报错、结果错。所以一并拦。
+			 */
+			const value = record[key];
+			if (value === undefined) continue;
+			if (!Array.isArray(value)) {
+				return coreError(
+					'SEARCH_CONDITION_INVALID',
+					`搜索条件「${key}」必须是数组（同一字段内多值之间是 OR）；收到 ${typeof value}。`,
+					{ key, received: typeof value },
+				);
+			}
+		}
+
+		return undefined;
+	}
+
+	/**
 	 * 降级模式闸：模板注册表未就绪 ⇒ 拒绝"有行为"的操作。
 	 *
 	 * 用户 11-02 14:50：
@@ -263,6 +342,18 @@ export function createFacade(options: FacadeOptions): CoreService {
 		},
 
 		/* ── 读 ── */
+		/**
+		 * **完整卡列表 —— 含草稿**（用户 11-02 17:50：「草稿不是有效的，但是core提供完整列表
+		 * 会在里面。ui和命令都可以看到草稿」）。
+		 *
+		 * ⇒ `visibleCards` 只滤**墓碑**，**不滤草稿**（见 `workspace.ts:86-88` 的实现）。
+		 * ⇒ 所以"草稿对 UI 可见、但不参与状态推导"这两件事**由不同层负责**：
+		 *   · 可见性 —— ⑧ 的 `list()` **保留草稿**（本方法）；
+		 *   · 推导性 —— ③ 的 `liveChildren` **滤掉草稿**（用户 14:50「草稿不是有效卡」）。
+		 *
+		 * ⚠ **不要把这两条混起来**：若为了"草稿不参与推导"而在 `list()` 里滤草稿，
+		 *   用户就看不到草稿了 —— 而用户明确要求**能看到**。
+		 */
 		list() {
 			return active === undefined ? [] : visibleCards(active);
 		},
@@ -282,8 +373,26 @@ export function createFacade(options: FacadeOptions): CoreService {
 					error: coreError('WORKSPACE_NOT_FOUND', '⑤ search 未接入，无法搜索。'),
 				};
 			}
+
+			/*
+			 * ⚠ **防静默失效**：本包的 `SearchCondition` 是 ⑤ 条件的**第二份声明**
+			 * （本包零 `@local/*` import）⇒ ⑤ 改了字段名而这里没跟上时，
+			 * 条件会被 ⑤ **静默忽略**（筛出全集、不报错）。
+			 *
+			 * ⇒ 这里做一次**字段名白名单**检查，让漂移变成**显式错误**。
+			 *   这不是"重复校验"，而是**两份声明之间唯一的连接点**。
+			 */
+			const illegal = assertSearchCondition(condition);
+			if (illegal !== undefined) return { ok: false, error: illegal };
+
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
+			/*
+			 * ⚠ `visibleCards` = **只滤墓碑、保留草稿**（不是"滤掉一切无效卡"）。
+			 * ⇒ **墓碑搜不到是有意的**（用户 03:32「墓碑默认读路径过滤」）：
+			 *   搜索是读路径 ⇒ 该过滤；`get` 是按 id 直查 ⇒ 那才不过滤。
+			 * ⇒ **草稿能搜到**（用户 17:50「ui和命令都可以看到草稿」）。
+			 */
 			const cards = visibleCards(workspace.workspace);
 			const result = ports.search.searchAll(cards, condition);
 			return {

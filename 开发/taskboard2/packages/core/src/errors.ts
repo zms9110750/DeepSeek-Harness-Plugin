@@ -135,7 +135,23 @@ export type CoreErrorCode =
 	 *   不能依赖上游守约；异常冒到 Cordis 的调用方会**炸掉整个插件**。
 	 * ⇒ 转成可辨识的错误 + 打日志，**但不崩进程**。
 	 */
-	| 'INTERNAL_ERROR';
+	| 'INTERNAL_ERROR'
+	/**
+	 * 搜索条件的字段名不认识（`title` / `domain` / `kind` / `status` / `template` 之外）。
+	 *
+	 * ## 为什么要这个码而不是"忽略未知字段"
+	 *
+	 * ⑧ 的 `SearchCondition` 是 ⑤ 的条件的**第二份声明**（⑧ 零 `@local/*` import）。
+	 * ⑤ 改字段名时，⑧ 若没跟上：**编译不报错、运行不报错**，
+	 * 条件被 ⑤ **静默忽略** ⇒ **筛出全集**，而用户以为筛过了。
+	 *
+	 * ⇒ 那份漂移**已经发生过一次**（`keyword` / `group` → `title` / `kind` / `template`）。
+	 * ⇒ 所以未知字段**显式失败**，让漂移立刻可见。
+	 *
+	 * ⚠ 与 `INTERNAL_ERROR` 的区别：这个是**调用方传了错字段**（可预期、有明确修法），
+	 *   那个是**上游违约抛异常**（程序缺陷）。
+	 */
+	| 'SEARCH_CONDITION_INVALID';
 
 /** 一条对外错误。`code` 是机器可读的，`message` 是给人看的。 */
 export interface CoreError {

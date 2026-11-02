@@ -443,13 +443,53 @@ export interface RelationPort {
  * ⑤ search
  * ───────────────────────────────────────────────────────────── */
 
-/** 搜索条件（**纯数据、可序列化** —— 它要跨「浏览器 → 宿主」边界）。 */
+/**
+ * 搜索条件（**纯数据、可序列化** —— 它要跨「浏览器 → 宿主」边界）。
+ *
+ * ## ⚠ 这是 ⑤ 的 `SearchCondition` 的**第二份声明**（本包零 `@local/*` import）
+ *
+ * `【用户指令，2026-11-02 17:37】`：
+ * > 「搜索不需要维护。桥阶层和ui层维护就行了。」
+ * > 「精确搜索由core提供。参数是编号。」
+ * > 「搜索包提供的搜索api，他的参数应该是一个对象。」
+ * > 「包括标题模糊搜索，还有领域，分类，状态，模板的筛选。」
+ * > 「因为ui和tool有可能点了筛选按钮组过滤的情况下输入搜索栏。」
+ *
+ * ⇒ **字段逐字对齐 ⑤ 的 `condition.ts`**。**这份已经漂过一次**（旧版是 `keyword` / `group`）——
+ *   漂移时**编译不报错**（本包是把 `ctx.taskboard2Search` 强转成 `SearchPort`），
+ *   **运行时静默失效**：⑧ 传 `title` 会被 ⑤ 忽略、⑤ 的 `keyword` ⑧ 又不给。
+ *
+ * ⇒ 所以门面入口有**运行时字段白名单守卫**（见 `facade.ts` 的 `assertSearchCondition`）：
+ *   让"字段名变了"变成**显式错误**，而不是"筛出全集"。
+ *
+ * ## 字段语义
+ *
+ * `【用户指令，2026-11-02 17:50】`：
+ * > 「这几个过滤都要是数组。因为不排除多选的情况」
+ * > 「都是or。」
+ *
+ * | 字段 | 含义 |
+ * |---|---|
+ * | `title` | 标题模糊匹配（**不匹配编号**）。**多关键词之间 OR**（标题含任一即可） |
+ * | `domain` | 领域筛选 |
+ * | `kind` | 分类筛选 |
+ * | `status` | 状态筛选 |
+ * | `template` | 模板 `name` 筛选 |
+ *
+ * ⚠ **五个字段全部是数组**（`title` 也是 —— 不排除多选）。
+ * ⚠ **同一字段内 OR，字段之间 AND。**
+ * ⚠ **全部可选**；省略 = 该维度不筛。
+ */
 export interface SearchCondition {
-	readonly keyword?: string;
-	readonly status?: readonly string[];
-	readonly group?: readonly string[];
+	readonly title?: readonly string[];
 	readonly domain?: readonly string[];
+	readonly kind?: readonly string[];
+	readonly status?: readonly string[];
+	readonly template?: readonly string[];
 }
+
+/** `SearchCondition` 的**合法字段名**（运行时守卫用；与上面逐字一致）。 */
+export const SEARCH_CONDITION_KEYS = ['title', 'domain', 'kind', 'status', 'template'] as const;
 
 /** ⑤ 的服务面（本包用到的子集）。 */
 export interface SearchPort {
