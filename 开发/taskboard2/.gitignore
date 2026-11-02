@@ -17,3 +17,7 @@ lib/
 *.db-shm
 *.db-wal
 *.zstd
+
+# 临时提交信息
+.commitmsg.tmp
+*.tmp
