@@ -1,8 +1,7 @@
 /**
- * ③ 状态（status）—— 状态的标识与分组。
+ * ③ status —— 状态的标识与分组。
  *
- * 词汇来源：Agent2Agent (A2A) 协议的 `TaskState` 枚举（`spec/a2a.proto` 为权威定义）。
- * 九个值，一个不多一个不少。
+ * 词汇来源：Agent2Agent (A2A) 协议的 `TaskState` 枚举。九个值，一个不多一个不少。
  *
  * 本文件只承担两件事：
  *   1) 九个状态的标识（常量 + 由常量派生的联合类型）；
@@ -10,6 +9,9 @@
  *
  * 本文件不含任何行为：没有状态转移、没有合法性判定、没有读写存储、没有按分类的权限，
  * 也没有为分组提供函数。分组判断在调用侧用普通比较即可，与「对多个枚举值分别判断」等价。
+ *
+ * 字面量取 A2A 协议全名（`TASK_STATE_*`），不取线上短横线小写。
+ * 状态字面量单源在本文件：任何包都不得自行书写状态字符串字面量。
  */
 
 /** A2A `TaskState` 全集。键为短名，值为协议枚举名。 */
@@ -32,10 +34,14 @@ export type TaskState = (typeof TaskState)[keyof typeof TaskState];
 export const TASK_STATES: readonly TaskState[] = Object.values(TaskState);
 
 /**
- * 组「进行」= 提交 + 处理中。
+ * 草稿 = 未指定。
  *
- * 待裁决：`WORKING` 的中文名「处理中」/「进行中」尚未确定，两个候选都由用户提出。
+ * 独立常量，**不进 `TaskState` 对象**，因此 `Object.values(TaskState)` 仍是 9 项无重复。
+ * 「草稿」是它的中文术语；代码里一律用本常量，不写字面量。
  */
+export const DRAFT = TaskState.UNSPECIFIED;
+
+/** 组「进行」= 提交 + 处理中。 */
 export type ActiveStatus =
 	| typeof TaskState.SUBMITTED
 	| typeof TaskState.WORKING;
@@ -45,7 +51,12 @@ export type ShelvedStatus =
 	| typeof TaskState.INPUT_REQUIRED
 	| typeof TaskState.AUTH_REQUIRED;
 
-/** 组「结束」= 成功 + 失败 + 拒绝 + 取消。 */
+/**
+ * 组「完成」= 成功 + 失败 + 取消 + 拒绝。
+ *
+ * 用户 06:55：「"完成"，是一个状态组。包括成功，失败，取消，拒绝。」
+ * 即终态与完成态是同一个集合。
+ */
 export type EndedStatus =
 	| typeof TaskState.COMPLETED
 	| typeof TaskState.FAILED
@@ -53,7 +64,6 @@ export type EndedStatus =
 	| typeof TaskState.CANCELED;
 
 /*
- * 待裁决：`TASK_STATE_UNSPECIFIED` 不属于以上任何一组。
- * 用户给出的三组共覆盖 8 个状态，而九态中的第 9 个正是它。
- * 这里不替用户决定它的归属，因此本文件不为它声明任何组类型。
+ * `TASK_STATE_UNSPECIFIED`（草稿）不属于以上任何一组。用户 00:57：「草稿不是组。」
+ * 单成员联合没有判别力，因此不为它声明组类型。
  */

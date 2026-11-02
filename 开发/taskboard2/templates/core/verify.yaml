@@ -1,0 +1,55 @@
+name: verify
+displayName: 校验
+kind: work
+domain: 核心
+codePrefix: V
+
+usage: |
+  检查一个东西的性质分类，常态是验证是/否，符合预期，但不局限于两态的鉴别。
+  本模板语义为执行来验证行为。不包含长期留存规范，可复用的测试文件的语义。
+
+description: |
+  本卡是工作类。建出来是草稿，用户采纳后才能领取。
+  用户或 ai 领取后转为「处理中」，受「一个消息循环只能持有一个处理中工作卡」限制。
+
+  本卡是「去验」。验收结果不写在本卡上 —— 建一张交付子任务记录。
+  通过：建交付卡记录判定，本卡转成功。
+  不通过：建交付卡记录实际结果与差异，本卡也转成功
+  （校验这件事做完了，只是结论是不通过；是否要修是另一张工作卡的事）。
+  根本没法校验：本卡添加「阻碍」的子任务说明为什么，用户审查确认阻碍后，将此卡转失败。
+
+  ai 转成功必须有成功的「交付」子任务；用户转不受限。
+
+derive:
+  - label: 开交付
+    description: 验完了，把判定与差异作为交付子任务记下来
+    template: delivery
+  - label: 记阻碍
+    description: 根本没法校验，把挡路的事记下来
+    template: blocker
+
+sections:
+  target:
+    label: 校验什么
+    hint: |
+      需要一个文本框，写清楚被校验的对象。
+    default:
+      $type: text
+      placeholder: 被校验的对象
+
+  expected:
+    label: 预期的结果鉴别
+    hint: |
+      需要一个文本框。写「怎么识别出预期结果」——
+      预设:可能的行为与鉴别结果的映射关系。
+    default:
+      $type: text
+      placeholder: 怎么识别出预期结果
+
+  method:
+    label: 怎么校验
+    hint: |
+      需要一个文本框，写清楚用什么手段。
+    default:
+      $type: text
+      placeholder: 用什么手段校验

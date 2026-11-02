@@ -1,0 +1,38 @@
+name: question
+displayName: 提问
+kind: design
+domain: 核心
+codePrefix: Q
+
+usage: |
+  需要使用ask工具时，使用这个模板代替，以防止消息循环阻塞
+
+description: |
+  这张卡在问用户一个问题。用户回答后：
+
+  - 如果回答解开了阻塞：看看被卡住的事能不能继续，能就往下做。
+  - 如果回答引出了新问题：再建一张提问卡，不要在本卡上追加。
+  - 如果回答意味着方向错了：把本卡取消，并说明原因。
+
+  本卡不记录「问了之后知道了什么」—— 那是交付卡的内容。
+
+derive:
+  - label: 再问一个
+    description: 答案引出了新问题，另开一张提问卡，不要在本卡上追加
+    template: question
+
+sections:
+  question:
+    label: 需要回答的问题
+    hint: |
+      从组件库里找具有选项能力的组件。预填选项。
+      预设组件自带“跳过”和“自定义回答”，不在选项中列出这类回答
+    default:
+      $type: ask
+      items:
+      - header: 要问的问题
+
+  blocked:
+    label: 不回答的话，这些将无法继续
+    hint: |
+      需要一个提交后不可交互组件，展示内容。在内容描述问题严重性。

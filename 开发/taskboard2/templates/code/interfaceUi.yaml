@@ -1,0 +1,57 @@
+﻿name: interfaceUi
+displayName: 接口界面
+kind: design
+domain: 代码
+codePrefix: I
+
+usage: |
+  定对外暴露的东西。
+  这里描述需要望文生义的设计。在没有阅读文档下能让使用者猜出来发生的事情。
+
+description: |
+  本卡是设计类。建出来直接是「需要授权」，只有用户能转成功、否决或取消。
+  有「调研」子任务时转为「需要信息」，调研结束回「需要授权」。
+  用户确认后转为成功，之后开编写代码卡去实现。设计不会失败。
+
+  还有没定的行为：留在第 4 章，等后面再开新卡。
+
+derive:
+  - label: 开底层实现
+    description: 接口定了，接下来定内部怎么搭
+    template: lowLevel
+  - label: 开编写代码
+    description: 接口与内部结构都定了，开工作卡去实现
+    template: writeCode
+
+sections:
+  behavior:
+    label: 需要有什么行为
+    hint: |
+      需要一个文本框，写清楚这个接口要支持什么行为。
+    default:
+      $type: text
+      placeholder: 这个接口要支持什么行为
+
+  exposed:
+    label: 暴露什么东西
+    hint: |
+      需要一个文本框，写清楚对外暴露的名字、参数、返回。
+    default:
+      $type: text
+      placeholder: 暴露的名字 / 参数 / 返回
+
+  mapping:
+    label: 接口和行为的条件映射
+    hint: |
+      需要一个文本框，写清楚什么接口在什么条件下执行什么行为。
+    default:
+      $type: text
+      placeholder: 哪个接口 → 什么条件 → 返回什么
+
+  undecided:
+    label: 还没决定的行为和接口
+    hint: |
+      需要一个文本框，列出这次不定、留到以后的部分。
+    default:
+      $type: text
+      placeholder: 这次不定、留到以后的部分

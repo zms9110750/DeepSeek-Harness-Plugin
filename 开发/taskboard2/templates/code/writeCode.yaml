@@ -1,0 +1,45 @@
+name: writeCode
+displayName: 编写代码
+kind: work
+domain: 代码
+codePrefix: W
+
+usage: |
+  真正动手改代码。
+
+description: |
+  本卡是工作类。建出来是草稿，用户采纳后才能领取。
+  用户或 ai 领取后转为「处理中」，此时必须遵守「一个消息循环只能持有
+  一个处理中的工作卡」，否则无法领取。
+
+  本卡是「去写」。写完的产物不写在本卡上 —— 用交付卡记录。
+  写完：开一张交付卡，写清交付了什么、在哪、怎么查看。
+  中途发现方案不对：不要在本卡上改方向，把本卡取消，回到设计卡重定。
+  遇到挡住的事：开一张阻碍卡。
+
+  注意 ai 转成功必须有成功的「交付」子任务；用户转不受限。
+
+derive:
+  - label: 开交付
+    description: 写完了，把成果作为交付子任务记下来
+    template: delivery
+  - label: 记阻碍
+    description: 被什么挡住了，先记下来
+    template: blocker
+
+sections:
+  what:
+    label: 要写什么
+    hint: |
+      需要一个文本框，写清楚要写的东西。
+    default:
+      $type: text
+      placeholder: 要写什么
+
+  magic:
+    label: 现在拍脑袋决定的东西
+    hint: |
+      需要一个文本框，写清楚哪些地方是暂时定的、还没有依据。
+    default:
+      $type: text
+      placeholder: 哪些是暂时定的、没有依据

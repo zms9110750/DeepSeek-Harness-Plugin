@@ -20,5 +20,18 @@
     "build": "tsc -p tsconfig.host.json",
     "typecheck": "tsc -p tsconfig.json",
     "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "yaml": "^2.5.0",
+    "@local/taskboard2-store": "workspace:*",
+    "@local/taskboard2-action": "workspace:*",
+    "@local/taskboard2-types": "workspace:*",
+    "@local/taskboard2-relation": "workspace:*",
+    "@local/taskboard2-search": "workspace:*",
+    "@local/taskboard2-workgroup": "workspace:*",
+    "@local/taskboard2-taskcard": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22.15"
   }
 }

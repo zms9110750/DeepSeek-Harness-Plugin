@@ -1,0 +1,53 @@
+﻿name: optimize
+displayName: 项目优化
+kind: goal
+domain: 代码
+codePrefix: O
+
+usage: |
+  语义上，这个模板是对已经存在的项目，
+  在大体上不改变行为和预期下的优化改变。
+
+description: |
+  本卡是目标类。建出来是草稿，用户采纳后才进入计算。
+  采纳后状态由子任务推导：没有子任务或全未开始为「提交」，有开始的为「处理中」。
+  本卡不记录结果。取消只能用户点。
+
+  本卡描述「优化什么」，不改变对外行为。
+  建好后：
+  - 开一张编写代码卡去改。
+  - 改完用交付卡记录改动。
+
+derive:
+  - label: 开编写代码
+    description: 开一张工作卡去改
+    template: writeCode
+  - label: 开调研
+    description: 不清楚现状或优化空间，先查清楚
+    template: research
+
+sections:
+  aspect:
+    label: 优化类型
+    hint: |
+      从组件库里找具有单选能力的组件，列出几类优化方向。
+    default:
+      $type: ask
+      items:
+        - question: 优化类型
+          multi_select: false
+          options:
+            - label: 性能优化
+            - label: 语义优化
+            - label: 可读性优化
+            - label: 接口界面优化
+            - label: 扩展性优化
+            - label: 一致性优化
+
+  where:
+    label: 优化哪
+    hint: |
+      需要一个文本框，写清楚要动哪里。
+    default:
+      $type: text
+      placeholder: 具体要动哪一块

@@ -1,0 +1,41 @@
+﻿name: architecture
+displayName: 技术架构
+kind: design
+domain: 代码
+codePrefix: R
+
+usage: |
+  定整体的技术选型。
+  无论是用什么语言，用什么包什么库，用什么引擎，什么开发模式，都可以在这里设计。
+
+description: |
+  本卡是设计类。建出来直接是「需要授权」，只有用户能转成功、否决或取消。
+  有「调研」子任务时转为「需要信息」，调研结束回「需要授权」。
+  用户确认后转为成功，之后按选定的架构开编写代码卡。设计不会失败。
+
+  某个包选不定：开一张调研卡或接口界面卡。
+
+derive:
+  - label: 开接口界面
+    description: 架构定了，接下来定对外的接口形状
+    template: interfaceUi
+  - label: 开调研
+    description: 某个包选不定，先查清楚
+    template: research
+
+sections:
+  architecture:
+    label: 选择什么架构
+    hint: |
+      需要一个文本框，写清楚选定的架构与理由。
+    default:
+      $type: text
+      placeholder: 选什么架构，为什么
+
+  packages:
+    label: 可能采用的包
+    hint: |
+      需要一个文本框，列出候选的包 / 库 / 服务。
+    default:
+      $type: text
+      placeholder: 候选的包 / 库 / 服务

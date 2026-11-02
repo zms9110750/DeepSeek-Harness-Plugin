@@ -1,0 +1,46 @@
+name: decision
+displayName: 决策
+kind: design
+domain: 核心
+codePrefix: C
+
+usage: |
+  方向还没定，先把它摆出来。要等目标或调研回来才能定。
+
+description: |
+  本卡是设计类。建出来直接是「需要授权」，只有用户能转成功、否决或取消。
+  有「调研」子任务时转为「需要信息」，调研结束回「需要授权」。
+  用户确认后转为成功，之后按选定的方向开工作卡。设计不会失败。
+
+  本卡不描述备选方案的成败 —— 那已由任务树里的卡表达了。
+  本卡也不描述代价 —— 那是目标和调研卡的内容。
+
+derive:
+  - label: 开调研
+    description: 某个方向值不值、好不好用，先查清楚再定
+    template: research
+
+sections:
+  directions:
+    label: 可能的方向
+    hint: |
+      需要一个文本框，列出目前看得到的几条路。具体到岔口，不要写成结论。
+    default:
+      $type: text
+      placeholder: 列出目前看得到的几条路
+
+  helpful:
+    label: 知道什么信息后对决策有帮助
+    hint: |
+      需要一个文本框。写「知道哪些事之后这个决策就更好做了」，不是缺什么决心。
+    default:
+      $type: text
+      placeholder: 还缺哪些信息才能决定
+
+  lookAt:
+    label: 我可以看什么来得到方向
+    hint: |
+      需要一个文本框。列出可以直接去看的东西 —— 同类产品，代码仓库，作者博客，论坛，官网。
+    default:
+      $type: text
+      placeholder: 可以去哪里看

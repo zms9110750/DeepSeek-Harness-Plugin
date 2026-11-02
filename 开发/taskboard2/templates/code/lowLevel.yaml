@@ -1,0 +1,49 @@
+﻿name: lowLevel
+displayName: 底层实现
+kind: design
+domain: 代码
+codePrefix: M
+
+usage: |
+  在有了接口界面设计后，对每一个接口描述的参数到行为的映射，
+  制定详细边界，行为，报错。
+
+description: |
+  本卡是设计类。建出来直接是「需要授权」，只有用户能转成功、否决或取消。
+  有「调研」子任务时转为「需要信息」，调研结束回「需要授权」。
+  用户确认后转为成功，之后开编写代码卡去实现。设计不会失败。
+
+  边界情况没想清：留在第 3 章，等实现时再补。
+
+derive:
+  - label: 开编写代码
+    description: 结构定了，开工作卡去实现
+    template: writeCode
+  - label: 开调研
+    description: 边界情况没想清，先查清楚
+    template: research
+
+sections:
+  interface:
+    label: 接口，参数
+    hint: |
+      需要一个文本框，写清楚内部接口与参数。
+    default:
+      $type: text
+      placeholder: 内部接口与参数
+
+  deps:
+    label: 用什么
+    hint: |
+      需要一个文本框，写清楚用什么库 / 服务 / 现成实现。
+    default:
+      $type: text
+      placeholder: 用什么库 / 服务 / 现成实现
+
+  edgeCases:
+    label: 边缘情况边界
+    hint: |
+      需要一个文本框，列出边界情况与各自的处理。
+    default:
+      $type: text
+      placeholder: 边界情况与各自的处理

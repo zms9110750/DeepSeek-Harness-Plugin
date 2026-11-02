@@ -1,0 +1,64 @@
+name: research
+displayName: 调研
+kind: work
+domain: 核心
+codePrefix: S
+
+usage: |
+  不知道该怎么做之前，先查清楚。
+
+description: |
+  本卡是工作类。建出来是草稿，用户采纳后才能领取。
+  用户或 ai 领取后转为「处理中」，此时必须遵守「一个消息循环只能持有
+  一个处理中的工作卡」，否则无法领取。
+
+  本卡是「去查」。查到的东西不写在本卡上 —— 建一张交付子任务记录。
+  有结论：建交付卡汇报调查结果，用户审验交付后，将本卡转成功。
+  查不到：成本超过章节写的上限，建“阻碍”卡说明原因。在用户核验以后，将本卡转失败。
+  方向错了：不要在本卡上改目标，把本卡取消，另开新卡。
+
+  注意 ai 转成功必须有成功的「交付」子任务；用户转不受限。
+
+derive:
+  - label: 开交付
+    description: 查完了，把结果作为交付子任务记下来
+    template: delivery
+  - label: 记阻碍
+    description: 查不到或成本超上限，把挡路的事记下来
+    template: blocker
+
+sections:
+  question:
+    label: 要查什么
+    hint: |
+      需要一个文本框，写清楚待回答的具体问题。
+    default:
+      $type: text
+      placeholder: 要回答的问题
+
+  method:
+    label: 怎么查
+    hint: |
+      需要一个文本框，写清楚打算用什么办法。
+    default:
+      $type: text
+      placeholder: 打算用什么办法
+
+  noInfo:
+    label: 没有信息时，怎么知道怎么查
+    hint: |
+      需要一个文本框。写「连从哪里入手都不知道」时的应对方式 ——
+      例如先问谁、先读哪个文件、先跑什么命令。
+    default:
+      $type: text
+      placeholder: 完全没头绪时，从哪里入手
+
+  costLimit:
+    label: 最高收益是什么；查询成本多大时无法接受
+    hint: |
+      需要一个文本框，写两件事：
+      1) 查到之后最多能带来什么收益；
+      2) 成本（时间 / 调用次数 / 人力）超过多少就放弃。
+    default:
+      $type: text
+      placeholder: 收益上限、成本上限

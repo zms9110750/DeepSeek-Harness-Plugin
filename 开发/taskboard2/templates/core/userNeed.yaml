@@ -1,0 +1,33 @@
+name: userNeed
+displayName: 用户任务
+kind: goal
+domain: 核心
+codePrefix: U
+
+usage: |
+  用户向 ai 发布任务。只有一个自由章节，可以把需求一股脑写下来。语义上不应由ai创建。
+  ai应当进行语义解析并为此任务创建具体的子任务卡给用户确认。
+
+description: |
+  本卡是目标类。建出来是草稿，用户采纳后才进入计算。
+  采纳后状态由子任务推导：没有子任务或全未开始为「提交」，有开始的为「处理中」。
+  本卡不记录结果。ai 应该按语义拆成若干子任务。
+  只要有可进行的任务，目标类任务就不会为搁置状态。
+  只要用户授意，就应该继续可执行的任务，在阻塞后切换别的可执行任务继续执行。
+
+derive:
+  - label: 拆成设计
+    description: 需求还不清楚，先开一张决策卡把方向摆出来
+    template: decision
+  - label: 开调研
+    description: 不清楚现状，先查清楚再拆
+    template: research
+
+sections:
+  core-userNeed:
+    label: 我想要什么
+    hint: |
+      需要一个能自由书写的大号文本框。
+    default:
+      $type: text
+      placeholder: 把你要 ai 做的事写下来

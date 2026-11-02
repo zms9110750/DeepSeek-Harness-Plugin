@@ -1,0 +1,71 @@
+name: writeTests
+displayName: 编写测试
+kind: goal
+domain: 代码
+codePrefix: T
+
+usage: |
+  编写持久化测试代码。
+  执行测试行为请使用「校验」任务卡。
+
+description: |
+  本卡是目标类。建出来是草稿，用户采纳后才进入计算。
+  采纳后状态由子任务推导：没有子任务或全未开始为「提交」，有开始的为「处理中」。
+  本卡不记录结果。取消只能用户点。
+
+  本卡描述「要测什么」，编写测试代码本身由工作卡去写。
+  建好后：
+  - 开一张编写代码卡，去写测试代码。
+  - 开一张「校验」任务卡执行测试。
+  - 为这些子任务使用交付卡记录结果。
+
+derive:
+  - label: 开编写代码
+    description: 开一张工作卡去写测试代码
+    template: writeCode
+  - label: 开校验
+    description: 测试代码写好了，开一张校验卡去跑
+    template: verify
+
+sections:
+  testType:
+    label: 测试类型
+    hint: |
+      从组件库里找具有单选能力的组件，列出几种常见测试类型。
+    default:
+      $type: ask
+      items:
+        - question: 测试类型
+          multi_select: false
+          options:
+            - label: 性能测试
+            - label: 冒烟测试
+            - label: 边缘测试
+            - label: 回归测试
+            - label: 集成测试
+            - label: 兼容测试
+            - label: 单元测试
+
+  coverage:
+    label: 测什么
+    hint: |
+      需要一个文本框，写清楚要覆盖哪些行为。
+    default:
+      $type: text
+      placeholder: 要覆盖哪些行为
+
+  expected:
+    label: 预期行为
+    hint: |
+      需要一个文本框，写清楚被测对象应该表现出什么行为。
+    default:
+      $type: text
+      placeholder: 被测对象应该表现出什么
+
+  nonGoal:
+    label: 非目标
+    hint: |
+      需要一个文本框，写清楚这次不测什么。
+    default:
+      $type: text
+      placeholder: 这次明确不测什么

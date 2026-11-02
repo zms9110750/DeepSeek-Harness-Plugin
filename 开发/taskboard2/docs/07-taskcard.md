@@ -104,6 +104,22 @@ applyRelationPatch(card, patch): { ok:true; value: Relations } | { ok:false; iss
 - `planFork` 的返回额外含两个清单（见 2.5）。
 - `applyRelationPatch`：**所有 relations 写入必须经 ⑦** 的落实点（Lead D1 裁定）。
 
+**历史动作名常量（⑦ 导出，供 ⑤⑧⑨⑩ 引用，禁止各包自写字面量）**
+
+| 常量 | 值 | 含义 |
+|---|---|---|
+| `ADOPT_ACTION` | `'adopt'` | **「采纳」这个转移动作**（未指定 → 提交）。⑤ 按它排序用。 |
+| `SUPERSEDE_ACTION` | `'supersede'` | 采纳时执行取代（旧卡被处置）。 |
+| `CREATE_ACTION` | `'create'` | 建卡。 |
+| `FORK_ACTION` | `'fork'` | fork 建卡（历史写「分支」，不是「创建」）。 |
+| `EDIT_ACTION` | `'edit'` | 草稿期编辑。 |
+| `CLAIM_ACTION` | `'claim'` | 领取（提交 → 处理中）。 |
+| `RELEASE_ACTION` | `'release'` | 释放（处理中 → 提交）。 |
+| `FORCE_RELEASE_ACTION` | `'force_release'` | 用户强制释放（非本人持有），`detail` 带原 `claimedBy`。 |
+| `DELETE_ACTION` | `'delete'` | 删除（墓碑）。 |
+
+⚠ 动作名**永不变**（改名会让旧历史失去可判别性）；要加动作就**新增**，不复用旧名。
+
 ### 2.3 不变量
 
 1. **冻结 ⟺ `status !== DRAFT`**。

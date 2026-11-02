@@ -1,0 +1,64 @@
+name: newFeature
+displayName: 新增功能
+kind: goal
+domain: 代码
+codePrefix: F
+
+usage: |
+  要一个现在没有的东西。
+
+description: |
+  本卡是目标类。建出来是草稿，用户采纳后才进入计算。
+  采纳后状态由子任务推导：没有子任务或全未开始为「提交」，有开始的为「处理中」。
+  本卡不记录结果。取消只能用户点。
+
+  本卡描述「要什么」，不描述「怎么做」。
+  建好后：
+  - 第 3 章「应当考虑的问题」里每一条，都可能需要单独开设计卡或调研卡。
+  - 涉及接口形状：开一张接口界面卡。
+  - 涉及内部结构：开一张技术架构卡。
+  - 都定完之后，开编写代码的工作卡。
+
+derive:
+  - label: 开接口界面
+    description: 涉及对外接口形状，先定接口
+    template: interfaceUi
+  - label: 开技术架构
+    description: 涉及内部结构，先定架构
+    template: architecture
+  - label: 开调研
+    description: 不清楚现状或有疑问，先查清楚
+    template: research
+
+sections:
+  behavior:
+    label: 需要有什么行为
+    hint: |
+      需要一个文本框，写清楚这东西做什么。
+    default:
+      $type: text
+      placeholder: 这东西要能做什么
+
+  motivation:
+    label: 动机
+    hint: |
+      需要一个文本框，写清楚为什么需要它。
+    default:
+      $type: text
+      placeholder: 为什么需要它
+
+  concerns:
+    label: 应当考虑的问题
+    hint: |
+      需要一个文本框，列出将来实现时必须想清楚的问题。
+    default:
+      $type: text
+      placeholder: 实现前必须想清楚什么
+
+  nonGoal:
+    label: 非目标
+    hint: |
+      需要一个文本框，写清楚这次不做什么。
+    default:
+      $type: text
+      placeholder: 这次明确不做什么

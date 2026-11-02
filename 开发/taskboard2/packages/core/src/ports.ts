@@ -1,0 +1,495 @@
+/**
+ * ⑧ core —— 上游服务的结构契约 + 卡的最小形状。
+ *
+ * ## 为什么用结构类型而不是 `import type` 整个包
+ *
+ * 与 ⑦ 同一理由：包级依赖应当是**运行时 inject**，编译期不该把本包焊死在某一份 `.d.ts` 上。
+ * 结构类型让实现方天然兼容（它们只需多出成员），本包不需要跟着改。
+ *
+ * **并且**：`@local/*` 在编译期没有 `node_modules` 可解析
+ * ⇒ 一旦 `import type { Card } from '@local/taskboard2-taskcard'`，本包就**编译不过**。
+ * ⇒ **本包零 `@local/*` import**，卡与模板的形状在这里按结构声明。
+ *
+ * ## ⚠ 这里每个成员都对应一处"上游必须提供"的契约
+ *
+ * 契约不一致时**不要在本包里加适配别名** —— 那会让"服务名是契约"失效。
+ * 缺什么就在这里显式写出来，让编译期/启动期立刻报，而不是运行时才发现。
+ *
+ * 标注：
+ *   【必需】— 缺了本包跑不起来
+ *   【可选】— 缺了本包能跑，但某项能力降级（必须显式判 `undefined`，不得默认值）
+ */
+
+/* ─────────────────────────────────────────────────────────────
+ * 卡的最小形状（结构，不 import ⑦）
+ * ───────────────────────────────────────────────────────────── */
+
+/** 一条关系边。 */
+export interface RelationEntry {
+	readonly label: string;
+	readonly to: string;
+}
+
+/** 关系集合。`parent === ''` 表示顶层（不用 `null`、不用缺字段）。 */
+export interface Relations {
+	readonly parent: string;
+	readonly links: readonly RelationEntry[];
+}
+
+/** 模板实例快照。**创建即固定、终身不变**。 */
+export interface TemplateRef {
+	/** ③ 的模板稳定引用（值 = 模板 `name`）。 */
+	readonly ref: string;
+	/** 分类英文 id。 */
+	readonly kind: string;
+	/** 领域快照（建卡那一刻的值，此后不回查模板）。 */
+	readonly domain: string;
+}
+
+/** 一条历史。`action` 是封闭的机器可读标识，不是文案。 */
+export interface HistoryEntry {
+	readonly at: number;
+	readonly action: string;
+	readonly detail?: unknown;
+}
+
+/** 一张任务卡（⑦ 拥有，本包只按结构消费）。 */
+export interface Card {
+	readonly id: string;
+	readonly title: string;
+	readonly status: string;
+	readonly template: TemplateRef;
+	readonly relations: Relations;
+	readonly sections: Readonly<Record<string, unknown>>;
+	readonly note: string;
+	readonly history: readonly HistoryEntry[];
+	readonly deleted: boolean;
+	/** 当前占用者（消息循环 id / `user`）；`''` = 无。 */
+	readonly claimedBy: string;
+	readonly claimedAt: number;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * ① store
+ * ───────────────────────────────────────────────────────────── */
+
+/** 工作空间枚举项。 */
+export interface WorkspaceEntry {
+	readonly id: string;
+	readonly archived: boolean;
+}
+
+/** 事务内受限句柄（`fn` 内只能用它；用 public 面会抛错）。 */
+export interface Tx {
+	readAll(): Card[];
+	read(id: string): Card | undefined;
+	write(cards: readonly Card[]): void;
+	purgePhysical(ids: readonly string[]): void;
+}
+
+/** 全局键值。key 不透明、不做命名空间隔离。 */
+export interface GlobalKv {
+	get(key: string): unknown;
+	set(key: string, value: unknown): void;
+	delete(key: string): void;
+}
+
+/** ① 的服务面（本包用到的子集）。全同步。 */
+export interface StorePort {
+	readonly dir: string;
+	readAll(wsId: string): Card[];
+	read(wsId: string, id: string): Card | undefined;
+	write(wsId: string, cards: readonly Card[]): void;
+	purgePhysical(wsId: string, ids: readonly string[]): void;
+	transaction<T>(wsId: string, fn: (tx: Tx) => T): T;
+	listWorkspaces(includeArchived?: boolean): WorkspaceEntry[];
+	dbPath(wsId: string, archived: boolean): string;
+	archiveDb(wsId: string): void;
+	unarchiveDb(wsId: string): void;
+	readMeta(wsId: string): Record<string, unknown>;
+	writeMetaKey(wsId: string, key: string, value: unknown): void;
+	readonly globalKv: GlobalKv;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * ② action
+ * ───────────────────────────────────────────────────────────── */
+
+/** `accepts`：`string[]` 非空 / `[]` 禁止一切 / `'any'` 未限制。 */
+export type Accepts = readonly string[] | 'any';
+
+/** 章节规格（③ 的清单转来）。 */
+export interface SectionSpec {
+	readonly id: string;
+	readonly accepts: Accepts;
+}
+
+/** 校验问题的层级。`L3` 已作废，永不复用。 */
+export type IssueLevel = 'L1' | 'L2' | 'template';
+
+/** 校验问题（② 产出）。`diagnostic` 只给 ⑨，⑩ 走 `toIssueForUI`。 */
+export interface Issue {
+	readonly level: IssueLevel;
+	readonly code: string;
+	readonly sectionId: string;
+	readonly field?: string;
+	readonly path?: string;
+	readonly diagnostic?: string;
+}
+
+/** 给 ⑩ 的投影（无 `diagnostic`）。 */
+export interface IssueForUI {
+	readonly level: IssueLevel;
+	readonly code: string;
+	readonly sectionId: string;
+	readonly field?: string;
+	readonly path?: string;
+}
+
+export interface ValidateResult {
+	readonly ok: boolean;
+	readonly issues: readonly Issue[];
+}
+
+/** ② 的服务面（本包用到的子集）。 */
+export interface ActionsPort {
+	validateForCreate(
+		payloads: Readonly<Record<string, unknown>>,
+		sections: readonly SectionSpec[],
+	): ValidateResult;
+	validateForEdit(payload: unknown, opts: { readonly accepts: Accepts; readonly sectionId?: string }): ValidateResult;
+	toIssueForUI(issue: Issue): IssueForUI;
+	/** 声明 / 答案切分；本包用它判 fork 丢弃的章节「有没有用户内容」。 */
+	splitPayload(payload: unknown): { readonly declaration: unknown; readonly answer: readonly unknown[] };
+	/** 用户表达视角的「有内容」（`ask.picked = []` 算有内容）。 */
+	hasUserContent(payload: unknown): boolean;
+	/** 按 `accepts` 造空 payload；`undefined` = 该章构造不出（**不得**当"随便挑一个"）。 */
+	emptyPayloadFor(accepts: Accepts): Record<string, unknown> | undefined;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * ③ types
+ * ───────────────────────────────────────────────────────────── */
+
+/**
+ * 九态常量表。**本包从不写状态字面量**，只从这里取。
+ *
+ * 名字叫 `TaskState` 而不是 `states`：**它是九态词表本身的名字**（A2A 协议里的名字），
+ * 起别名会让「协议词汇单源」这条变模糊。③ 的 `provide` 键也是 `TaskState`。
+ */
+export interface StatesTable {
+	readonly UNSPECIFIED: string;
+	readonly SUBMITTED: string;
+	readonly WORKING: string;
+	readonly INPUT_REQUIRED: string;
+	readonly AUTH_REQUIRED: string;
+	readonly COMPLETED: string;
+	readonly FAILED: string;
+	readonly CANCELED: string;
+	readonly REJECTED: string;
+}
+
+/** ③ 的模板解析结果（本包用到的子集）。 */
+export interface ResolvedTemplate {
+	readonly name: string;
+	readonly kind: string;
+	readonly domain: string;
+	readonly codePrefix: string;
+	readonly sections: readonly SectionSpec[];
+}
+
+/** 注册一章时的声明形状（③ 的 `SectionDef` 的结构子集）。 */
+export interface TemplateSectionDef {
+	readonly id: string;
+	readonly label: string;
+	readonly accepts: Accepts;
+	readonly hint?: string;
+	readonly required?: boolean;
+}
+
+/** 注册一个模板时的形状（③ 的 `TemplateDef` 的结构子集）。 */
+export interface TemplateDefForRegistry {
+	readonly name: string;
+	readonly kind: string;
+	readonly domain: string;
+	readonly codePrefix: string;
+	readonly sections: readonly TemplateSectionDef[];
+	readonly displayName?: string;
+	readonly usage?: string;
+	readonly description?: string;
+	/** 预设模板指向的目标模板 `name`。**有它就是预设**。 */
+	readonly presetOf?: string;
+}
+
+/** ③ 的注册面（启动期由 ⑧ 编排调用）。 */
+export interface TypesRegistry {
+	registerTemplate(def: TemplateDefForRegistry, opts?: { readonly actionTypes?: readonly string[] }): void;
+	markTemplateRegistryReady(): void;
+}
+
+/** 转移判决所需的外部事实。两个字段都必须由本包算好传入。 */
+export interface TransitionCtx {
+	readonly depsAllEnded: boolean;
+	readonly actorHasActiveWork: boolean;
+}
+
+/** ③ 的服务面（本包用到的子集）。键名与 ③ 的 `provide('taskboard2Types', {…})` 逐项一致。 */
+export interface TypesPort {
+	/** 九态词表（③ 的 provide 键就叫 `TaskState`）。 */
+	readonly TaskState: StatesTable;
+	/** 草稿态常量（= `TaskState.UNSPECIFIED`）。 */
+	readonly DRAFT: string;
+	initialStatus(kind: string): string;
+	canTransition(
+		kind: string,
+		from: string,
+		to: string,
+		actor: 'user' | 'ai' | 'host',
+		ctx: TransitionCtx,
+	): { readonly ok: boolean; readonly reason?: string };
+	/** 是否「完成」组（成功 / 失败 / 取消 / 拒绝）。本包不写状态字面量。 */
+	isEndedStatus(status: string): boolean;
+	/** 是否「进行」组（提交 / 处理中）。 */
+	isActiveStatus(status: string): boolean;
+	resolve(ref: string): ResolvedTemplate | undefined;
+	sectionsOf(ref: string): readonly SectionSpec[] | undefined;
+	nextId(prefix: string, usedIds: readonly string[]): string;
+	/** 转展示形（插连字符）。缺失时本包退回原样返回 —— 展示形只影响 UI，不影响身份。 */
+	toDisplay?(id: string): string;
+	/**
+	 * 分类字母（编号前缀的第一段）。
+	 *
+	 * 用户模板只写 `codePrefix`（模板段），分类段由 ③ 从分类定义取。
+	 * ⚠ **未注册分类时 ③ 会抛错**；`allocateId` 捕获并转成 `ID_PREFIX_UNAVAILABLE`（**不猜字母**）。
+	 */
+	kindLetter?(kind: string): string;
+	/**
+	 * 计算态求值：**每层只算一层**（只看该卡的直接子任务）。
+	 *
+	 * 递归由 ⑧ 在外层循环做（`recompute.ts` 的监听链）—— ③ 天然不递归。
+	 * 规则全在 ③（`KIND_DEFS[*].computeRules` + `baseStatus`），**⑧ 不含任何规则判断**。
+	 */
+	deriveStatus(kind: string, input: RuleInput): string;
+}
+
+/**
+ * ③ `deriveStatus` 的入参（结构形状）。
+ *
+ * ⚠ `children` = **完整子任务列表**（含墓碑 / 草稿 / 终态），**⑧ 不预先过滤**：
+ * ③ 的 `liveChildren` 在每条规则里都滤过，**过滤动作只有那一处**。
+ */
+export interface RuleInput {
+	readonly status: string;
+	/** 是否被某 actor 持有（= `claimedBy` 非空）。**不是**"是否正在处理中"。 */
+	readonly isHeld: boolean;
+	readonly children: readonly ChildSnapshot[];
+}
+
+/** 判定用的子任务快照（③ 的结构形状）。 */
+export interface ChildSnapshot {
+	readonly id: string;
+	readonly kind: string;
+	readonly status: string;
+	readonly deleted: boolean;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * ④ relation
+ * ───────────────────────────────────────────────────────────── */
+
+/** 一条关系边（④ 的角度）。 */
+export interface RelationEntry {
+	readonly label: string;
+	readonly to: string;
+}
+
+/** ④ 的级联词汇（由本包以**数据**传入，④ 不认识状态）。 */
+export interface CascadeVocabulary {
+	readonly activeStatuses: readonly string[];
+	readonly completedStatuses: readonly string[];
+	readonly canceledStatus: string;
+}
+
+/** ④ 看到的卡的最小面。 */
+export interface CascadeCard {
+	readonly id: string;
+	readonly status: string;
+	readonly relations: unknown;
+}
+
+/** 级联里的因果依据（结构化、可写历史、可被程序读）。 */
+export type Reason =
+	| { readonly kind: 'path-hit'; readonly via: 'parent' | { readonly label: string; readonly from: string } }
+	| { readonly kind: 'superseded-incomplete' }
+	| { readonly kind: 'superseded-noop' };
+
+/** 改关系的计划项。 */
+export interface RelationsItem {
+	readonly kind: 'patchRelations';
+	readonly cardId: string;
+	/** ⚠ 复数（④ 的实现）：同一张卡可能带多条补丁。 */
+	readonly relationPatches: readonly RelationPatch[];
+	readonly reasons: readonly Reason[];
+}
+
+/** 改状态的计划项。 */
+export interface StatusItem {
+	readonly kind: 'setStatus';
+	readonly cardId: string;
+	readonly targetStatus: string;
+	readonly reasons: readonly Reason[];
+}
+
+/** 一份级联计划：**两阶段、phase 内按 cardId 升序**。 */
+export interface CascadePlan {
+	readonly relationsPhase: readonly RelationsItem[];
+	readonly statusPhase: readonly StatusItem[];
+	readonly issues: readonly unknown[];
+}
+
+/** 一条最小关系操作（④ 的 patch 形状）。 */
+export interface RelationPatch {
+	readonly op: 'retargetLink';
+	readonly from: string;
+	readonly to: string;
+	readonly label: string;
+}
+
+/** 关系变更的两种来源。 */
+export type RelationsChange =
+	| { readonly kind: 'edit'; readonly value: unknown }
+	| { readonly kind: 'patch'; readonly patches: readonly RelationPatch[] };
+
+/** 关系校验 / 变更结果。 */
+export type RelationsResult =
+	| { readonly ok: true; readonly value: unknown }
+	| { readonly ok: false; readonly issues: readonly unknown[] };
+
+/** ④ 的服务面（本包用到的子集）。 */
+export interface RelationPort {
+	applyRelationsChange(current: unknown, change: RelationsChange): RelationsResult;
+	planCascade(
+		cards: readonly CascadeCard[],
+		rootId: string,
+		vocabulary: CascadeVocabulary,
+		closeDependents: boolean,
+	): CascadePlan;
+	planSupersede(
+		cards: readonly CascadeCard[],
+		newCardId: string,
+		oldCardIds: readonly string[],
+		vocabulary: CascadeVocabulary,
+	): CascadePlan;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * ⑤ search
+ * ───────────────────────────────────────────────────────────── */
+
+/** 搜索条件（**纯数据、可序列化** —— 它要跨「浏览器 → 宿主」边界）。 */
+export interface SearchCondition {
+	readonly keyword?: string;
+	readonly status?: readonly string[];
+	readonly group?: readonly string[];
+	readonly domain?: readonly string[];
+}
+
+/** ⑤ 的服务面（本包用到的子集）。 */
+export interface SearchPort {
+	search(cards: readonly unknown[], condition: SearchCondition): readonly unknown[];
+	searchAll(
+		cards: readonly unknown[],
+		condition: SearchCondition,
+	): { readonly matched: readonly unknown[]; readonly missingAdoption: readonly unknown[] };
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * ⑥ workgroup
+ * ───────────────────────────────────────────────────────────── */
+
+/**
+ * 当前空间的解析结果。
+ *
+ * 三态**不合并**：`none`（从没设过）与 `stale`（设过但空间没了）对用户是不同信息。
+ * ⑥ 只返回状态，**不抛业务错、不出文案** —— 报错出口在 ⑧。
+ */
+export type CurrentWorkspace =
+	| { readonly status: 'none' }
+	| { readonly status: 'ok'; readonly workspaceId: string }
+	| { readonly status: 'stale'; readonly lastWorkspaceId: string };
+
+/** ⑥ 的服务面（本包用到的子集）。 */
+export interface WorkgroupPort {
+	resolveCurrent(sessionId: string): CurrentWorkspace;
+	/** 【可选】设置当前空间（用户切换时）。缺了则本包不能切空间。 */
+	setCurrent?(sessionId: string, workspaceId: string): void;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * ⑦ taskcard
+ * ───────────────────────────────────────────────────────────── */
+
+/** 主体（用户 / 消息循环）。 */
+export type Principal = { readonly type: 'user' } | { readonly type: 'loop'; readonly id: string };
+
+/** 一条计划项（⑦ 产出、⑧ 执行）。 */
+export type PlanItem =
+	| { readonly op: 'createCard'; readonly card: Card }
+	| { readonly op: 'updateCard'; readonly card: Card }
+	| { readonly op: 'appendHistory'; readonly cardId: string; readonly entry: unknown }
+	| { readonly op: 'setStatus'; readonly cardId: string; readonly to: string; readonly reason?: unknown }
+	| { readonly op: 'setRelations'; readonly cardId: string; readonly relations: unknown }
+	| { readonly op: 'releaseClaim'; readonly cardId: string };
+
+/** ⑦ 的计划 / 拒绝。 */
+export type PlanResult =
+	| { readonly ok: true; readonly items: readonly PlanItem[]; readonly events: readonly unknown[] }
+	| { readonly ok: false; readonly reason: { readonly kind: string; readonly [key: string]: unknown } };
+
+/** fork 计划（带两个清单）。 */
+export interface ForkPlan {
+	readonly ok: true;
+	readonly newCard: Card;
+	readonly relations: unknown;
+	readonly events: readonly unknown[];
+	readonly droppedSections: readonly { readonly sectionId: string; readonly payload: unknown }[];
+	readonly missingSections: readonly { readonly sectionId: string; readonly accepts: readonly string[] }[];
+}
+
+export type ForkResult = ForkPlan | Extract<PlanResult, { ok: false }>;
+
+/** ⑦ 的服务面（本包用到的子集）。**⑦ 对外唯一入口。** */
+export interface CardsPort {
+	isDraft(card: Card): boolean;
+	isDeleted(card: Card): boolean;
+	isClaimed(card: Card): boolean;
+	changeIntent(card: Card): 'edit' | 'fork';
+
+	planCreate(input: unknown, all: readonly Card[]): PlanResult;
+	planChange(card: Card, input: unknown): PlanResult;
+	planFork(
+		src: Card,
+		newTemplateSections: readonly SectionSpec[],
+		input: unknown,
+	): ForkResult;
+	planAdopt(card: Card, all: readonly Card[], input?: unknown): PlanResult;
+	planClaim(card: Card, actor: Principal, ctx: unknown): PlanResult;
+	planRelease(card: Card, principal: Principal, input?: unknown): PlanResult;
+	planDelete(card: Card, input?: unknown): PlanResult;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 汇总
+ * ───────────────────────────────────────────────────────────── */
+
+/** 本包依赖的全部上游服务。 */
+export interface Ports {
+	readonly store: StorePort;
+	readonly actions: ActionsPort;
+	readonly types: TypesPort;
+	readonly relation: RelationPort;
+	readonly workgroup: WorkgroupPort;
+	readonly cards: CardsPort;
+	/** 【可选】⑤：纯函数包，缺了搜索能力降级，其它照常。 */
+	readonly search?: SearchPort;
+}

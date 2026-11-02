@@ -1,0 +1,36 @@
+name: blocker
+displayName: 阻碍
+kind: record
+domain: 核心
+codePrefix: B
+
+usage: |
+  遇到阻碍，需要用户授意是否需要解决和怎么解决。ai无权决定是否推进的事情。
+  无论是环境问题，成本太大，未知信息，甚至用户转移话题要求暂缓。都是阻碍。
+
+description: |
+  本卡是记录类。建出来直接是「需要授权」，只有用户能转成功或失败。
+  成功表示解决了，失败表示解决不了。
+
+  本卡记录「当前卡在哪」，不描述怎么解决 —— 首选需要用户有意愿解决才能讨论如何解决。
+  子任务是「需要授权」的阻碍时，父工作卡也会变成「需要授权」。
+
+derive:
+  - label: 开调研
+    description: 不知道怎么解开，先查清楚
+    template: research
+
+sections:
+  situation:
+    label: 现在是什么情况
+    hint: |
+      需要一个提交后不可交互组件，展示内容。如实描述当前状况。
+    default:
+      $type: markdown
+
+  stuck:
+    label: 这个情况下，什么无法进一步
+    hint: |
+      需要一个提交后不可交互组件，展示内容。列出被挡住的具体事情。
+    default:
+      $type: markdown
