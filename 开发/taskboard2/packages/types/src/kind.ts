@@ -128,7 +128,7 @@ export function isDraftStatus(status: TaskState): boolean {
  * ⇒ **改这里之前，先去 `claims.ts` 看那条警告；反之改那边也要回来看这里。**
  *   （跨包依赖的失效条件，单向留痕必然有一边看不到，所以两边都写。）
  */
-function liveChildren(children: readonly ChildSnapshot[]): readonly ChildSnapshot[] {
+export function liveChildren(children: readonly ChildSnapshot[]): readonly ChildSnapshot[] {
 	return children.filter((child) => !child.deleted && !isDraftStatus(child.status));
 }
 

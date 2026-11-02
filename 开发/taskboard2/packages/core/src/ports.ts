@@ -467,8 +467,43 @@ export interface WorkgroupPort {
  * ⑦ taskcard
  * ───────────────────────────────────────────────────────────── */
 
-/** 主体（用户 / 消息循环）。 */
-export type Principal = { readonly type: 'user' } | { readonly type: 'loop'; readonly id: string };
+/**
+ * 主体身份（用户 / 消息循环）。**这是"谁在操作"，不是"什么权限"。**
+ *
+ * ⚠ **类型名 `agentMessageLoop`**（`【用户指令，2026-11-02 13:30】`）：
+ * > 「loop确实是ai。但我希望改名。loop名字太离谱里。我说的是"消息循环"。消息必须体现出来。
+ * >   loop要改名，前缀改就一起改。agentMessageLoop」
+ *
+ * ⇒ `"loop"` 这个名字丢掉了"消息"这个关键语义；`"agentMessageLoop"` 才说出它是什么。
+ * ⇒ **这个类型名同时决定了写进 `claimedBy` 的前缀**（见 `claims.ts` 的 `claimValueOf`）。
+ */
+export type Principal = { readonly type: 'user' } | { readonly type: 'agentMessageLoop'; readonly id: string };
+
+/**
+ * 权限类别（③ 的 `canTransition` 收这个）。**与 `Principal` 是两件事。**
+ *
+ * `【用户指令，2026-11-02 14:05】`：
+ * > 「这里的权限问题使用ai这个名字。」
+ * > 「除非把这两个语义进行了绑定或者就是一个语义。否则各用各的不要映射。」
+ * > 「我更加希望他们是两个名字。这是两个不同的东西。领取是消息循环级别的。权限是ai这个类别的。」
+ *
+ * ⇒ **身份有 id（领取是消息循环级别的）、权限无 id（只是一个类别）** ⇒ **两个类型、两个名字、零映射函数。**
+ *
+ * ## ⚠ `actor` 是**调用入口写死的**，不是推断出来的
+ *
+ * `【用户指令，2026-11-02 14:10】`：
+ * > 「ai不知道他是ai权限。但是ai的tool工具里面调用那个方法的时候会写死那个参数是ai」
+ *
+ * | 调用入口 | 传什么 |
+ * |---|---|
+ * | ⑨ AI tool | **写死 `'ai'`** |
+ * | ⑩ UI | **写死 `'user'`** |
+ * | ⑧ 内部（`recompute`） | **不传**（系统走 `deriveStatus`，不走 `canTransition`） |
+ *
+ * ⇒ **⑧ 收到什么传什么，零推断。** 若 ⑧ 也猜一次，同一个判断就存在两处（⑧ 猜 + ⑨ 写死），
+ *   两处漂移时**不报错**，只会让权限判定按错误的那一处走。
+ */
+export type Actor = 'user' | 'ai' | 'host';
 
 /** 一条计划项（⑦ 产出、⑧ 执行）。 */
 export type PlanItem =
@@ -511,10 +546,45 @@ export interface CardsPort {
 		newTemplateSections: readonly SectionSpec[],
 		input: unknown,
 	): ForkResult;
-	planAdopt(card: Card, all: readonly Card[], input?: unknown): PlanResult;
-	planClaim(card: Card, actor: Principal, ctx: unknown): PlanResult;
-	planRelease(card: Card, principal: Principal, input?: unknown): PlanResult;
+	/** 采纳计划：⑦ 要 `{ principal, actor, at }`（身份 + 权限分开传）。 */
+	planAdopt(
+		card: Card,
+		all: readonly Card[],
+		input: { readonly principal: Principal; readonly actor: Actor; readonly at?: number },
+	): PlanResult;
+	/**
+	 * 领取计划。
+	 *
+	 * ⚠ `principal`（谁在领）与 `actor`（什么权限）**是两个参数** —— 用户 14:05：
+	 * 「这是两个不同的东西。领取是消息循环级别的。权限是ai这个类别的。」
+	 */
+	planClaim(card: Card, principal: Principal, actor: Actor, ctx: unknown): PlanResult;
+	planRelease(
+		card: Card,
+		principal: Principal,
+		actor: Actor,
+		input?: unknown,
+	): PlanResult;
 	planDelete(card: Card, input?: unknown): PlanResult;
+	/**
+	 * 纯状态转移计划（成功 / 失败 / 取消 / 拒绝 / 搁置）。
+	 *
+	 * **⑦ 管单卡、管准入与三道闸**（有成功交付 / 所有子任务完成 / 有失败交付或阻碍），
+	 * 用 `all`（全量卡）自己判 —— ⑧ **只传 `depsAllEnded`**，其它事实不进这个签名。
+	 *
+	 * ⚠ `to` 用 `string` 而不是封闭枚举：**5 个目标状态是 ③ 的知识**，⑧ 不写状态字面量。
+	 */
+	planTransition(
+		card: Card,
+		all: readonly Card[],
+		input: {
+			readonly to: string;
+			readonly principal: Principal;
+			readonly actor: Actor;
+			readonly depsAllEnded: boolean;
+			readonly at?: number;
+		},
+	): PlanResult;
 }
 
 /* ─────────────────────────────────────────────────────────────

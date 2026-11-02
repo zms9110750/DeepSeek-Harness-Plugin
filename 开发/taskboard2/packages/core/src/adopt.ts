@@ -27,7 +27,7 @@
  */
 
 import { coreError, describeReject, type CoreError } from './errors.js';
-import type { Card, Ports } from './ports.js';
+import type { Actor, Card, Ports, Principal } from './ports.js';
 import { recomputeUpward } from './recompute.js';
 import { appendHistory, applyStatus, type HistoryEvent } from './status-write.js';
 import type { ActiveWorkspace } from './workspace.js';
@@ -63,12 +63,18 @@ function vocabularyOf(ports: Ports): { activeStatuses: string[]; completedStatus
 /**
  * 采纳一张卡。
  *
+ * @param principal 谁在采纳（身份）　@param actor 什么权限（类别，由调用入口写死）
  * @param at 时间戳（门面盖）。
+ *
+ * ⚠ **必须收 `principal`**：`design` / `record` 的采纳 `user` 与 `ai` 都可以做
+ * （③ 的 `canTransition` 已放开），⇒ **不知道"这次是谁"就无法判权限**。
  */
 export function adoptCard(
 	ports: Ports,
 	workspace: ActiveWorkspace,
 	cardId: string,
+	principal: Principal,
+	actor: Actor,
 	at: number,
 ): AdoptResult {
 	const card = findCard(workspace, cardId);
@@ -76,8 +82,8 @@ export function adoptCard(
 		return { ok: false, error: coreError('CARD_NOT_FOUND', `找不到这张卡：${cardId}`, { cardId }) };
 	}
 
-	/* ① ⑦ 出采纳计划（含旧卡终止意图）。 */
-	const plan = ports.cards.planAdopt(card, workspace.cards, { at });
+	/* ① ⑦ 出采纳计划（含旧卡终止意图）。`principal` / `actor` 分开传，⑧ 不推断。 */
+	const plan = ports.cards.planAdopt(card, workspace.cards, { principal, actor, at });
 	if (!plan.ok) {
 		return {
 			ok: false,

@@ -275,7 +275,20 @@ export function createCard(ports: Ports, workspace: ActiveWorkspace, input: Crea
 	return { ok: true, card: created, recomputed: [] };
 }
 
-/** 供门面转发给 ⑩ 的会话主体类型（`Principal` 与 ③ 的 `Actor` 不是同一套）。 */
+/**
+ * ⚠⚠ **不要用这个函数。零调用方，仅为历史保留。**
+ *
+ * 它把 `Principal`（身份）**推断**成 `Actor`（权限类别）—— 而用户 11-02 14:10 明确否掉了这种推断：
+ * > 「ai不知道他是ai权限。但是ai的tool工具里面调用那个方法的时候会写死那个参数是ai」
+ *
+ * ⇒ **`actor` 是调用入口写死的**（⑨ AI tool ⇒ `'ai'`、⑩ UI ⇒ `'user'`），
+ *   **⑧ 收到什么传什么，零推断。**
+ *
+ * ⇒ 若将来有人想"顺手用它省一个参数"，那会把同一个判断放到两处（这里猜一次、⑨ 写死一次），
+ *   两处漂移时**不报错**，只会让权限判定按错的那一处走。
+ *
+ * @deprecated 权限类别由调用入口传入（`facade.ts` 的 `claim` / `release` / `adopt` / `transition` 都收 `actor`）。
+ */
 export function actorKindOf(principal: Principal): 'user' | 'ai' {
 	return principal.type === 'user' ? 'user' : 'ai';
 }

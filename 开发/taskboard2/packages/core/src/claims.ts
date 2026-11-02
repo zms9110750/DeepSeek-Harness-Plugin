@@ -26,7 +26,7 @@
  */
 
 import { coreError, describeReject, type CoreError } from './errors.js';
-import type { Card, Ports, Principal, Tx } from './ports.js';
+import type { Actor, Card, Ports, Principal, Tx } from './ports.js';
 import { recomputeUpward } from './recompute.js';
 import { appendHistory, applyStatus, type HistoryEvent } from './status-write.js';
 import type { ActiveWorkspace } from './workspace.js';
@@ -48,15 +48,27 @@ export type ClaimResult = ClaimSuccess | ClaimFailure;
 /** `claimedBy` 里表示"用户"的字符串（⑦ 的 `describePrincipal` 的产物之一）。 */
 const USER_CLAIM = 'user';
 
+/**
+ * `claimedBy` 里消息循环的前缀。
+ *
+ * `【用户指令，2026-11-02 13:30】`：「loop要改名，前缀改就一起改。**agentMessageLoop**」
+ * ⇒ 前缀从 `loop:` 改为 `agentMessageLoop:`。
+ *
+ * ⚠ **这个前缀是落库的**（写在 `claimedBy` 字段里）⇒ 改名后**库里已有的 `loop:xxx` 解不回来**。
+ * 现在无真实数据（原型阶段）⇒ **不做迁移**；若将来有存量数据，必须先跑一次字符串迁移。
+ * ⚠ **必须与 ⑦ 的 `describePrincipal` 一致**（它产出这个值），否则两边认不出同一个持有者。
+ */
+const LOOP_CLAIM_PREFIX = 'agentMessageLoop:';
+
 /** 主体是否与 `claimedBy` 指向同一个持有者。 */
 function samePrincipal(claimedBy: string, principal: Principal): boolean {
 	if (principal.type === 'user') return claimedBy === USER_CLAIM;
-	return claimedBy === `loop:${principal.id}`;
+	return claimedBy === `${LOOP_CLAIM_PREFIX}${principal.id}`;
 }
 
 /** 该 actor 名下的字符串（写进 `claimedBy`）。 */
 function claimValueOf(principal: Principal): string {
-	return principal.type === 'user' ? USER_CLAIM : `loop:${principal.id}`;
+	return principal.type === 'user' ? USER_CLAIM : `${LOOP_CLAIM_PREFIX}${principal.id}`;
 }
 
 /**
@@ -98,12 +110,21 @@ export function depsAllEnded(ports: Pick<Ports, 'types'>, workspace: ActiveWorks
 	return true;
 }
 
-/** 领取。 */
+/**
+ * 领取。
+ *
+ * @param principal **谁在领**（身份，有 id；写进 `claimedBy`）
+ * @param actor **什么权限**（类别，无 id；问 ③ 的 `canTransition`）
+ *
+ * ⚠ 两个参数**不能互相推导**（用户 14:05：「这是两个不同的东西」）；
+ *   `actor` 由**调用入口写死**（⑨ AI tool ⇒ `'ai'`、⑩ UI ⇒ `'user'`），⑧ **不推断**。
+ */
 export function claimCard(
 	ports: Ports,
 	workspace: ActiveWorkspace,
 	cardId: string,
 	principal: Principal,
+	actor: Actor,
 	at: number,
 ): ClaimResult {
 	const card = findCard(workspace, cardId);
@@ -121,7 +142,7 @@ export function claimCard(
 	 */
 	const deps = depsAllEnded(ports, workspace, card);
 
-	const plan = ports.cards.planClaim(card, principal, { actorHasActiveWork: busy, at });
+	const plan = ports.cards.planClaim(card, principal, actor, { actorHasActiveWork: busy, at });
 	if (!plan.ok) {
 		return {
 			ok: false,
@@ -246,12 +267,17 @@ function recomputeAfter(
 	return result.changed;
 }
 
-/** 释放。 */
+/**
+ * 释放。
+ *
+ * @param principal 谁在释放（身份）　@param actor 什么权限（类别）
+ */
 export function releaseClaim(
 	ports: Ports,
 	workspace: ActiveWorkspace,
 	cardId: string,
 	principal: Principal,
+	actor: Actor,
 	at: number,
 ): ClaimResult {
 	const card = findCard(workspace, cardId);
@@ -259,7 +285,7 @@ export function releaseClaim(
 		return { ok: false, error: coreError('CARD_NOT_FOUND', `找不到这张卡：${cardId}`, { cardId }) };
 	}
 
-	const plan = ports.cards.planRelease(card, principal, { at });
+	const plan = ports.cards.planRelease(card, principal, actor, { at });
 	if (!plan.ok) {
 		return {
 			ok: false,
@@ -309,6 +335,115 @@ export function releaseClaim(
 /** 该卡当前是否由这个主体持有（供门面与 ⑨ 查）。 */
 export function isHeldBy(card: Card, principal: Principal): boolean {
 	return card.claimedBy !== '' && samePrincipal(card.claimedBy, principal);
+}
+
+/**
+ * 纯状态转移（成功 / 失败 / 取消 / 拒绝 / 搁置）。
+ *
+ * 用户 11-02 13:30：「我加上去了。**工作的进行和搁置的4个状态都可以用户点击失败**。」
+ *
+ * ## 谁判什么
+ *
+ * | 谁 | 判什么 |
+ * |---|---|
+ * | **⑦ `planTransition`** | 单卡准入 + **三道闸**（有成功交付 / 所有子任务完成 / 有失败交付或阻碍，用 `all` 全量卡自算） |
+ * | **⑧（本函数）** | 只算两件事实：`depsAllEnded`；把 `principal` / `actor` 原样传下去 |
+ * | **③ `canTransition`** | 转移合不合法（由 ⑦ 内部问） |
+ *
+ * ⚠ **⑧ 不判那三道闸** —— 它们要"这张卡有哪些子任务、各自什么状态、有没有交付"，
+ * 那是 ⑦ 的卡语义 + ③ 的分类知识。
+ *
+ * ## 写盘
+ *
+ * 与领取 / 释放 / 采纳 / 级联 / 重算**同一条收口**（`applyStatus(mode:'transition')`）：
+ * **同值 ⇒ 不写盘、不写历史、不广播**（用户「不切是必要的」）。
+ */
+export function transitionCard(
+	ports: Ports,
+	workspace: ActiveWorkspace,
+	cardId: string,
+	to: string,
+	principal: Principal,
+	actor: Actor,
+	at: number,
+): ClaimResult {
+	const card = findCard(workspace, cardId);
+	if (card === undefined || card.deleted === true) {
+		return { ok: false, error: coreError('CARD_NOT_FOUND', `找不到这张卡：${cardId}`, { cardId }) };
+	}
+
+	/* 依赖是否全部进入「完成」组 —— ⑦ 的三道闸之一要用它。 */
+	const deps = depsAllEnded(ports, workspace, card);
+
+	/*
+	 * `all` 给**全量含墓碑**（与 `planAdopt` 一致）：⑦ 自己用 `liveChildren` 滤。
+	 * ⇒ ⑧ 不预过滤 —— 过滤口径只有 ⑦/③ 一处。
+	 */
+	const plan = ports.cards.planTransition(card, workspace.cards, {
+		to,
+		principal,
+		actor,
+		depsAllEnded: deps,
+		at,
+	});
+	if (!plan.ok) {
+		return {
+			ok: false,
+			error: coreError('TRANSITION_REJECTED', describeReject(plan.reason as never), {
+				reason: plan.reason,
+				depsAllEnded: deps,
+				to,
+			}),
+		};
+	}
+
+	let updated: Card | undefined;
+	let recomputed: Card[] = [];
+	let failure: CoreError | undefined;
+
+	ports.store.transaction(workspace.wsId, (tx) => {
+		/* 事务内定基准：计划可能是 `updateCard`（整卡）或 `setStatus`（只给 to）。 */
+		let intent: { readonly card: Card; readonly to: string; readonly from: string } | undefined;
+
+		for (const item of plan.items) {
+			if (item.op === 'updateCard') {
+				const before = tx.read(item.card.id);
+				if (before === undefined) continue;
+				intent = { card: item.card, to: item.card.status, from: before.status };
+			} else if (item.op === 'setStatus') {
+				const before = tx.read(item.cardId);
+				if (before === undefined) continue;
+				intent = { card: before, to: item.to, from: before.status };
+			}
+		}
+		if (intent === undefined) {
+			failure = coreError('CARD_NOT_FOUND', `转移未产出计划（卡 ${cardId}）。`, { cardId });
+			return;
+		}
+
+		const events = plan.events as readonly HistoryEvent[];
+		const outcome = applyStatus({
+			card: intent.card,
+			to: intent.to,
+			from: intent.from,
+			events,
+			mode: 'transition',
+		});
+
+		/* 同值 ⇒ 不写历史、不广播；但 ⑦ 若同时改了别的字段，那些仍要落盘。 */
+		updated = outcome.changed ? outcome.card : intent.card;
+
+		tx.write([updated]);
+
+		/* 监听链：**只有 status 真的变了**才通知父卡（同事务）。 */
+		if (outcome.changed) recomputed = [...recomputeAfter(ports, tx, updated, at)];
+	});
+
+	if (failure !== undefined) return { ok: false, error: failure };
+	if (updated === undefined) {
+		return { ok: false, error: coreError('TRANSITION_REJECTED', '转移未产出新卡。') };
+	}
+	return { ok: true, card: updated, recomputed };
 }
 
 /** 删除（墓碑）。业务删除 = 写 `deleted: true` 的整卡覆写，**永不调 `purgePhysical`**。 */

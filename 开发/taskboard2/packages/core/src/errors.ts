@@ -57,7 +57,9 @@ export type CoreErrorCode =
 	/** ③ 未提供 `deriveStatus` ⇒ 计算态重算整条监听链不可用。 */
 	| 'RECOMPUTE_UNAVAILABLE'
 	/** 单卡重算失败（`deriveStatus` 抛错，例如旧卡引用了已注销的分类）。 */
-	| 'RECOMPUTE_FAILED';
+	| 'RECOMPUTE_FAILED'
+	/** 纯状态转移被 ⑦ 拒绝（准入或三道闸不过）。 */
+	| 'TRANSITION_REJECTED';
 
 /** 一条对外错误。`code` 是机器可读的，`message` 是给人看的。 */
 export interface CoreError {

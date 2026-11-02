@@ -21,12 +21,12 @@
 
 import { adoptCard } from './adopt.js';
 import { runCascade } from './cascade.js';
-import { claimCard, deleteCard, releaseClaim } from './claims.js';
+import { claimCard, deleteCard, releaseClaim, transitionCard } from './claims.js';
 import { createCard, type CreateOrigin } from './create.js';
 import { updateBody, updateCard } from './edit.js';
 import { coreError, type CoreError } from './errors.js';
 import { forkCard } from './fork.js';
-import type { Card, Ports, Principal, SearchCondition } from './ports.js';
+import type { Actor, Card, Ports, Principal, SearchCondition } from './ports.js';
 import type { ActiveWorkspace } from './workspace.js';
 import { findCard, loadWorkspace, resolveCurrentWorkspace, visibleCards } from './workspace.js';
 
@@ -77,9 +77,23 @@ export interface CoreService {
 	/** 整卡编辑（标题 / 备注 / 章节 / 关系）。 */
 	updateCard(cardId: string, editable: Readonly<Record<string, unknown>>): WriteResult;
 	fork(cardId: string, options?: { readonly templateRef?: string; readonly kind?: string }): ReturnType<typeof forkCard>;
-	adopt(cardId: string): ReturnType<typeof adoptCard>;
-	claim(cardId: string, principal: Principal): WriteResult;
-	release(cardId: string, principal: Principal): WriteResult;
+	/**
+	 * 采纳（**v2 签名**：加了 `principal` / `actor`）。
+	 *
+	 * ⚠ **破坏性变更**：v1 只收 `cardId`。加参数的原因是 `design` / `record` 的采纳
+	 * `user` 与 `ai` 都可以做 ⇒ 不知道"这次是谁"就无法判权限。
+	 * 现在只有 ⑨⑩ 会调，且它们尚未实现 ⇒ 无需兼容层。
+	 */
+	adopt(cardId: string, principal: Principal, actor: Actor): ReturnType<typeof adoptCard>;
+	claim(cardId: string, principal: Principal, actor: Actor): WriteResult;
+	release(cardId: string, principal: Principal, actor: Actor): WriteResult;
+	/**
+	 * 纯状态转移（成功 / 失败 / 取消 / 拒绝 / 搁置）。
+	 *
+	 * ⚠ `to` 收 `string` 而不是封闭枚举 —— **5 个目标状态是 ③ 的知识**，⑧ 不写状态字面量；
+	 * 传错值由 ⑦ → ③ 拒绝（`TRANSITION_REJECTED`）。
+	 */
+	transition(cardId: string, to: string, principal: Principal, actor: Actor): WriteResult;
 	remove(cardId: string): WriteResult;
 	/**
 	 * 执行一份已算好的级联计划（④ 产出）。
@@ -267,27 +281,35 @@ export function createFacade(options: FacadeOptions): CoreService {
 			return result;
 		},
 
-		adopt(cardId: string) {
+		adopt(cardId: string, principal: Principal, actor: Actor) {
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
-			const result = adoptCard(ports, workspace.workspace, cardId, now());
+			const result = adoptCard(ports, workspace.workspace, cardId, principal, actor, now());
 			if (result.ok) patchMemory([result.card, ...result.changed, ...result.recomputed]);
 			return result;
 		},
 
-		claim(cardId: string, principal: Principal) {
+		claim(cardId: string, principal: Principal, actor: Actor) {
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
-			const result = claimCard(ports, workspace.workspace, cardId, principal, now());
+			const result = claimCard(ports, workspace.workspace, cardId, principal, actor, now());
 			if (result.ok) patchMemory([result.card, ...result.recomputed]);
 			return result;
 		},
 
-		release(cardId: string, principal: Principal) {
+		release(cardId: string, principal: Principal, actor: Actor) {
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
-			const result = releaseClaim(ports, workspace.workspace, cardId, principal, now());
-			if (result.ok) patchMemory([result.card]);
+			const result = releaseClaim(ports, workspace.workspace, cardId, principal, actor, now());
+			if (result.ok) patchMemory([result.card, ...result.recomputed]);
+			return result;
+		},
+
+		transition(cardId: string, to: string, principal: Principal, actor: Actor) {
+			const workspace = ensureWorkspace();
+			if (!workspace.ok) return workspace;
+			const result = transitionCard(ports, workspace.workspace, cardId, to, principal, actor, now());
+			if (result.ok) patchMemory([result.card, ...result.recomputed]);
 			return result;
 		},
 

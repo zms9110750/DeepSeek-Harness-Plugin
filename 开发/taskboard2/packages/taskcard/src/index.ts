@@ -18,10 +18,19 @@
  *
  * `inject = ['taskboard2Types', 'taskboard2Relation', 'taskboard2Actions']`
  *
- * · ③：`DRAFT` / `Kind` / `initialStatus` / `canTransition` / `isCompletedGroup` / `resolve`
+ * · ③：`DRAFT` / `Kind` / `initialStatus` / `canTransition` / `isCompletedGroup` / `liveChildren` / `resolve`
  * · ④：`validateRelations` / `applyRelationsChange` / `LINK_KINDS`
  * · ②：**只调 `isDeclarationOnlyChange`**（经服务面，**不 import 运行时值** —— 它依赖
  *   `$type → 答案位置` 的注册数据，不是纯函数）
+ *
+ * ⚠ **③ 的服务面与 ⑦ 的 `Ports` 有两处形状不同**（键名；判决对象 vs 布尔），
+ * **全部在 `apply` 里的 `ports()` 一处适配**；不要让第二处再写一遍。
+ *
+ * ⚠ **`Principal`（身份）与 `Actor`（权限类别）是两个不同语义，不做映射**
+ * （`【用户指令，2026-11-02 14:05】`「各用各的不要映射」「我更加希望他们是两个名字。
+ * 这是两个不同的东西。领取是消息循环级别的。权限是 ai 这个类别的。」）：
+ * ⑧ 同时给出两者，⑦ 原样使用。⑦ 的 `Actor` 与 ③ 的 `Actor` **同值**
+ * （`'user' | 'ai' | 'host'`），所以 `ports()` 里**直传、不转换**。
  *
  * ## 本包**不做**什么
  *
@@ -36,7 +45,14 @@
  * 避免"两条路各写一遍同一规则"（`docs` 里已定：一个变更按钮 = 一个入口）。
  */
 
-import type { ActionPort, Ports, RelationPort, TypesPort } from './types.js';
+import type {
+	ActionPort,
+	Actor,
+	ChildSnapshot,
+	Ports,
+	RelationPort,
+	TransitionCtx,
+} from './types.js';
 
 import { planCreate } from './create.js';
 import { planChange } from './change.js';
@@ -45,6 +61,7 @@ import { planAdopt } from './adopt.js';
 import { planClaim } from './claim.js';
 import { planRelease } from './release.js';
 import { planDelete } from './delete.js';
+import { planTransition } from './transition.js';
 import { changeIntent, isClaimed, isDeleted, isDraft, isFrozen } from './query.js';
 
 export const name = 'taskboard2-taskcard';
@@ -60,11 +77,14 @@ export { FORK_ACTION } from './fork.js';
 export { CLAIM_ACTION, describePrincipal, principalOfClaim } from './claim.js';
 export { RELEASE_ACTION, FORCE_RELEASE_ACTION } from './release.js';
 export { DELETE_ACTION } from './delete.js';
+export { TRANSITION_ACTION } from './transition.js';
 
 /* ── 不依赖任何服务、可安全直接 import 的纯判定 ── */
 export { isDeleted, isClaimed } from './query.js';
 export { supersedeEdges } from './adopt.js';
 export { parentOf, linkTargets } from './relations.js';
+/** `Card → ChildSnapshot` 的**纯字段投影**（零策略；过滤策略在 ③ 的 `liveChildren`）。 */
+export { toChildSnapshot } from './transition.js';
 
 /* ── 类型 ── */
 export type {
@@ -78,6 +98,7 @@ export type {
 	TemplateRef,
 	HistoryEntry,
 	Principal,
+	Actor,
 	Reason,
 	PlanItem,
 	Plan,
@@ -96,6 +117,8 @@ export type {
 	LinkKind,
 	RelationValidateResult,
 	StatesTable,
+	TransitionCtx,
+	ChildSnapshot,
 } from './types.js';
 export type { CreateInput } from './create.js';
 export type { ChangeInput, EditableFields } from './change.js';
@@ -112,6 +135,7 @@ export type { AdoptInput, SupersedeEdge } from './adopt.js';
 export type { ClaimContext } from './claim.js';
 export type { ReleaseInput } from './release.js';
 export type { DeleteInput } from './delete.js';
+export type { TransitionInput } from './transition.js';
 
 /** `taskboard2Cards` 服务的形状。**这是 ⑦ 对外唯一入口。** */
 export interface CardsService {
@@ -131,6 +155,7 @@ export interface CardsService {
 	planClaim(...args: OmitFirst<Parameters<typeof planClaim>>): ReturnType<typeof planClaim>;
 	planRelease(...args: OmitFirst<Parameters<typeof planRelease>>): ReturnType<typeof planRelease>;
 	planDelete(...args: OmitFirst<Parameters<typeof planDelete>>): ReturnType<typeof planDelete>;
+	planTransition(...args: OmitFirst<Parameters<typeof planTransition>>): ReturnType<typeof planTransition>;
 }
 
 /** 去掉函数签名的第一个参数（`ports`）—— 端口由服务闭包绑定，调用方不需要知道它。 */
@@ -140,12 +165,42 @@ export function apply(ctx: any): void {
 	/*
 	 * 端口**惰性取**：`apply` 执行时三个服务未必已经 provide 完成
 	 * （inject 只保证对方的 apply 先跑），所以每次调用时再读。
+	 *
+	 * ⚠ **这里只做"键名 / 形状"适配，不做语义映射**：
+	 *
+	 *   1. **键名**：③ 用 `TaskState` / `isEndedStatus`；⑦ 内部叫 `states` / `isCompletedGroup`。
+	 *      （"完成"组 = 终态组，是同一个集合，改的只是名字。）
+	 *   2. **`canTransition` 的返回**：③ 返回**判决对象** `{ ok } | { ok:false, reason }`；
+	 *      ⑦ 只关心"行不行" ⇒ 取 `.ok`。
+	 *      ⚠ 若直接把判决对象当布尔用，`if (!verdict)` **永远为假**（对象恒真）
+	 *      ⇒ 每一次转移都会被放行，而且**编译不会报错**。这正是"编译过、运行时错"。
+	 *   3. **`actor`：原样直传，不映射**。⑦ 的 `Actor` 与 ③ 的 `Actor` **同值**
+	 *      （`'user' | 'ai' | 'host'`）。`Principal`（身份）与 `Actor`（权限类别）
+	 *      是两个不同语义，由 ⑧ 分别给出（`【用户指令，2026-11-02 14:05】`
+	 *      「各用各的不要映射」「我更加希望他们是两个名字」）。
 	 */
-	const ports = (): Ports => ({
-		types: ctx.taskboard2Types as TypesPort,
-		relation: ctx.taskboard2Relation as RelationPort,
-		action: ctx.taskboard2Actions as ActionPort,
-	});
+	const ports = (): Ports => {
+		const types = ctx.taskboard2Types;
+		return {
+			types: {
+				states: types.TaskState,
+				DRAFT: types.DRAFT,
+				initialStatus: (kind: string) => types.initialStatus(kind),
+				canTransition: (
+					kind: string,
+					from: string,
+					to: string,
+					actor: Actor,
+					transitionCtx?: TransitionCtx,
+				) => types.canTransition(kind, from, to, actor, transitionCtx).ok === true,
+				isCompletedGroup: (status: string) => types.isEndedStatus(status),
+				liveChildren: (children: readonly ChildSnapshot[]) => types.liveChildren(children),
+				resolve: (name: string) => types.resolve(name),
+			},
+			relation: ctx.taskboard2Relation as RelationPort,
+			action: ctx.taskboard2Actions as ActionPort,
+		};
+	};
 
 	const service: CardsService = {
 		/* ── 纯查询（不产生计划） ── */
@@ -161,9 +216,12 @@ export function apply(ctx: any): void {
 		planFork: (src, sections, input) => planFork(ports(), src, sections, input),
 		planForkTransfer: (src, all) => planForkTransfer(ports(), src, all),
 		planAdopt: (card, all, input) => planAdopt(ports(), card, all, input),
-		planClaim: (card, actor, claimCtx) => planClaim(ports(), card, actor, claimCtx),
-		planRelease: (card, principal, input) => planRelease(ports(), card, principal, input),
+		planClaim: (card, principal, actor, claimCtx) =>
+			planClaim(ports(), card, principal, actor, claimCtx),
+		planRelease: (card, principal, actor, input) =>
+			planRelease(ports(), card, principal, actor, input),
 		planDelete: (card, input) => planDelete(ports(), card, input),
+		planTransition: (card, all, input) => planTransition(ports(), card, all, input),
 	};
 
 	ctx.provide('taskboard2Cards', service);

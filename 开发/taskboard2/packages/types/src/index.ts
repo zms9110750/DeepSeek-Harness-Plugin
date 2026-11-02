@@ -53,6 +53,7 @@ import {
 	isShelvedStatus,
 	isActiveStatus,
 	isDraftStatus,
+	liveChildren,
 } from './kind.js';
 
 import {
@@ -112,6 +113,8 @@ export function apply(ctx: ProvideContext): void {
 		/* 规则（⑦ 判决 / ⑧ 计算态重算） */
 		initialStatus,
 		kindLetter,
+		/* 子任务过滤（⑦ 的转移闸复用，策略只在此一处） */
+		liveChildren,
 		canTransition,
 		deriveStatus,
 		/* 模板（⑧ 启动编排；⑦ 只读 resolve） */
@@ -154,6 +157,7 @@ export {
 	isShelvedStatus,
 	isActiveStatus,
 	isDraftStatus,
+	liveChildren,
 	/* template */
 	type SectionDef,
 	type TemplateDef,

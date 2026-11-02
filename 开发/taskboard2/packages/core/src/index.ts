@@ -198,5 +198,15 @@ export {
 	type RecomputeResult,
 } from './recompute.js';
 export { interpretCurrent, visibleCards, findCard, usedIdsOf, type ActiveWorkspace } from './workspace.js';
-export { actorHasActiveWork, depsAllEnded } from './claims.js';
+export {
+	actorHasActiveWork,
+	depsAllEnded,
+	claimCard,
+	releaseClaim,
+	transitionCard,
+	deleteCard,
+	isHeldBy,
+	type ClaimResult,
+	type ClaimSuccess,
+} from './claims.js';
 export type * from './ports.js';

@@ -95,12 +95,32 @@ export interface Card {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * 主体。
+ * 主体（**身份**）。「谁在做这件事」。
  *
  * 用户与 AI 权限不同（`【用户指令，2026-11-01 07:00】`「用户可以释放。用户权限和 ai 权限是不同的。」），
- * 所以释放等动作要能区分"某个循环"与"用户"。`loop.id` 是**消息循环 id**。
+ * 所以释放等动作要能区分"某个 agent 消息循环"与"用户"。
+ *
+ * `agentMessageLoop.id` 是 **agent 消息循环 id**（`【用户指令，2026-11-02 13:30】`
+ * 「loop 也要改名……agentMessageLoop」）。它会被序列化进 `claimedBy`
+ * （`'user'` / `'agentMessageLoop:<id>'`）—— **领取是消息循环级别的**。
+ *
+ * ⚠ **与 `Actor` 是两个不同的东西，不做映射**（`【用户指令，2026-11-02 14:05】`
+ * 「除非把这两个语义进行了绑定或者就是一个语义。否则各用各的不要映射。」
+ * 「我更加希望他们是两个名字。这是两个不同的东西。领取是消息循环级别的。权限是 ai 这个类别的。」）。
+ * ⇒ 调用方（⑧）**同时**给出 `principal` 与 `actor`；⑦ 不推断、不转换。
  */
-export type Principal = { type: 'user' } | { type: 'loop'; id: string };
+export type Principal = { type: 'user' } | { type: 'agentMessageLoop'; id: string };
+
+/**
+ * 权限类别（**③ 的 `Actor` 同值**）。「这件事属于哪一类权限」。
+ *
+ * `【用户指令，2026-11-02 14:05】`「任务版领取用 ai 消息循环。这里的权限问题使用 ai 这个名字。」
+ * ⇒ 权限层用 `'ai'`，**不用** `'agentMessageLoop'`。
+ *
+ * ⚠ 与 `Principal` **不是同一个语义**，也**不做映射函数**：
+ * 两者名字不同、编译后的 JS 里两个字符串都在。
+ */
+export type Actor = 'user' | 'ai' | 'host';
 
 // ─────────────────────────────────────────────────────────────
 // 因果依据 / 计划项 / 拒绝原因（纯数据，非文案；⑧ 查表转文案）
@@ -157,7 +177,37 @@ export type RejectReason =
 	| { kind: 'not-releasable'; why: 'not-working' | 'not-holder' }
 	| { kind: 'template-missing'; ref: string }
 	| { kind: 'template-registry-unavailable' }
-	| { kind: 'relations-invalid'; issues: readonly RelationIssue[] };
+	| { kind: 'relations-invalid'; issues: readonly RelationIssue[] }
+	/**
+	 * ③ 的 `canTransition` 判否。
+	 *
+	 * ⚠ **不用于"同值"**：目标状态 === 当前状态时**不是拒绝**，而是**成功 + 空计划**
+	 * （`【用户指令，2026-11-02 12:35】`「不切是必要的。因为状态转移会在"历史"里面留下一个记录」）。
+	 */
+	| { kind: 'transition-not-allowed' }
+	/** agent 成功闸 1：没有「成功」的「交付」子任务。 */
+	| { kind: 'no-success-delivery' }
+	/**
+	 * agent 成功闸 2：直接子任务未全部处于「完成」组。
+	 *
+	 * `children` **必须带 `{ id, status }`** ——
+	 * `【用户指令，2026-11-02 13:50】`「报错。作为工具返回值。说为什么，哪一个子任务导致的。」
+	 * ⑦ 只给数据，**文案由 ⑧ 查表转**。
+	 */
+	| {
+			kind: 'children-not-completed';
+			children: readonly { id: CardId; status: TaskState }[];
+	  }
+	/** agent 失败闸：没有「失败」的「交付」或「阻碍」子任务。 */
+	| { kind: 'no-failed-evidence' }
+	/**
+	 * agent 成功闸 3：**依赖对象没有全部进入「完成」组**。
+	 *
+	 * 矩阵 154/165 行的"依赖的对象都为`完成`"。**这条 ③ 不覆盖**（它的 `DEPENDS_ON_GATE`
+	 * 只管「提交 → 处理中」）⇒ 由 ⑦ 的 `planTransition` 自己判。
+	 * `depsAllEnded` 缺失时**同样拒**（fail-closed：不知道 ≠ 满足）。
+	 */
+	| { kind: 'deps-not-ended' };
 
 /** 拒绝结果。 */
 export interface Rejection {
@@ -193,6 +243,37 @@ export interface StatesTable {
 	readonly REJECTED: TaskState;
 }
 
+/**
+ * 转移判决所需的外部事实。**按需提供**（③ 只在真正用到某字段的分支才 require 它）。
+ *
+ * · `depsAllEnded`：依赖目标是否全部处于「完成」组。只被「工作：提交 → 处理中」用到。
+ * · `actorHasActiveWork`：该 actor 名下是否已有「处理中的工作」卡。同上。
+ *
+ * ⚠ ⑦ **不编造**这两个值：用不到时整个 `ctx` 都不传（采纳 / 释放等）。
+ */
+export interface TransitionCtx {
+	readonly depsAllEnded: boolean;
+	readonly actorHasActiveWork: boolean;
+}
+
+/**
+ * 子任务快照（与 ③ 的 `ChildSnapshot` 同形）。
+ *
+ * ⑦ 用它把 `Card` 投影成 ③ 能吃的形状，再交给 **③ 导出的 `liveChildren`** 做过滤 ——
+ * 「滤墓碑 + 滤草稿」这条**策略只活在 ③ 一处**，⑦ 不复制。
+ *
+ * ⚠ 形状必须与 ③ 的 `ChildSnapshot` **逐字段一致**（结构类型"能多不能少"）：
+ * 字段名对不上就编译报错，**这正是我们要的**。
+ */
+export interface ChildSnapshot {
+	readonly id: string;
+	readonly kind: Kind;
+	/** 模板 ref（= `card.template.ref`）。 */
+	readonly template: string;
+	readonly status: TaskState;
+	readonly deleted: boolean;
+}
+
 /** ③ types 的服务面（⑦ 用到的子集）。 */
 export interface TypesPort {
 	/** 九态常量表。 */
@@ -201,10 +282,32 @@ export interface TypesPort {
 	readonly DRAFT: TaskState;
 	/** 建卡时的初始状态（按分类）。 */
 	initialStatus(kind: Kind): TaskState;
-	/** 转移判决（⑦ 不自己判，只转问）。 */
-	canTransition(kind: Kind, from: TaskState, to: TaskState, actor: Principal, ctx?: unknown): boolean;
+	/**
+	 * 转移判决（⑦ 不自己判，只转问）。
+	 *
+	 * `actor` 是**权限类别**（`'user' | 'ai' | 'host'`），**不是** `Principal`。
+	 * 调用方（⑧）自己知道"这个消息循环属于 ai 权限"并把两者分别给出 —— ⑦ 不映射。
+	 *
+	 * `ctx` **按需**：③ 只在真正用到某个事实的分支才 require 它，用不到的分支可以不传。
+	 * 已传就必须是完整对象（两个字段都是 boolean），不许只给一半。
+	 */
+	canTransition(
+		kind: Kind,
+		from: TaskState,
+		to: TaskState,
+		actor: Actor,
+		ctx?: TransitionCtx,
+	): boolean;
 	/** 是否属于「完成」组（成功 / 失败 / 取消 / 拒绝）。⑦ 不写状态字面量，只调它。 */
 	isCompletedGroup(status: TaskState): boolean;
+	/**
+	 * 子任务过滤：**滤墓碑、滤草稿**。
+	 *
+	 * ⚠ **策略只有 ③ 这一份**（`kind.ts` 里带跨包警告）。⑦ **不复制**它 ——
+	 * ⑦ 只做 `Card → ChildSnapshot` 的**纯字段投影**（`toChildSnapshot`），
+	 * 投影必然是机械的、不可能出现第二版口径。
+	 */
+	liveChildren(children: readonly ChildSnapshot[]): readonly ChildSnapshot[];
 	/**
 	 * 模板解析。
 	 * · **未命中 ⇒ `undefined`**（数据问题 ⇒ ⑦ fail-closed 拒绝建卡）

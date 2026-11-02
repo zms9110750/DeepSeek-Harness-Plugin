@@ -25,8 +25,14 @@ export type Actor = 'user' | 'ai' | 'host';
 /**
  * 转移判决所需的外部事实。
  *
- * **两个字段都必须由调用方（⑧）算好传入。**
- * `undefined` 一律抛错，**不得给默认值** —— 默认 `true` = 静默放行（fail-open）。
+ * ⚠ **按需提供**（`【Lead 决定，2026-11-02 13:50】`）：
+ * 本文件只在**真正用到**某个字段的分支里 require 它 ——
+ * · `depsAllEnded` 只被「工作：提交 → 处理中」用到；
+ * · `actorHasActiveWork` 只被「→ 处理中」用到。
+ *
+ * 用不到的转移（采纳 / 释放 / 取消 / 置成功…）**可以不传 ctx**：强制它们传等于
+ * **逼调用方编造 `true` / `false`**，那是让上层撒谎。
+ * 但只要**走到了需要该字段的分支却没传** ⇒ **照旧抛错**（fail-closed，不默认 `true`）。
  */
 export type TransitionCtx = {
 	/** 依赖目标是否**全部**处于「完成」组（= 终态）。无依赖时传 `true`。 */
@@ -87,30 +93,31 @@ function isClaim(from: TaskState, to: TaskState): boolean {
 }
 
 /**
- * 运行时守卫：`ctx` 必须是一个带两个 boolean 字段的对象。
+ * 运行时守卫：**按需**取一个必填 boolean 字段。
  *
- * 为什么不写成 `if (ctx === undefined)`：`ctx` 的静态类型不含 `undefined`，
+ * 为什么不再用 `requireCtx` 一次性把两个字段都要齐：
+ * 有些转移（采纳 / 释放 / 取消 …）**根本不看** `depsAllEnded` / `actorHasActiveWork`，
+ * 强制它们传等于**逼调用方编造事实**（传 `true` / `false` 都是撒谎）。
+ *
+ * ⇒ 只有**真正会用到**该字段的分支才 require；用到了却没传 ⇒ **照旧抛错（fail-closed）**。
+ *
+ * 为什么不写成 `if (ctx === undefined)`：`ctx` 的静态类型里没有 `undefined`，
  * 那样写会触发「无重叠」比较错误。走 `unknown` 通道既保留类型整洁，又能挡住
  * JS 调用方 / `any` 穿透 —— 这是**唯一**能防住"静默放行"的地方。
  */
-function requireCtx(ctx: unknown): TransitionCtx {
+function requireFact(ctx: unknown, field: 'depsAllEnded' | 'actorHasActiveWork'): boolean {
 	if (ctx === null || typeof ctx !== 'object') {
 		throw new Error(
-			'taskboard2-types: canTransition 缺少 ctx（必须显式提供 depsAllEnded / actorHasActiveWork）',
+			`taskboard2-types: canTransition 的这一分支需要 ctx.${field}，但调用方没有提供 ctx`,
 		);
 	}
-	const record = ctx as unknown as Record<string, unknown>;
-	const deps = record['depsAllEnded'];
-	const busy = record['actorHasActiveWork'];
-	if (typeof deps !== 'boolean') {
-		throw new Error('taskboard2-types: canTransition 的 ctx.depsAllEnded 必须是 boolean，不得缺省');
-	}
-	if (typeof busy !== 'boolean') {
+	const value = (ctx as unknown as Record<string, unknown>)[field];
+	if (typeof value !== 'boolean') {
 		throw new Error(
-			'taskboard2-types: canTransition 的 ctx.actorHasActiveWork 必须是 boolean，不得缺省',
+			`taskboard2-types: canTransition 的这一分支需要 ctx.${field}，必须是 boolean，不得缺省`,
 		);
 	}
-	return { depsAllEnded: deps, actorHasActiveWork: busy };
+	return value;
 }
 
 /**
@@ -120,17 +127,16 @@ function requireCtx(ctx: unknown): TransitionCtx {
  * @param from  当前状态
  * @param to    目标状态
  * @param actor 主体种类
- * @param ctx   外部事实，**必填**；缺字段直接抛错
+ * @param ctx   外部事实。**按需必填**：只有真正走到需要某个事实的分支时，该字段才必须存在；
+ *              否则可以整个省略（见 `requireFact`）
  */
 export function canTransition(
 	kind: string,
 	from: TaskState,
 	to: TaskState,
 	actor: Actor,
-	ctx: TransitionCtx,
+	ctx?: TransitionCtx,
 ): TransitionVerdict {
-	const facts = requireCtx(ctx);
-
 	/* 分类未注册 ⇒ 调用方违约，直接抛错。 */
 	if (getKind(kind) === undefined) {
 		throw new Error(`taskboard2-types: 未注册的分类 "${kind}"，无法判决转移`);
@@ -156,13 +162,13 @@ export function canTransition(
 		return deny(`「${kind}」的采纳不能由 ${actor} 执行`);
 	}
 
-	/* 依赖门：工作的「提交 → 处理中」要求依赖全部进入「完成」组。 */
-	if (kind === 'work' && isClaim(from, to) && !facts.depsAllEnded) {
+	/* 依赖门：工作的「提交 → 处理中」要求依赖全部进入「完成」组。 ——只有这一条用到 depsAllEnded */
+	if (kind === 'work' && isClaim(from, to) && !requireFact(ctx, 'depsAllEnded')) {
 		return deny('依赖尚未全部进入完成组，不能领取（DEPENDS_ON_GATE）');
 	}
 
-	/* 工作类一个 actor 只能占一张（WORK_SINGLE_CLAIM）。 */
-	if (kind === 'work' && to === S.WORKING && facts.actorHasActiveWork) {
+	/* 工作类一个 actor 只能占一张（WORK_SINGLE_CLAIM）。 ——只有这一条用到 actorHasActiveWork */
+	if (kind === 'work' && to === S.WORKING && requireFact(ctx, 'actorHasActiveWork')) {
 		return deny('该 actor 手上已有处于「处理中」的工作卡，必须先放下（WORK_SINGLE_CLAIM）');
 	}
 
