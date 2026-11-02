@@ -142,7 +142,11 @@ export function claimCard(
 	 */
 	const deps = depsAllEnded(ports, workspace, card);
 
-	const plan = ports.cards.planClaim(card, principal, actor, { actorHasActiveWork: busy, at });
+	const plan = ports.cards.planClaim(card, principal, actor, {
+		actorHasActiveWork: busy,
+		depsAllEnded: deps,
+		at,
+	});
 	if (!plan.ok) {
 		return {
 			ok: false,
@@ -417,7 +421,19 @@ export function transitionCard(
 			}
 		}
 		if (intent === undefined) {
-			failure = coreError('CARD_NOT_FOUND', `转移未产出计划（卡 ${cardId}）。`, { cardId });
+			/*
+			 * 两种情形必须分开：
+			 *   · `plan.items` 为空 ⇒ ⑦ 已经判定"无需发生"（同值），返回成功但无变化；
+			 *   · 有 items 却定不出基准 ⇒ 事务内读不到那张卡（并发删了），是真错。
+			 *
+			 * ⚠ 曾经一律报 `CARD_NOT_FOUND`，把"点了已经是的状态"报成"卡不存在"。
+			 */
+			if (plan.items.length === 0) {
+				const current = tx.read(cardId);
+				if (current !== undefined) updated = current;
+				return;
+			}
+			failure = coreError('CARD_NOT_FOUND', `转移未定出基准卡（卡 ${cardId}）。`, { cardId });
 			return;
 		}
 

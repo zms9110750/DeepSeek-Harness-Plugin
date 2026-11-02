@@ -132,15 +132,26 @@ export function validateRelations(input: unknown): ValidationResult {
 	}
 
 	const linksRaw = input['links'];
-	if (!Array.isArray(linksRaw)) {
+	/*
+	 * `links` 可省 —— 省略 = 零条边。
+	 *
+	 * 建子卡通常只给 `parent`（"挂到哪张卡下面"），`links` 是附加的多条边。
+	 * 若要求调用方显式写 `links: []`，那是把"空数组"和"没写"当成两件事，
+	 * 而这里它们语义相同 ⇒ 省掉。
+	 *
+	 * ⚠ `null` 不算"省略"：传 `null` 是显式的类型错误，仍然拒绝。
+	 */
+	if (linksRaw !== undefined && !Array.isArray(linksRaw)) {
 		issues.push({ kind: 'structure', reason: 'links-not-array' });
 		/* `links` 都不是数组了，没有逐条可查的东西。 */
 		return { ok: false, issues };
 	}
 
+	/* 归一化成数组：省略（`undefined`）⇒ 零条边（见上）。 */
+	const linksList: readonly unknown[] = linksRaw ?? [];
 	const links: RelationEntry[] = [];
-	for (let index = 0; index < linksRaw.length; index += 1) {
-		const raw: unknown = linksRaw[index];
+	for (let index = 0; index < linksList.length; index += 1) {
+		const raw: unknown = linksList[index];
 		if (!isPlainObject(raw)) {
 			issues.push({ kind: 'link', index, to: '', reason: 'not-an-object' });
 			continue;
