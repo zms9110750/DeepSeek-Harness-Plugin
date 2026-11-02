@@ -6,6 +6,9 @@
 # 依赖
 node_modules/
 
+# 编译产物（tsc 生成）
+lib/
+
 # 日志
 *.log
 
