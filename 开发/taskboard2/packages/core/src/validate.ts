@@ -15,7 +15,30 @@
  */
 
 import { coreError, type CoreError } from './errors.js';
-import type { ActionsPort, Issue, TypesPort } from './ports.js';
+import type { ActionsPort, CardSection, Issue, TypesPort } from './ports.js';
+
+/**
+ * 从卡上的 `{ [sectionId]: { label, payload } }` 剥出 `{ [sectionId]: payload }`。
+ *
+ * **② 只认 payload** —— `label` 是显示副本，不参与 schema 校验。
+ *
+ * ⚠ **剥的动作只有这一处**：若在几个调用点各写一遍 `Object.entries(...).map(([k,v]) => [k, v.payload])`，
+ * 将来 `CardSection` 加字段（比如 `hint`）时就要改多处，而漏一处**不报错**、只会把整个
+ * `{label, payload}` 对象当 payload 交给 ②（于是 schema 校验莫名失败）。
+ */
+export function payloadsOf(
+	sections: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const [id, value] of Object.entries(sections)) {
+		const section = value as Partial<CardSection> | undefined;
+		/* 兼容两种形状：`{ label, payload }` 与裸 payload（迁移期 / 测试数据）。 */
+		out[id] = section !== null && typeof section === 'object' && 'payload' in section
+			? section.payload
+			: value;
+	}
+	return out;
+}
 
 /** 校验结果：通过 / 失败（带 ② 的 issues）。 */
 export type CheckResult =
@@ -37,6 +60,10 @@ export type CheckResult =
  *
  * ⚠ **core 不造 issue**：`MISSING_SECTION` / `SECTION_NOT_IN_TEMPLATE` 都由 ② 造。
  * 核心里若再循环造一遍，issue 就有了两份来源。
+ *
+ * ⚠ **卡上的 `sections` 是 `{ label, payload }`，② 只认 payload** ⇒
+ *   **校验前必须把 payload 剥出来**。`label` 是显示用的副本，不参与 schema 校验。
+ *   剥的动作用 `payloadsOf` 一处完成（不在这里手写循环）。
  */
 export function assertSectionsComplete(
 	ports: {
@@ -44,11 +71,11 @@ export function assertSectionsComplete(
 		readonly actions: Pick<ActionsPort, 'validateForCreate' | 'toIssueForUI'>;
 	},
 	templateRef: string,
-	payloads: Readonly<Record<string, unknown>>,
+	sections: Readonly<Record<string, unknown>>,
 ): CheckResult {
 	/* ① 模板必须存在（注册表未初始化会抛 —— 那是装配问题，原样上抛）。 */
-	const sections = ports.types.sectionsOf(templateRef);
-	if (sections === undefined) {
+	const specs = ports.types.sectionsOf(templateRef);
+	if (specs === undefined) {
 		return {
 			ok: false,
 			error: coreError('TEMPLATE_MISSING', `找不到模板「${templateRef}」，无法校验章节`, {
@@ -57,8 +84,8 @@ export function assertSectionsComplete(
 		};
 	}
 
-	/* ② 一次性交给 ②：`sections` 用 ③ 的清单原样转传，core 不包装、不加工。 */
-	const result = ports.actions.validateForCreate(payloads, sections);
+	/* ② 剥出 payload 再交给 ②（② 只认 payload；label 是显示副本）。 */
+	const result = ports.actions.validateForCreate(payloadsOf(sections), specs);
 	if (result.ok) return { ok: true };
 
 	return {

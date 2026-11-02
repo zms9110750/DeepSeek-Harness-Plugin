@@ -69,6 +69,24 @@ export interface HistoryEntry {
 	detail?: unknown;
 }
 
+/**
+ * 卡上的一个章节。
+ *
+ * `label` 是**模板章节名的副本**（`【用户指令，2026-11-02 14:47】`
+ * 「是的，任务卡要存一个章节名字的副本。以防止万一。因为考虑领域类模板是 mod 携带的。
+ * 就可能关闭 mod 而无法加载模板。任务卡必须在无模板的情况下正常显示。」）。
+ *
+ * ⚠ **只存 `label` + `payload`**，不存 `hint` / `usage` / `description`
+ * （同句：「够了。继续存 usage / description 就太大了。没必要。」）。
+ * ⚠ **快照语义**：模板改版**不更新**已建卡上的 `label` —— 卡是实例，模板是定义。
+ */
+export interface CardSection {
+	/** 章节名字的副本（用于**模板缺失时**仍能显示）。 */
+	label: string;
+	/** action 的 payload。**⑦ 零参与校验，只整体透传**。 */
+	payload: unknown;
+}
+
 /** 一张任务卡。必须项恰好 5 个：`id` / `title` / `relations` / `template` / `status`。 */
 export interface Card {
 	id: CardId;
@@ -76,8 +94,13 @@ export interface Card {
 	status: TaskState;
 	template: TemplateRef;
 	relations: Relations;
-	/** `{ [sectionId]: payload }` 单层映射；**⑦ 零参与校验，只整体透传**。 */
-	sections: Record<string, unknown>;
+	/**
+	 * `{ [sectionId]: { label, payload } }`。
+	 *
+	 * ⚠ **`label` 是副本**：模板被卸载（mod 关闭）时，卡仍能独立显示章节标题。
+	 * ⑦ 只做**键集比较**（键不是内容）与 `label` 的快照维护，**payload 内容零参与校验**。
+	 */
+	sections: Record<string, CardSection>;
 	/** 追加项。**永远可写，不随采纳清空**。 */
 	note: string;
 	/** 追加项，只读。 */
@@ -177,6 +200,15 @@ export type RejectReason =
 	| { kind: 'not-releasable'; why: 'not-working' | 'not-holder' }
 	| { kind: 'template-missing'; ref: string }
 	| { kind: 'template-registry-unavailable' }
+	/**
+	 * 章节在模板里找不到 `label` ⇒ **当场失败，不兜底**。
+	 *
+	 * `【Lead 决定，2026-11-02 15:45】`「兜底会把假值（`core-userNeed`）写进卡。卡是**永久数据**，
+	 * 假值会一直躺在那」⇒ 与其存一个假值让它以后静默出错，不如当场失败。
+	 *
+	 * `sectionIds`：**全部**找不到 label 的章节（一次报全，避免逐个试错）。
+	 */
+	| { kind: 'section-label-missing'; sectionIds: readonly string[] }
 	| { kind: 'relations-invalid'; issues: readonly RelationIssue[] }
 	/**
 	 * ③ 的 `canTransition` 判否。
@@ -326,16 +358,16 @@ export interface ResolvedTemplate {
 }
 
 /**
- * 模板里的一章。**⑦ 只用到 `id`**。
+ * 模板里的一章。**⑦ 用到 `id` 与 `label`**。
  *
- * ⚠ 这里**故意只有 `id`**：
- * · `accepts` 已由 ③ 彻底移除（`sectionsOf` 不再返回它）⇒ 若这里还留着，运行时会是
- *   `undefined`，而**结构类型多一个字段不会编译报错** —— 正是"编译过、运行时错"那类。
- * · ③ 的 `sectionsOf` 现在带 `default?`，但**⑦ 不需要**：`default` 是补空 payload 的原料，
- *   由 ⑧ 自己从 ③ 拿；⑦ 只负责把"缺哪几章"告诉 ⑧。
+ * ⚠ `label` 用于**建卡 / fork 时拷进 `card.sections[id].label`**（快照）。
+ * `default` 仍然**不要**：它是补空 payload 的原料，由 ⑧ 从 ③ 拿；
+ * ⑦ 只负责把"缺哪几章"告诉 ⑧。
  */
 export interface TemplateSection {
 	id: string;
+	/** 章节名字。③ 的 `resolve()` 已带出（曾漏映射，见 `docs` §4）。 */
+	label: string;
 }
 
 /** ④ relation 的服务面（⑦ 用到的子集）。 */

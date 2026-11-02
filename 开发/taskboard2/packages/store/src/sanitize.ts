@@ -12,7 +12,7 @@
  * 全程**幂等**（对结果再跑一次不变）、**确定**（不用哈希、不用随机、不依赖时间戳）。
  */
 
-import { closeSync, openSync, readdirSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ARCHIVE_DIR_NAME, GLOBAL_DB_NAME, workspaceIdOf } from './paths.js';
@@ -102,13 +102,22 @@ function withSuffixRoom(base: string, suffix: string): string {
 	return out.length > 0 ? out : FALLBACK_NAME;
 }
 
-/** 收集一个目录里已有的工作空间 id（小写，供不区分大小写的查重）。 */
+/**
+ * 收集一个目录里已有的工作空间 id（小写，供不区分大小写的查重）。
+ *
+ * ⚠ **只吞 `ENOENT`**：目录不存在 = 这个目录里没有空间，是**合法状态**
+ * （`archive/` 在还没有任何归档空间时本来就不存在）。
+ *
+ * 其余错误（`EACCES` / `ENOTDIR` / `EMFILE`…）**必须重抛** —— 把它们当成
+ * 「空集合」会让真正的故障在更远处以无法理解的方式炸开。
+ */
 function existingIds(dir: string, into: Set<string>): void {
 	let entries;
 	try {
 		entries = readdirSync(dir, { withFileTypes: true });
-	} catch {
-		return;
+	} catch (error) {
+		if ((error as { code?: string }).code === 'ENOENT') return;
+		throw error;
 	}
 	for (const entry of entries) {
 		if (!entry.isFile()) continue;
@@ -138,11 +147,29 @@ function tryReserve(file: string): boolean {
  * 查重**不区分大小写**（Windows 上会撞）；最终由 `O_EXCL` 排他创建仲裁，
  * 因此并发安全，不依赖内存锁。
  *
+ * ## 为什么这里要建根目录
+ *
+ * **谁创建文件，谁负责它的父目录存在。** 本函数是**唯一**直接在 `root` 下
+ * 创建文件的地方（`tryReserve` 要 `openSync(<root>/<id>.db, 'wx')`），所以
+ * 它负责让 `root` 存在。
+ *
+ * 换到上层（⑥ `createWorkspace`）不行：⑥ 的边界是不直接碰存储，也不知道
+ * `root` 路径。换到 `openDatabase` 也不行：那处是「打开已有/新建库」时用的，
+ * 而这里在打开库**之前**就要创建占位文件。
+ *
+ * ⚠ 曾经的真实 bug：全新安装时 `<dshHome>/taskboard/` 不存在，`tryReserve`
+ *   的 `openSync` 直接 `ENOENT`。**根因不是「错误被吞掉」（虽然 `existingIds`
+ *   当时确实吞了所有错误），而是没有任何一处承诺 `root` 存在。吞错只是让这个
+ *   缺口在更晚的地方才暴露出来。**
+ *
  * @param root - 数据根目录（`<dshHome>/taskboard`）。
  * @param rawName - 用户手填的名字。
  * @returns 已占住 `<root>/<id>.db` 的 id。
  */
 export function allocateWorkspaceId(root: string, rawName: string): string {
+	/* 全新安装时根目录还不存在；`0o700` 与 openDatabase 等处保持一致。 */
+	mkdirSync(root, { recursive: true, mode: 0o700 });
+
 	const base = sanitizeName(rawName);
 	const taken = new Set<string>();
 	existingIds(root, taken);

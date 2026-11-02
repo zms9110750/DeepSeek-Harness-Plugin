@@ -13,6 +13,15 @@
  * **fork 权 ⟺ 非 `DRAFT`**（草稿不能 fork，`【用户指令，2026-11-01 06:43】`）。
  * 设计 / 记录**生来即非草稿**（初始为「需要授权」）⇒ 它们自动获得 fork，**不需要特判**。
  *
+ * ## 章节 `label` 的处理
+ *
+ * 卡上 `sections[id] = { label, payload }`，`label` 是**模板章节名的快照**。
+ *  · **保留的章节**（新模板也有该 `id`）：`label` **换成新模板的** ——
+ *    fork 是**有意换模板**，章节语义已变；保留旧 label 会显示"旧名字 + 新语义"。
+ *    ⚠ **取不到新 label ⇒ 整份拒绝**（`section-label-missing`），**不写 `sectionId` 假值**。
+ *  · **丢弃的章节**：只把 `payload` 给 ⑧（判 `hadContent` 用），`label` 不外传。
+ *  · **缺失的章节**（新模板有、源卡无）：补 payload 与 label 由 ⑧ 用 ③ 的 `default` 做。
+ *
  * ## 两个清单（给 ⑧）
  *
  * **⑦ 只算 `sectionId` 全集**（纯键集运算），**payload 原样透传、不解释**：
@@ -25,17 +34,23 @@
 import type {
 	Card,
 	CardId,
+	CardSection,
 	HistoryEntry,
 	Ports,
 	Rejection,
 	Relations,
 	TemplateSection,
 } from './types.js';
+import { labelsByName } from './create.js';
 
 /** fork 写进新卡历史的动作名（`05:52`「历史写的是『分支』，而不是『创建』」）。 */
 export const FORK_ACTION = 'fork';
 
-/** 被丢弃的一章：⑦ 只给 `sectionId` + 原始 `payload`（不解释、不判"有没有内容"）。 */
+/**
+ * 被丢弃的一章：⑦ 只给 `sectionId` + 原始 **`payload`**（不解释、不判"有没有内容"）。
+ *
+ * ⚠ 不给 `label`：`label` 是卡自己的展示快照，⑧ 判 `hadContent` 只用 payload。
+ */
 export interface DroppedSection {
 	sectionId: string;
 	payload: unknown;
@@ -110,7 +125,8 @@ export function planFork(
 	const droppedSections: DroppedSection[] = [];
 	for (const sectionId of haveIds) {
 		if (!wantIds.has(sectionId)) {
-			droppedSections.push({ sectionId, payload: src.sections[sectionId] });
+			// 只把 **payload** 给 ⑧（用于判 `hadContent`）；`label` 是卡自己的快照，不外传。
+			droppedSections.push({ sectionId, payload: src.sections[sectionId]?.payload });
 		}
 	}
 
@@ -121,10 +137,34 @@ export function planFork(
 		}
 	}
 
-	// ── ④ 新卡的 sections：只保留新模板里存在的章 ──
-	const keptSections: Record<string, unknown> = {};
+	// ── ④ 新卡的 sections：只保留新模板里存在的章，**label 换成新模板的** ──
+	//
+	// ⚠ 为什么换：fork 是**有意把卡换到新模板**（不是"模板没了"的降级）⇒
+	// 章节语义已变，`label` 必须跟着新模板走。保留旧 label 会让卡显示
+	// "旧名字 + 新语义"，比没有 label 更糟（`【Lead 决定，2026-11-02 15:10】` 已批准）。
+	//
+	// ⚠ **取不到 label ⇒ 整份失败**，不写 `sectionId` 假值
+	// （`【Lead 决定，2026-11-02 15:45】`「兜底会把假值写进卡。卡是永久数据」）。
+	// 正常情况走不到这里：`wantIds` 就来自 `newTemplateSections`，两者同源。
+	const newLabels = labelsByName(newTemplateSections);
+	const keptSections: Record<string, CardSection> = {};
+	const unlabeled: string[] = [];
 	for (const sectionId of haveIds) {
-		if (wantIds.has(sectionId)) keptSections[sectionId] = src.sections[sectionId];
+		if (!wantIds.has(sectionId)) continue;
+		const label = newLabels.get(sectionId);
+		if (label === undefined) {
+			unlabeled.push(sectionId);
+			continue;
+		}
+		keptSections[sectionId] = {
+			label,
+			payload: src.sections[sectionId]?.payload,
+		};
+	}
+
+	// 有章节拿不到新模板的 label ⇒ 整份拒绝（不写假值）。
+	if (unlabeled.length > 0) {
+		return { ok: false, reason: { kind: 'section-label-missing', sectionIds: unlabeled } };
 	}
 
 	// ── ⑤ 取代边：新 → 旧（方向写死，05:52「新的 -> 旧的」） ──

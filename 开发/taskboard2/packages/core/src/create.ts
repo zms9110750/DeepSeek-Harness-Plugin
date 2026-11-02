@@ -38,7 +38,12 @@ export interface CreateCardInput {
 	/** 模板名（= ③ 的 `name`）。 */
 	readonly templateRef: string;
 	readonly title: string;
-	/** `{ [sectionId]: payload }`。省略 ⇒ 用各章的 `default` 预填（见 `sectionsFromDefaults`）。 */
+	/**
+	 * `{ [sectionId]: payload }` —— **建卡入参仍是裸 payload**（面板 / AI 不提供 label）。
+	 *
+	 * 省略 ⇒ 用各章的 `default` 预填（见 `sectionsFromDefaults`）。
+	 * ⑦ 收到后会把 `label` 从模板抄进卡里，产出 `{ [sectionId]: { label, payload } }`。
+	 */
 	readonly sections?: Readonly<Record<string, unknown>>;
 	/** 关系。 */
 	readonly relations?: { readonly parent?: string; readonly links?: readonly { readonly label: string; readonly to: string }[] };
@@ -102,21 +107,43 @@ export function checkRelationTargets(
 }
 
 /**
- * 用模板各章的 `default` 铺一份初始 `sections`。
+ * 用模板各章的 `default` 铺一份初始 `sections`（**裸 payload**，label 由 ⑦ 抄）。
  *
- * **只铺有 `default` 的章**：没写 `default` 的章留空 —— "该补什么"由调用方决定
- * （建卡面板会让用户填、fork 会单独报错）。这里**不猜**。
+ * - **只铺有 `default` 的章**：没写 `default` 的章留空 —— "该补什么"由调用方决定
+ *   （建卡面板会让用户填、fork 会单独报错）。这里**不猜**；
+ * - **返回裸 payload**（不是 `{label, payload}`）：`label` 由 **⑦ 从模板抄进卡**，
+ *   `create.ts` 传给 ⑦ 的 `sections` 一直是裸 payload（见 `createCard` 的注释）。
+ *
+ * ## ⚠ `label` 为空 ⇒ 失败，不兜底
+ *
+ * **卡是永久数据** —— 写一个空 label 进卡，那个假值会一直躺在那，
+ * 而**降级模式显示时章节标题空白、不报任何错**（正是用户 14:47 要求"存副本"要防的事）。
+ *
+ * ⇒ **不兜底成 `sectionId`、不兜底成空串** —— 那都是"存假值"。
+ * ⇒ **这是前置校验**：⑧ 不产出 label，但它**必须确认 label 存在**，
+ *   否则 ⑦ 抄的时候就只能抄到一个空值（而 ⑦ 那边同样会拒绝，两道闸门都拦这个）。
  */
 export function sectionsFromDefaults(
-	sections: readonly { readonly id: string; readonly default?: unknown }[],
-): Record<string, unknown> {
+	sections: readonly { readonly id: string; readonly label: string; readonly default?: unknown }[],
+): { readonly ok: true; readonly sections: Record<string, unknown> } | { readonly ok: false; readonly error: CoreError } {
 	const out: Record<string, unknown> = {};
 	for (const section of sections) {
 		if (section.default === undefined) continue;
-		/* 深拷贝一层：`default` 来自注册表，调用方会改它，不能共享引用。 */
+		/* ⚠ 空 label ⇒ 失败，不写空字符串进卡（见上）。 */
+		if (typeof section.label !== 'string' || section.label === '') {
+			return {
+				ok: false,
+				error: coreError(
+					'SECTION_LABEL_UNAVAILABLE',
+					`章节「${section.id}」在模板里没有章节名（label），无法写进卡。`,
+					{ sectionId: section.id },
+				),
+			};
+		}
+		/* 深拷贝：`default` 来自注册表，调用方会改它，不能共享引用。 */
 		out[section.id] = structuredClone(section.default);
 	}
-	return out;
+	return { ok: true, sections: out };
 }
 
 /** `deriveDefaults` 的产物：建卡时的三个初始字段。 */
@@ -177,19 +204,31 @@ export function createCard(ports: Ports, workspace: ActiveWorkspace, input: Crea
 		};
 	}
 
-	/* ── ② 章节初值：调用方给了就用；没给就用模板各章的 `default` ── */
-	const sections: Record<string, unknown> =
-		input.sections !== undefined
-			? { ...input.sections }
-			: sectionsFromDefaults(template.sections);
+	/*
+	 * ── ② 章节初值 ──
+	 *
+	 * 建卡入参的 `sections` 是**裸 payload**（面板 / AI 不提供 label）；
+	 * 调用方没给 ⇒ 用模板各章的 `default` 预填。
+	 *
+	 * ⚠ **`label` 由 ⑦ 从模板抄进卡**（它产出 `{ label, payload }`）——
+	 * ⑧ 这里传的仍是裸 payload，**不自己拼 label**（label 的来源只有模板一处）。
+	 * ⚠ **预填时若某章没 label ⇒ 当场失败**（`sectionsFromDefaults` 返回错），不写空 label 进卡。
+	 */
+	let sections: Readonly<Record<string, unknown>>;
+	if (input.sections !== undefined) {
+		sections = input.sections;
+	} else {
+		const defaults = sectionsFromDefaults(template.sections);
+		if (!defaults.ok) return { ok: false, error: defaults.error };
+		sections = defaults.sections;
+	}
 
 	/* ── ③ 章节校验（事务外）── */
 	const chapterCheck = assertSectionsComplete(
 		{ types: ports.types, actions: ports.actions },
 		input.templateRef,
 		sections,
-	);
-	if (!chapterCheck.ok) {
+	);	if (!chapterCheck.ok) {
 		return {
 			ok: false,
 			error: chapterCheck.error,

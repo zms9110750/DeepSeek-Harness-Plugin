@@ -22,7 +22,6 @@
     "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "yaml": "^2.5.0",
     "@local/taskboard2-store": "workspace:*",
     "@local/taskboard2-action": "workspace:*",
     "@local/taskboard2-types": "workspace:*",

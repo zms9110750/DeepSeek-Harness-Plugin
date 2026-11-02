@@ -56,6 +56,16 @@ export interface CoreService {
 	/* ── 读 ── */
 	list(): readonly Card[];
 	get(cardId: string): { readonly ok: true; readonly card: Card } | Failure;
+	/**
+	 * 模板可用状态（给 ⑩ 展示降级提示用）。
+	 *
+	 * 用户 11-02 14:50：「可以展示，没有行为，状态的切换按钮都不给。」
+	 * ⇒ ⑩ 需要知道"现在是降级模式"，才能把按钮变灰 / 隐藏。
+	 *
+	 * ⚠ **仍然返回 `ok: true`** —— 模板未就绪是**允许发生的正常状态**，不是失败。
+	 *   失败的是"有行为的操作"（它们各自返回 `TEMPLATES_UNAVAILABLE`）。
+	 */
+	templatesStatus(): { readonly ok: true; readonly ready: boolean };
 	/** 搜索（走 ⑤；⑤ 缺省 ⇒ 报 `SEARCH_UNAVAILABLE`，不自己实现一套筛法）。 */
 	search(condition: SearchCondition): {
 		readonly ok: true;
@@ -154,6 +164,42 @@ export function createFacade(options: FacadeOptions): CoreService {
 		active = { wsId: active.wsId, cards: [...byId.values()] };
 	}
 
+	/**
+	 * 降级模式闸：模板注册表未就绪 ⇒ 拒绝"有行为"的操作。
+	 *
+	 * 用户 11-02 14:50：
+	 * > 「但是如果他出错了，core可以继续开。」
+	 * > 「可以展示，没有行为，状态的切换按钮都不给。创建新卡没有模板选创建不了。」
+	 *
+	 * ## 哪些操作过闸
+	 *
+	 * | 操作 | 过闸 | 理由 |
+	 * |---|---|---|
+	 * | `list` / `get` / `search` / `currentWorkspaceId` / `listWorkspaces` | ❌ 不过 | 「可以展示」—— 卡带 label 副本，不依赖模板 |
+	 * | `updateBody` / `updateCard` | ❌ 不过 | 改**已有**章节不碰模板（见 `edit.ts`） |
+	 * | `create` / `fork` | ✅ 过 | 「创建新卡没有模板选创建不了」 |
+	 * | `claim` / `release` / `adopt` / `transition` / `runPlan` | ✅ 过 | 「状态的切换按钮都不给」 |
+	 *
+	 * ⚠ **这是前置闸，不依赖 `resolve` / `sectionsOf` 抛错** —— ⑧ 先问
+	 *   `isTemplateRegistryReady()`，未就绪就根本不往下走。
+	 *   （③ 那边"未初始化 ⇒ 抛、没这个模板 ⇒ 返回 undefined"的两种失败语义**不用改**。）
+	 *
+	 * ⚠ **与本包 `TEMPLATE_REGISTRY_NOT_READY` 的分工**：
+	 *   这里返回的是 `TEMPLATES_UNAVAILABLE`（**允许发生的正常状态**）；
+	 *   `TEMPLATE_REGISTRY_NOT_READY` 是时序 bug（不该发生），**当前无检测点**。
+	 */
+	function requireTemplates(): Failure | undefined {
+		if (ports.types.isTemplateRegistryReady()) return undefined;
+		return {
+			ok: false,
+			error: coreError(
+				'TEMPLATES_UNAVAILABLE',
+				'模板未加载：当前只能查看，不能新建、转移或级联。',
+				{},
+			),
+		};
+	}
+
 	/** 按 id 从内存取（**不过滤墓碑** —— 按 id 直查可见）。 */
 	function getCard(cardId: string): Card | undefined {
 		return active === undefined ? undefined : findCard(active, cardId);
@@ -218,8 +264,15 @@ export function createFacade(options: FacadeOptions): CoreService {
 			};
 		},
 
+		/* ── 模板可用状态（给 ⑩ 展示降级提示） ── */
+		templatesStatus() {
+			return { ok: true, ready: ports.types.isTemplateRegistryReady() };
+		},
+
 		/* ── 写 ── */
-		create(input) {
+		create(input) {			/* 降级模式：没有模板可选 ⇒ 建不了新卡（用户 14:50）。 */
+			const allowed = requireTemplates();
+			if (allowed !== undefined) return allowed;
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
 			const result = createCard(ports, workspace.workspace, { ...input, at: now() });
@@ -235,6 +288,12 @@ export function createFacade(options: FacadeOptions): CoreService {
 			return { ok: true, card: result.card, recomputed: result.recomputed };
 		},
 
+		/**
+		 * UI 单章编辑。
+		 *
+		 * ⚠ **不过降级闸** —— 改**卡上已有**章节不碰模板（label 在卡上）。
+		 * 只有"新增章节"才需要模板提供 label，那种情况由 `edit.ts` 报 `SECTION_LABEL_UNAVAILABLE`。
+		 */
 		updateBody(cardId: string, sectionId: string, payload: unknown) {
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
@@ -250,6 +309,7 @@ export function createFacade(options: FacadeOptions): CoreService {
 			return { ok: true, card: result.card, recomputed: result.recomputed };
 		},
 
+		/** 整卡编辑。⚠ **不过降级闸** —— 理由同 `updateBody`。 */
 		updateCard(cardId: string, editable: Readonly<Record<string, unknown>>) {
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
@@ -266,6 +326,9 @@ export function createFacade(options: FacadeOptions): CoreService {
 		},
 
 		fork(cardId: string, options?: { readonly templateRef?: string; readonly kind?: string }) {
+			/* 降级模式：fork 要选新模板 ⇒ 过闸（用户 14:50）。 */
+			const allowed = requireTemplates();
+			if (allowed !== undefined) return allowed;
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
 			const result = forkCard(ports, workspace.workspace, cardId, {
@@ -282,6 +345,9 @@ export function createFacade(options: FacadeOptions): CoreService {
 		},
 
 		adopt(cardId: string, principal: Principal, actor: Actor) {
+			/* 降级模式：采纳是状态转移 ⇒ 过闸。 */
+			const allowed = requireTemplates();
+			if (allowed !== undefined) return allowed;
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
 			const result = adoptCard(ports, workspace.workspace, cardId, principal, actor, now());
@@ -290,6 +356,9 @@ export function createFacade(options: FacadeOptions): CoreService {
 		},
 
 		claim(cardId: string, principal: Principal, actor: Actor) {
+			/* 降级模式：领取是状态转移 ⇒ 过闸。 */
+			const allowed = requireTemplates();
+			if (allowed !== undefined) return allowed;
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
 			const result = claimCard(ports, workspace.workspace, cardId, principal, actor, now());
@@ -298,6 +367,9 @@ export function createFacade(options: FacadeOptions): CoreService {
 		},
 
 		release(cardId: string, principal: Principal, actor: Actor) {
+			/* 降级模式：释放也是状态切换（处理中 → 提交）⇒ 过闸。 */
+			const allowed = requireTemplates();
+			if (allowed !== undefined) return allowed;
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
 			const result = releaseClaim(ports, workspace.workspace, cardId, principal, actor, now());
@@ -306,6 +378,9 @@ export function createFacade(options: FacadeOptions): CoreService {
 		},
 
 		transition(cardId: string, to: string, principal: Principal, actor: Actor) {
+			/* 降级模式：状态转移 ⇒ 过闸。 */
+			const allowed = requireTemplates();
+			if (allowed !== undefined) return allowed;
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
 			const result = transitionCard(ports, workspace.workspace, cardId, to, principal, actor, now());
@@ -313,6 +388,7 @@ export function createFacade(options: FacadeOptions): CoreService {
 			return result;
 		},
 
+		/** 删除。⚠ **不过降级闸** —— 墓碑只是标记，不依赖模板。 */
 		remove(cardId: string) {
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
@@ -322,6 +398,9 @@ export function createFacade(options: FacadeOptions): CoreService {
 		},
 
 		runPlan(plan: unknown) {
+			/* 降级模式：级联执行会改状态 ⇒ 过闸。 */
+			const allowed = requireTemplates();
+			if (allowed !== undefined) return allowed;
 			const workspace = ensureWorkspace();
 			if (!workspace.ok) return workspace;
 			const result = runCascade(ports, workspace.workspace, plan as never, now());

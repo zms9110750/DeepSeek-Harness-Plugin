@@ -71,8 +71,9 @@ export const inject = ['taskboard2Types', 'taskboard2Relation', 'taskboard2Actio
 
 /* ── 常量（历史动作名 / 建卡默认值），供 ⑤⑧⑨⑩ 引用而不必自己写字面量 ── */
 export { ADOPT_ACTION, SUPERSEDE_ACTION } from './query.js';
-export { CREATE_ACTION, emptyRelations } from './create.js';
+export { CREATE_ACTION, emptyRelations, buildSections } from './create.js';
 export { EDIT_ACTION } from './change.js';
+export { pluckPayloads, mergeLabels } from './change.js';
 export { FORK_ACTION } from './fork.js';
 export { CLAIM_ACTION, describePrincipal, principalOfClaim } from './claim.js';
 export { RELEASE_ACTION, FORCE_RELEASE_ACTION } from './release.js';
@@ -90,6 +91,7 @@ export { toChildSnapshot } from './transition.js';
 export type {
 	Card,
 	CardId,
+	CardSection,
 	TaskState,
 	Kind,
 	LinkLabel,
@@ -121,7 +123,9 @@ export type {
 	ChildSnapshot,
 } from './types.js';
 export type { CreateInput } from './create.js';
+export type { BuildSectionsResult } from './create.js';
 export type { ChangeInput, EditableFields } from './change.js';
+export type { MergeLabelsResult } from './change.js';
 export type {
 	ForkInput,
 	ForkPlan,

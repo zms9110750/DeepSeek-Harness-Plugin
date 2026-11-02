@@ -53,6 +53,27 @@ export interface HistoryEntry {
 	readonly detail?: unknown;
 }
 
+/* ─────────────────────────────────────────────────────────────
+ * 卡（⑦ 拥有，⑧ 只按结构消费）
+ * ───────────────────────────────────────────────────────────── */
+
+/**
+ * 卡上的一个章节：**名字副本 + payload**。
+ *
+ * `【用户指令，2026-11-02 14:47】`：
+ * > 「是的，任务卡要存一个章节名字的副本。以防止万一。因为考虑领域类模板是mod携带的。
+ * >   就可能关闭mod而无法加载模板。**任务卡必须在无模板的情况下正常显示。**」
+ *
+ * ⇒ `label` 是**建卡那一刻从模板抄下来的副本**，此后**不回查模板**（与 `template.domain` 同理）。
+ * ⇒ 模板被卸载 / mod 被关掉 ⇒ 卡照样能显示（只是没有行为，见降级模式）。
+ */
+export interface CardSection {
+	/** 章节名（模板 `sections[].label` 的副本，中文显示名）。 */
+	readonly label: string;
+	/** 该章的 payload（② 拥有语义，⑧ 只搬运）。 */
+	readonly payload: unknown;
+}
+
 /** 一张任务卡（⑦ 拥有，本包只按结构消费）。 */
 export interface Card {
 	readonly id: string;
@@ -60,7 +81,8 @@ export interface Card {
 	readonly status: string;
 	readonly template: TemplateRef;
 	readonly relations: Relations;
-	readonly sections: Readonly<Record<string, unknown>>;
+	/** `{ [sectionId]: { label, payload } }` —— **label 是模板的副本，卡不依赖模板显示。** */
+	readonly sections: Readonly<Record<string, CardSection>>;
 	readonly note: string;
 	readonly history: readonly HistoryEntry[];
 	readonly deleted: boolean;
@@ -123,6 +145,8 @@ export interface StorePort {
  */
 export interface SectionSpec {
 	readonly id: string;
+	/** 章节名（中文显示名）。**建卡时抄进 `CardSection.label`**，卡此后不依赖模板。 */
+	readonly label: string;
 	/** 该章初始化时的 payload。**可能缺**（模板没写）⇒ 调用方必须显式处理"没有默认值"。 */
 	readonly default?: unknown;
 }
@@ -205,34 +229,7 @@ export interface ResolvedTemplate {
 	readonly domain: string;
 	readonly codePrefix: string;
 	readonly sections: readonly SectionSpec[];
-}
-
-/** 注册一章时的声明形状（③ 的 `SectionDef` 的结构子集）。 */
-export interface TemplateSectionDef {
-	readonly id: string;
-	readonly label: string;
-	readonly hint?: string;
-	readonly required?: boolean;
-	/** 该章初始化时的 payload。fork 补缺章用它；缺了就报错，不猜。 */
-	readonly default?: unknown;
-}
-
-/**
- * 注册一个模板时的形状（③ 的 `TemplateDef` 的结构子集）。
- *
- * ⚠ **无 `presetOf`**（预设已取消，用户 11:26）；**无 `accepts`**（已彻底移除）。
- */
-export interface TemplateDefForRegistry {
-	readonly name: string;
-	/** 中文显示名。**必填**（派生按钮拼标题依赖它）。 */
-	readonly displayName: string;
-	readonly kind: string;
-	readonly domain: string;
-	readonly codePrefix: string;
-	readonly sections: readonly TemplateSectionDef[];
-	readonly usage?: string;
-	readonly description?: string;
-	/** 派生按钮（并列、有序）。 */
+	/** 派生按钮（并列、有序）。`deriveDefaults` 用它拼建卡预填值。 */
 	readonly derive?: readonly DeriveButton[];
 }
 
@@ -241,6 +238,9 @@ export interface TemplateDefForRegistry {
  *
  * 用户 11:26：按钮的行为**写死在代码里**（`create.ts` 的 `deriveDefaults`）：
  * 模板 = `template`、父任务 = 当前卡、标题 = `父标题-label`（`label` 缺 ⇒ `displayName`）。
+ *
+ * ⚠ **⑧ 仍需这个类型**（`deriveDefaults` 的入参）—— 虽然模板注册归了 ③，
+ *   `derive` 数组的内容要由 ③ 在 `resolve` / `templateMeta` 里给出来。
  */
 export interface DeriveButton {
 	/** 指向的模板 `name`。 */
@@ -249,12 +249,6 @@ export interface DeriveButton {
 	readonly label?: string;
 	/** 按钮悬浮描述（纯展示）。 */
 	readonly description?: string;
-}
-
-/** ③ 的注册面（启动期由 ⑧ 编排调用）。 */
-export interface TypesRegistry {
-	registerTemplate(def: TemplateDefForRegistry): void;
-	markTemplateRegistryReady(): void;
 }
 
 /** 转移判决所需的外部事实。两个字段都必须由本包算好传入。 */
@@ -283,6 +277,18 @@ export interface TypesPort {
 	isActiveStatus(status: string): boolean;
 	resolve(ref: string): ResolvedTemplate | undefined;
 	sectionsOf(ref: string): readonly SectionSpec[] | undefined;
+	/**
+	 * 模板注册表是否就绪（模板加载归 ③，`【用户指令，2026-11-02 14:50】`「他要去读yaml」）。
+	 *
+	 * ⑧ 用它决定走**降级模式**：未就绪 ⇒ 只能读卡、不能转移 / 建卡 / 级联
+	 * （用户：「可以展示，没有行为，状态的切换按钮都不给。创建新卡没有模板选创建不了。」）。
+	 *
+	 * ⚠ 这与 `TEMPLATE_REGISTRY_NOT_READY` 不是一回事：
+	 *   · 就绪 = 模板加载成功 ⇒ 一切正常；
+	 *   · **未就绪但这是正常状态**（③ 加载失败但 ⑧ 仍可开）⇒ `TEMPLATES_UNAVAILABLE`；
+	 *   · `TEMPLATE_REGISTRY_NOT_READY` 是**时序 bug**（⑧ 认为该就绪、③ 说没有）。
+	 */
+	isTemplateRegistryReady(): boolean;
 	nextId(prefix: string, usedIds: readonly string[]): string;
 	/** 转展示形（插连字符）。缺失时本包退回原样返回 —— 展示形只影响 UI，不影响身份。 */
 	toDisplay?(id: string): string;

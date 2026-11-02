@@ -21,11 +21,27 @@
  * 「编辑不会产生历史。只有状态转移会留下历史。」⇒ `events` **恒为空**。
  * 改 `title` / `note` / `sections` / `relations` 都不是"卡的状态变化"。
  *
+ * ## 章节形状：卡上是 `{label, payload}`，编辑只提交 payload
+ *
+ * `【用户指令，2026-11-02 14:47】`「任务卡要存一个章节名字的副本……任务卡必须在无模板的
+ * 情况下正常显示。」⇒ 卡上 `sections[id] = { label, payload }`。
+ * 但**编辑入参只有裸 payload**（调用方不该重复知道 label）⇒
+ * 比较前 `pluckPayloads`、落回时 `mergeLabels`。**漏了这两步会让 ② 永远判"声明变了"**。
+ *
  * ⚠ **⑦ 不校验"新增 `sectionId` 是否属于模板"** —— 那需要模板知识，归 ⑧ 的落库入口
- * （`docs` §3.3 第 7 条，(丙) 方案）。本文件**不查模板**。
+ * （`docs` §3.3 第 7 条，(丙) 方案）。`mergeLabels` 只在"给新增键补 label"时读模板，不判合法性。
  */
 
-import type { Card, Plan, PlanResult, Ports, RelationPatch, Relations } from './types.js';
+import type {
+	Card,
+	CardSection,
+	Plan,
+	PlanResult,
+	Ports,
+	RelationPatch,
+	Relations,
+} from './types.js';
+import { labelsByName } from './create.js';
 
 /** 冻结期内允许改的字段（只有它们不在冻结集合里）。 */
 export const UNFROZEN_FIELDS = ['note', 'sections'] as const;
@@ -34,7 +50,14 @@ export const UNFROZEN_FIELDS = ['note', 'sections'] as const;
 export interface EditableFields {
 	title?: string;
 	note?: string;
-	/** 整份 `sections`（⑦ 只做键集比较 + 透传，不看内容）。 */
+	/**
+	 * 整份 `sections` —— **只有裸 payload，没有 `label`**。
+	 *
+	 * ⚠ **这是刻意的**（`【Lead 决定，2026-11-02 15:10】`）：调用方不该重复知道 `label`；
+	 * `label` 是卡上的快照，编辑不改它（`mergeLabels` 保留卡上原值）。
+	 * ⇒ ⑦ 必须先 `pluck` 出卡上的 payload 再去问 ②，否则 ② 会拿 `{label,payload}`
+	 *   和裸 `payload` 比，`splitPayload` 读不到 `$type` ⇒ **永远判"声明变了"**。
+	 */
 	sections?: Record<string, unknown>;
 	/** 整份关系（形状与词汇由 ④ 校验）。 */
 	relations?: Relations;
@@ -81,6 +104,77 @@ function addedKeys(a: Record<string, unknown>, b: Record<string, unknown>): stri
 	return out;
 }
 
+/**
+ * 把卡上的 `{ [id]: {label, payload} }` **摊平成 `{ [id]: payload }`**。
+ *
+ * ⚠ **为什么必须摊平**：② 的 `isDeclarationOnlyChange` / `splitPayload` 认的是
+ * **action payload**（靠 `$type` 判断"答案在哪"）。把 `{label, payload}` 直接丢给它，
+ * 它读不到 `$type` ⇒ 把一切都当"声明"⇒ **永远判"声明变了"**，
+ * 结果是**冻结期任何编辑都被当"改了声明"而拒绝**（而且编译不报错）。
+ *
+ * ⇒ 摊平后，⑦ 交给 ② 的东西与"卡上直接存 payload 时"**完全一致** ⇒ 行为等价。
+ */
+export function pluckPayloads(sections: Record<string, CardSection>): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const [sectionId, section] of Object.entries(sections)) {
+		out[sectionId] = section.payload;
+	}
+	return out;
+}
+
+/** `mergeLabels` 的结果：要么整份 `sections`，要么"哪几章拿不到 label"。 */
+export type MergeLabelsResult =
+	| { readonly ok: true; readonly value: Record<string, CardSection> }
+	| { readonly ok: false; readonly sectionIds: readonly string[] };
+
+/**
+ * 把编辑提交的裸 payload **合回卡上的 `{label, payload}`**。
+ *
+ * ## 规则
+ *
+ * · **已有键**：`label` 沿用卡上的 —— **编辑不改 label**（`label` 是建卡 / fork 时的快照）。
+ * · **新增键**（草稿期允许加）：`label` 一律取模板的。
+ *   **模板里没有该章 ⇒ 失败**（`section-label-missing`），**不写 `sectionId` 假值**
+ *   —— 与 `buildSections` / `planFork` 同一口径
+ *   （`【Lead 决定，2026-11-02 15:45】`「兜底会把假值写进卡。卡是**永久数据**，假值会一直躺在那」）。
+ */
+export function mergeLabels(
+	ports: Ports,
+	card: Card,
+	payloads: Record<string, unknown>,
+): MergeLabelsResult {
+	const current = card.sections;
+	// 惰性解析：只有真的出现了"新键"才需要模板，避免每次编辑都读注册表。
+	let labels: Map<string, string> | undefined;
+	const missing: string[] = [];
+
+	const out: Record<string, CardSection> = {};
+	for (const [sectionId, payload] of Object.entries(payloads)) {
+		const existing = current[sectionId];
+		if (existing !== undefined) {
+			// 已有键：沿用卡上的 label（编辑不改它）。
+			out[sectionId] = { label: existing.label, payload };
+			continue;
+		}
+		// 新增键：从模板取 label；取不到 ⇒ 不写假值，记下来整份失败。
+		if (labels === undefined) {
+			const template = ports.types.resolve(card.template.ref);
+			labels = template === undefined ? new Map() : labelsByName(template.sections);
+		}
+		const label = labels.get(sectionId);
+		if (label === undefined) {
+			missing.push(sectionId);
+			continue;
+		}
+		out[sectionId] = { label, payload };
+	}
+
+	if (missing.length > 0) {
+		return { ok: false, sectionIds: missing };
+	}
+	return { ok: true, value: out };
+}
+
 export function planChange(ports: Ports, card: Card, input: ChangeInput): PlanResult {
 	const draft = card.status === ports.types.DRAFT;
 	const { editable, patch } = input;
@@ -111,29 +205,40 @@ export function planChange(ports: Ports, card: Card, input: ChangeInput): PlanRe
 	}
 
 	// ── ③ sections：键集守卫 + 声明冻结 ──
+	//
+	// ⚠ **`editable.sections` 是裸 payload**，卡上是 `{label, payload}` ⇒
+	// 比较前必须 `pluckPayloads` 摊平（否则 ② 读不到 `$type`，永远判"声明变了"）。
+	// `label` 只在**落回时**由 `mergeLabels` 补（已有键沿用卡上原值）。
 	if (editable.sections !== undefined) {
-		const currentSections = card.sections;
-		const nextSections = editable.sections;
+		const currentPayloads = pluckPayloads(card.sections);
+		const nextPayloads = editable.sections;
 
 		if (draft) {
 			// 草稿期：**不得删键**（可改 payload、可新增键）；不查"新键是否属于模板"（归 ⑧）。
-			const removed = missingKeys(currentSections, nextSections);
+			const removed = missingKeys(currentPayloads, nextPayloads);
 			if (removed.length > 0) {
 				return { ok: false, reason: { kind: 'section-key-removed', sectionIds: removed } };
 			}
 		} else {
 			// 冻结期：**声明不可改**（答案可改）。
 			// 用 ② 的判定：⑦ 不看 payload 结构，只收一个布尔。
-			const onlyAnswers = ports.action.isDeclarationOnlyChange(currentSections, nextSections);
+			// ⚠ 两边都必须是**裸 payload**，否则这个判定恒为"声明变了"。
+			const onlyAnswers = ports.action.isDeclarationOnlyChange(currentPayloads, nextPayloads);
 			if (!onlyAnswers) {
 				const touched = [
-					...missingKeys(currentSections, nextSections),
-					...addedKeys(currentSections, nextSections),
+					...missingKeys(currentPayloads, nextPayloads),
+					...addedKeys(currentPayloads, nextPayloads),
 				];
 				return { ok: false, reason: { kind: 'declaration-changed', sectionIds: touched } };
 			}
 		}
-		next.sections = nextSections;
+		// 落回：把裸 payload 合回 `{label, payload}`（已有键沿用卡上的 label，编辑不改它）。
+		// ⚠ 新增键取不到模板 label ⇒ **整份拒绝**，不写 `sectionId` 假值。
+		const merged = mergeLabels(ports, card, nextPayloads);
+		if (!merged.ok) {
+			return { ok: false, reason: { kind: 'section-label-missing', sectionIds: merged.sectionIds } };
+		}
+		next.sections = merged.value;
 	}
 
 	// ── ④ relations：一律过 ④ 的收口（可编辑 / 可新建 / 可多条 —— 用户 13:18） ──

@@ -14,12 +14,19 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib"
+    "lib",
+    "templates"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.host.json",
     "typecheck": "tsc -p tsconfig.json",
     "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "engines": {
+    "node": ">=22.15"
   },
   "peerDependencies": {
     "@deepseek-ai/schemastery": "*"

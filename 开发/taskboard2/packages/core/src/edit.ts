@@ -17,7 +17,7 @@
  */
 
 import { coreError, describeReject, type CoreError } from './errors.js';
-import type { Card, Ports, SectionSpec } from './ports.js';
+import type { Card, CardSection, Ports, SectionSpec } from './ports.js';
 import { appendHistory, type HistoryEvent } from './status-write.js';
 import type { ActiveWorkspace } from './workspace.js';
 import { findCard } from './workspace.js';
@@ -80,26 +80,43 @@ export function updateBody(
 		return { ok: false, error: coreError('CARD_NOT_FOUND', `找不到这张卡：${cardId}`, { cardId }) };
 	}
 
-	/* ① 章节必须在模板里，或本来就是卡上已有的（旧模板残留也允许改）。 */
-	const sections = sectionsOfCard(ports.types, card);
-	if (sections === undefined) {
-		return {
-			ok: false,
-			error: coreError('TEMPLATE_MISSING', `找不到模板「${card.template.ref}」`, {
-				templateRef: card.template.ref,
-			}),
-		};
+	/*
+	 * ① 章节定位 —— **降级友好**：不改 label，只改 payload。
+	 *
+	 * - **卡上已有的章** ⇒ 直接允许改（**不查模板**）—— 用户 14:50「可以展示，没有行为」下，
+	 *   已有章节的内容仍可编辑（label 在卡上，不依赖模板）；
+	 * - **卡上没有的章**（新章节）⇒ 必须查模板拿 `label` ⇒ 模板不可用则拒绝
+	 *   （用 `SECTION_LABEL_UNAVAILABLE`，**不是** `TEMPLATE_MISSING` —— 后者意思是"模板不存在"，
+	 *   而这里的真实原因是"新章节需要模板提供 label，但模板不可用"）。
+	 */
+	const existing = Object.hasOwn(card.sections, sectionId);
+	let label: string | undefined;
+
+	if (existing) {
+		/* 已有章节：label 就在卡上，**完全不碰模板**（降级模式下也能改）。 */
+		label = card.sections[sectionId]?.label;
+	} else {
+		const specs = sectionsOfCard(ports.types, card);
+		const known = specs?.find((section) => section.id === sectionId);
+		if (known === undefined) {
+			return {
+				ok: false,
+				error: coreError(
+					'SECTION_LABEL_UNAVAILABLE',
+					`章节「${sectionId}」不在卡上，且模板「${card.template.ref}」不可用或没有这一章，无法确定章节名。`,
+					{ cardId, sectionId, templateRef: card.template.ref },
+				),
+			};
+		}
+		label = known.label;
 	}
 
-	const known = sections.find((section) => section.id === sectionId);
-	const existing = Object.hasOwn(card.sections, sectionId);
-
-	if (known === undefined && !existing) {
+	if (label === undefined) {
 		return {
 			ok: false,
 			error: coreError(
-				'EDIT_VALIDATION_FAILED',
-				`章节「${sectionId}」不在模板「${card.template.ref}」里。`,
+				'SECTION_LABEL_UNAVAILABLE',
+				`章节「${sectionId}」在卡上没有章节名副本，且模板不可用。`,
 				{ cardId, sectionId, templateRef: card.template.ref },
 			),
 		};
@@ -119,8 +136,8 @@ export function updateBody(
 		};
 	}
 
-	/* ③ ⑦ 出计划（键集守卫 / 声明冻结都在它那儿）。 */
-	const nextSections = { ...card.sections, [sectionId]: payload };
+	/* ③ ⑦ 出计划（键集守卫 / 声明冻结都在它那儿）。**只换 payload，label 保持原值**。 */
+	const nextSections = { ...card.sections, [sectionId]: { label, payload } };
 	const plan = ports.cards.planChange(card, { editable: { sections: nextSections }, at });
 	if (!plan.ok) {
 		return {
@@ -193,35 +210,57 @@ export function updateCard(
 		return { ok: false, error: coreError('CARD_NOT_FOUND', `找不到这张卡：${cardId}`, { cardId }) };
 	}
 
-	/* 新增章节必须属于模板（⑦ 不查模板）。 */
+	/*
+	 * 新增章节必须能拿到 `label`（⑦ 不查模板）。
+	 *
+	 * **降级友好**：卡上已有的章**不需要模板**（label 在卡上）；
+	 * 只有**新增**的章需要从模板抄 label ⇒ 模板不可用则拒绝（`SECTION_LABEL_UNAVAILABLE`）。
+	 *
+	 * ⚠ 校验通过后要把 `label` **补进 `editable.sections`** —— ⑦ 收到的必须已是
+	 * `{ [sectionId]: { label, payload } }`（⑦ 不查模板，拿不到 label）。
+	 */
+	let effectiveEditable = editable;
+
 	if (editable['sections'] !== undefined) {
-		const sections = sectionsOfCard(ports.types, card);
-		if (sections === undefined) {
-			return {
-				ok: false,
-				error: coreError('TEMPLATE_MISSING', `找不到模板「${card.template.ref}」`, {
-					templateRef: card.template.ref,
-				}),
-			};
-		}
-		const allowed = new Set(sections.map((section) => section.id));
-		const added = addedSectionIds(
-			card.sections,
-			editable['sections'] as Record<string, unknown>,
-		).filter((id) => !allowed.has(id));
+		const nextSections = editable['sections'] as Record<string, unknown>;
+		const added = addedSectionIds(card.sections, nextSections);
+
 		if (added.length > 0) {
-			return {
-				ok: false,
-				error: coreError(
-					'EDIT_VALIDATION_FAILED',
-					`新增的章节不在模板里：${added.join(' / ')}`,
-					{ cardId, sectionIds: added },
-				),
-			};
+			const specs = sectionsOfCard(ports.types, card);
+			const byId = new Map((specs ?? []).map((section) => [section.id, section]));
+
+			const unresolved = added.filter((id) => byId.get(id)?.label === undefined);
+			if (unresolved.length > 0) {
+				return {
+					ok: false,
+					error: coreError(
+						'SECTION_LABEL_UNAVAILABLE',
+						`新增章节在卡上不存在，且模板「${card.template.ref}」不可用或没有这些章，无法确定章节名：${unresolved.join(' / ')}`,
+						{ cardId, sectionIds: unresolved, templateRef: card.template.ref },
+					),
+				};
+			}
 		}
+
+		/*
+		 * 把 `editable.sections` 归一成 `{ label, payload }`：
+		 * - 已有章 ⇒ label 取卡上那份（**不覆盖**，用户 14:47「存副本」的意思就是它不随模板变）；
+		 * - 新增章 ⇒ label 取模板。
+		 */
+		const normalized: Record<string, { label: string; payload: unknown }> = {};
+		for (const [id, value] of Object.entries(nextSections)) {
+			const fromCard = card.sections[id]?.label;
+			const raw = value as Partial<CardSection> | undefined;
+			const payload =
+				raw !== null && typeof raw === 'object' && 'payload' in raw ? raw.payload : value;
+			const label = fromCard ?? (raw !== null && typeof raw === 'object' ? raw.label : undefined);
+			if (label === undefined) continue; /* 已被上面的 unresolved 检查挡掉 */
+			normalized[id] = { label, payload };
+		}
+		effectiveEditable = { ...editable, sections: normalized };
 	}
 
-	const plan = ports.cards.planChange(card, { editable, at });
+	const plan = ports.cards.planChange(card, { editable: effectiveEditable, at });
 	if (!plan.ok) {
 		return {
 			ok: false,

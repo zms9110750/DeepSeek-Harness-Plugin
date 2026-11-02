@@ -21,9 +21,9 @@
  * 剩下的唯一依据是模板为该章声明的 `default`。没有它就没有任何合法初值可造 ——
  * 猜一个 `$type` 等于替模板作者做决定。
  *
- * ⚠ **实测：17 个模板 52 章里 8 章没有 `default`**（`delivery.yaml` 全部三章、
- *   `question.yaml` 的 `blocked` 等）⇒ 这条报错会真的触发，是**模板内容问题**，
- *   报错信息要能指出是哪一章。
+ * ⚠ **当前 17 个模板 50 章全部有 `default`** ⇒ 这条报错在现有模板集上**不可达**；
+ *   保留是因为**模板可新增**（用户 11:26「模板可以改」）、新模板可能漏写。
+ *   一旦触发，报错信息必须能指出是哪一章。
  *
  * ## 丢弃的 payload 不被持久化
  *
@@ -33,7 +33,7 @@
 
 import { coreError, describeReject, type CoreError } from './errors.js';
 import { allocateId } from './ids.js';
-import type { Card, Ports } from './ports.js';
+import type { Card, CardSection, Ports } from './ports.js';
 import { applyStatus, type HistoryEvent } from './status-write.js';
 import { assertSectionsComplete } from './validate.js';
 import type { ActiveWorkspace } from './workspace.js';
@@ -133,15 +133,18 @@ export function forkCard(
 	 * `accepts` 已彻底移除（用户 11:26）⇒ "从候选 action 里挑一个"的依据不存在了。
 	 * 现在唯一的依据是模板为该章声明的 `default`。
 	 * **没有 `default` ⇒ 报错，不猜**（猜一个 action 就是替模板作者做决定）。
+	 *
+	 * ⚠ **补的必须是 `{ label, payload }`**（用户 14:47 卡上存章节名副本）：
+	 * 缺的章在源卡上不存在，**label 只能从新模板抄** —— 所以这里两样一起补。
 	 */
-	const payloads: Record<string, unknown> = { ...preview.newCard.sections };
+	const sections: Record<string, CardSection> = { ...preview.newCard.sections };
 	const filled: FilledRecord[] = [];
 
 	for (const section of preview.missingSections) {
 		const spec = newSections.find((item) => item.id === section.sectionId);
 		const fallback = spec?.default;
 
-		if (fallback === undefined) {
+		if (fallback === undefined || spec === undefined) {
 			return {
 				ok: false,
 				error: coreError(
@@ -152,16 +155,19 @@ export function forkCard(
 			};
 		}
 
-		/* 深拷贝：`default` 来自注册表，新卡要独立持有。 */
-		payloads[section.sectionId] = structuredClone(fallback);
+		sections[section.sectionId] = {
+			label: spec.label,
+			/* 深拷贝：`default` 来自注册表，新卡要独立持有。 */
+			payload: structuredClone(fallback),
+		};
 		filled.push({ sectionId: section.sectionId });
 	}
 
-	/* ⑤ 章节校验（**与新建卡同一个闸门、同一个强度**） */
+	/* ⑤ 章节校验（**与新建卡同一个闸门、同一个强度**）—— 校验前剥 payload。 */
 	const chapterCheck = assertSectionsComplete(
 		{ types: ports.types, actions: ports.actions },
 		templateRef,
-		payloads,
+		sections,
 	);
 	if (!chapterCheck.ok) {
 		return {
@@ -198,8 +204,8 @@ export function forkCard(
 			return;
 		}
 
-		/* 用补齐后的 payloads 覆盖 ⑦ 给的 sections（⑦ 只保留了新模板里存在的章）。 */
-		const base: Card = { ...plan.newCard, sections: payloads };
+		/* 用补齐后的 `{ label, payload }` 覆盖 ⑦ 给的 sections（⑦ 只保留了新模板里存在的章）。 */
+		const base: Card = { ...plan.newCard, sections };
 
 		/*
 		 * ── 收口：**初值**（`mode:'init'`）──

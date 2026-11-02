@@ -6,8 +6,21 @@
  * ## 为什么依赖都挂在这里
  *
  * ①–⑦ 各自只做自己的判断，**谁先问谁、问完写什么**只有核心知道。
- * 所以核心是唯一允许有包依赖的层：它 inject 全部 0–1 层，并额外持有 YAML 解析器
- * （模板文件由核心读取并解析 —— ③ 只收已解析对象，③ 零依赖、不碰 I/O）。
+ * 所以核心是唯一允许有包依赖的层：它 inject 全部 0–1 层。
+ *
+ * ## ⚠ 模板加载**不在**本包（`【用户指令，2026-11-02 14:50】`）
+ *
+ * > 「那他就管。他的行为确实是注册的。但是初始化的时候自己注册一些默认的也很合理吧。」
+ * > 「是的。他要去读yaml。读失败了要提供报错能力。」
+ * > 「但是如果他出错了，core可以继续开。」
+ *
+ * ⇒ **读 YAML / 解析 / 注册 / 标记就绪，全部归 ③**。⑧ **不再读文件、不再有 `yaml` 依赖**。
+ * ⇒ ⑧ 只从 ③ 读**一个事实**：`isTemplateRegistryReady()`，用它决定走不走降级模式。
+ *
+ * ## 降级模式（用户 14:50「可以展示，没有行为」）
+ *
+ * 模板未就绪时：**读卡照常**（卡上存了章节名副本）、**状态转移 / 建卡 / 级联全拒**。
+ * ⇒ 具体哪些方法过闸见 `facade.ts` 的 `requireTemplates`。
  *
  * ## 核心的三条硬边界
  *
@@ -20,19 +33,16 @@
  * ## 启动顺序（`apply` 内）
  *
  * ```
- * ① 等 ②③ 就绪（inject 保证对方的 apply 先跑）
- * ② 读 templates/ → 注册进 ③ → 标记注册表就绪
- * ③ 延迟构造门面：不在 apply 里读 ctx.<service>（后续服务可能还没 provide）
- * ④ provide('taskboard2Core', facade)
+ * ① 等各上游就绪（inject 保证对方的 apply 先跑）
+ * ② 延迟构造门面：不在 apply 里读 ctx.<service>（后续服务可能还没 provide）
+ * ③ provide('taskboard2Core', facade)
  * ```
  *
  * 职责边界见 `docs/08-core.md`。
  */
 
-import type { CoreError } from './errors.js';
 import { createFacade, type CoreService } from './facade.js';
-import type { Ports, TypesRegistry } from './ports.js';
-import { loadTemplates, type LoadTemplatesResult } from './templates.js';
+import type { Ports } from './ports.js';
 
 export const name = 'taskboard2-core';
 
@@ -50,8 +60,9 @@ export const name = 'taskboard2-core';
  *   taskboard2Workgroup  ← ⑥ workgroup
  *   taskboard2Cards      ← ⑦ taskcard
  *
- * ⚠ ③④⑤ 目前只有静态导出、尚**未** `provide`。若它们不补 `provide`，
- *   ⑧ 会永远停在「等待依赖」。⇒ **服务名由上游定，本表跟随上游，不在核心里加别名映射。**
+ * ⚠ **`taskboard2Types` 仍然必需** —— 虽然模板加载归了 ③，但 `resolve` / `sectionsOf` /
+ *   `TaskState` / `deriveStatus` / `isTemplateRegistryReady` 都还在用它。
+ *   ⇒ 删模板加载**不动 inject 清单**。
  */
 export const inject = [
 	'taskboard2Store',
@@ -75,56 +86,14 @@ interface ApplyContext {
 	readonly [service: string]: unknown;
 }
 
-/** 启动期编排的结果（供测试与诊断读）。 */
-export interface StartupReport {
-	readonly templates: LoadTemplatesResult;
-	/** 非空 ⇒ 启动应被视为失败（调用方 / 宿主决定是否中止）。 */
-	readonly failures: readonly CoreError[];
-}
-
-/**
- * 启动期：读模板并注册进 ③。
- *
- * 单独导出，便于测试直接调用（不必跑 Cordis）。
- *
- * ⚠ **不再需要 ② 的 `actionTypes`** —— `accepts` 移除后（用户 11:26），
- * 注册期不再校验"章节接受哪些 action"，所以模板注册**不再等 ②**。
- * ⇒ 唯一前置是 ③ 的注册面。
- *
- * @param registry ③ 的注册面（`registerTemplate` / `markTemplateRegistryReady`）。
- */
-export function bootstrapTemplates(registry: TypesRegistry): StartupReport {
-	const templates = loadTemplates({ registry });
-	return { templates, failures: templates.failures };
-}
-
 export function apply(ctx: ApplyContext): void {
 	/*
-	 * 模板注册只需要 ③ 的注册面（`accepts` 移除后不再依赖 ② 的 action 清单）。
-	 * `inject` 保证上游的 `apply` 先跑。
-	 */
-	const registry = ctx['taskboard2Types'] as TypesRegistry | undefined;
-
-	if (registry !== undefined && typeof registry.registerTemplate === 'function') {
-		const report = bootstrapTemplates(registry);
-		/*
-		 * 模板加载失败**不静默**：打印出来（宿主能看见），但**不抛** ——
-		 * 抛错会让整个 bundle 装配失败，而其它包仍可能可用（诊断价值更高）。
-		 * 就绪状态由 `markTemplateRegistryReady` 控制：零失败时才标记就绪，
-		 * 于是"未就绪"会在第一次 `resolve` 时以一条明确的错误暴露，而不是半套模板静默生效。
-		 */
-		if (report.failures.length > 0) {
-			console.error('[taskboard2-core] 模板加载失败：');
-			for (const failure of report.failures) console.error(`  · [${failure.code}] ${failure.message}`);
-		}
-	} else {
-		console.error('[taskboard2-core] 模板未加载：缺少 taskboard2Types 服务。');
-	}
-
-	/*
-	 * ② 门面**延迟构造**：`apply` 执行时后续服务未必已经 provide
+	 * 门面**延迟构造**：`apply` 执行时后续服务未必已经 provide
 	 * （inject 只保证对方的 apply 先跑，不保证 `ctx.<name>` 此刻可读）。
 	 * 所以这里不抓取端口，只提供一个"每次访问时现取"的转发层。
+	 *
+	 * ⚠ **本函数不再做任何事**（模板加载已交给 ③）——
+	 *   只构造门面并 provide。原来那段"读模板 → 注册 → 标记就绪"整体删除。
 	 */
 	let facade: CoreService | undefined;
 
@@ -171,8 +140,13 @@ export function apply(ctx: ApplyContext): void {
 /* ── 导出（供 ⑨⑪ 与测试直接使用） ── */
 
 export { createFacade, type CoreService, type FacadeOptions, type Failure, type WriteResult } from './facade.js';
-export { coreError, describeReject, type CoreError, type CoreErrorCode } from './errors.js';
-export { loadTemplates, findTemplatesDir, type LoadTemplatesResult } from './templates.js';
+export {
+	coreError,
+	describeReject,
+	fromTemplateCode,
+	type CoreError,
+	type CoreErrorCode,
+} from './errors.js';
 export {
 	createCard,
 	deriveDefaults,
@@ -190,7 +164,7 @@ export {
 	type StatusWriteOutcome,
 	type HistoryEvent,
 } from './status-write.js';
-export { assertSectionsComplete, issuesForUI } from './validate.js';
+export { assertSectionsComplete, issuesForUI, payloadsOf } from './validate.js';
 export {
 	recomputeUpward,
 	RECOMPUTE_ACTION,
