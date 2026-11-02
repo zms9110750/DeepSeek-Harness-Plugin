@@ -84,7 +84,6 @@ export function forkCard(
 	srcId: string,
 	options: {
 		readonly templateRef?: string;
-		readonly kind?: string;
 		readonly at: number;
 	},
 ): ForkResult {
@@ -109,7 +108,6 @@ export function forkCard(
 	const preview = ports.cards.planFork(src, newSections, {
 		id: src.id, // 占位；真正的编号在事务内由 ③ 发
 		templateRef,
-		...(options.kind === undefined ? {} : { kind: options.kind }),
 		at: options.at,
 	});
 	if (!preview.ok) {
@@ -194,8 +192,7 @@ export function forkCard(
 		const plan = ports.cards.planFork(src, newSections, {
 			id: allocated.id,
 			templateRef,
-			...(options.kind === undefined ? {} : { kind: options.kind }),
-			at: options.at,
+				at: options.at,
 		});
 		if (!plan.ok) {
 			failure = coreError('CREATE_VALIDATION_FAILED', describeReject(plan.reason as never), {

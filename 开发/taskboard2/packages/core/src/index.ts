@@ -97,6 +97,18 @@ export function apply(ctx: ApplyContext): void {
 	 */
 	let facade: CoreService | undefined;
 
+	/*
+	 * 端口组装。
+	 *
+	 * ⚠ **`types` 是整体透传**（`ctx['taskboard2Types']`），不是逐字段解构 ——
+	 * 所以 ③ 的 `provide` 里挂了多少方法，这里就自动有多少
+	 * （`TaskState` / `DRAFT` / `isEndedStatus` / `adoptTargetOf` / `isTemplateRegistryReady` /
+	 *  `resolve` / `sectionsOf` / `deriveStatus` / `kindLetter` / `nextId` …）。
+	 *
+	 * ⇒ **新增 ③ 的能力时不用改这里**；只有 `Ports['types']` 的**类型声明**要跟上 `ports.ts`。
+	 * ⇒ 反过来说：`ports.ts` 里声明了但 ③ 没 provide 的方法，**运行时是 `undefined`**
+	 *   （类型能过、调用即抛）—— 这是本包唯一"类型骗人"的地方，新增方法时两边都要核。
+	 */
 	const portsOf = (): Ports => ({
 		store: ctx['taskboard2Store'] as Ports['store'],
 		actions: ctx['taskboard2Actions'] as Ports['actions'],

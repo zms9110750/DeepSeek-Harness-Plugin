@@ -53,6 +53,7 @@ import {
 	KIND_DEFS,
 	registerKind,
 	getKind,
+	hasKind,
 	listKinds,
 	initialStatus,
 	kindLetter,
@@ -90,6 +91,7 @@ import {
 	type TransitionCtx,
 	type TransitionVerdict,
 	canTransition,
+	adoptTargetOf,
 } from './transition.js';
 
 import { type ParsedId, parse, normalize, toDisplay, nextId } from './id.js';
@@ -164,9 +166,18 @@ export function apply(ctx: ProvideContext): void {
 		/* 规则（⑦ 判决 / ⑧ 计算态重算） */
 		initialStatus,
 		kindLetter,
+		/*
+		 * 分类是否存在 —— **不靠异常**的查询入口。
+		 *
+		 * 给 ⑧ 校验用户可输入的分类参数用（如 `createCard` 的 `input.kind`）：
+		 * 一处校验，下游所有"未注册分类 ⇒ 抛错"的函数都不会被触发。
+		 */
+		hasKind,
 		/* 子任务过滤（⑦ 的转移闸复用，策略只在此一处） */
 		liveChildren,
 		canTransition,
+		/* 采纳目的地（⑦ 的 planAdopt 必须调它，不自己写分类名单） */
+		adoptTargetOf,
 		deriveStatus,
 		/* 模板（③ 自己加载；⑦⑧ 只读查询） */
 		registerTemplate,
@@ -211,6 +222,7 @@ export {
 	KIND_DEFS,
 	registerKind,
 	getKind,
+	hasKind,
 	listKinds,
 	initialStatus,
 	kindLetter,
@@ -244,6 +256,7 @@ export {
 	type TransitionCtx,
 	type TransitionVerdict,
 	canTransition,
+	adoptTargetOf,
 	/* id */
 	type ParsedId,
 	parse,

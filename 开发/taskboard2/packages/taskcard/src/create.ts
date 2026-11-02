@@ -53,7 +53,6 @@ export interface CreateInput {
 	 * 分类。**内部模板可省**（用模板的 kind）；外部 / 多分类模板**必须显式给**。
 	 * 省略且模板不足以确定分类时 ⇒ 拒绝（⑦ 不猜）。
 	 */
-	kind?: string;
 	/** 由 ⑧ 在事务内盖时间戳；⑦ 不取时钟。省略则不写历史。 */
 	at?: number;
 }
@@ -132,10 +131,14 @@ export function planCreate(ports: Ports, input: CreateInput, all: readonly Card[
 	}
 
 	// ② 分类：显式给就用显式值；否则用模板的 kind（内部模板 1:1）。
-	const kind = input.kind ?? template.kind;
+	const kind = template.kind;
 
 	// ③ 初始状态由 ③ 给，⑦ 不写状态字面量。
+	// `undefined` = ③ 拒绝判决（分类未注册）⇒ 数据问题，不抛，走 reason。
 	const status = ports.types.initialStatus(kind);
+	if (status === undefined) {
+		return { ok: false, reason: { kind: 'kind-unavailable', kindId: kind } };
+	}
 
 	// ④ 关系收口：卡上的 relations 必须来自 ④（`current` 传空关系，等价于"从零开始"）。
 	const baseRelations: Relations = input.relations ?? emptyRelations();

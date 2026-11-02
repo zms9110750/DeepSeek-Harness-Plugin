@@ -87,7 +87,6 @@ export interface ForkInput {
 	/** 新模板名。省略则沿用源卡的模板引用。 */
 	templateRef?: string;
 	/** 分类。省略则用模板的 `kind`。 */
-	kind?: string;
 	/** 由 ⑧ 在事务内盖；⑦ 不取时钟。省略则不写历史。 */
 	at?: number;
 }
@@ -115,8 +114,12 @@ export function planFork(
 	if (template === undefined) {
 		return { ok: false, reason: { kind: 'template-missing', ref: templateRef } };
 	}
-	const kind = input.kind ?? template.kind;
+	const kind = template.kind;
+	// `undefined` = ③ 拒绝判决（分类未注册）⇒ 数据问题，不抛，走 reason。
 	const status = ports.types.initialStatus(kind);
+	if (status === undefined) {
+		return { ok: false, reason: { kind: 'kind-unavailable', kindId: kind } };
+	}
 
 	// ── ③ 两个清单：纯键集运算 ──
 	const wantIds = new Set(newTemplateSections.map((section) => section.id));

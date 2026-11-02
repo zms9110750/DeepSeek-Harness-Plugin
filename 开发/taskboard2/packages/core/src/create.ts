@@ -48,8 +48,6 @@ export interface CreateCardInput {
 	/** 关系。 */
 	readonly relations?: { readonly parent?: string; readonly links?: readonly { readonly label: string; readonly to: string }[] };
 	readonly note?: string;
-	/** 分类覆盖。省略 ⇒ 用模板的 `kind`。 */
-	readonly kind?: string;
 	readonly origin: CreateOrigin;
 	/** 由门面盖时间戳；本模块不取时钟。 */
 	readonly at: number;
@@ -263,7 +261,6 @@ export function createCard(ports: Ports, workspace: ActiveWorkspace, input: Crea
 				sections,
 				...(input.relations === undefined ? {} : { relations: input.relations }),
 				...(input.note === undefined ? {} : { note: input.note }),
-				...(input.kind === undefined ? {} : { kind: input.kind }),
 				at: input.at,
 			},
 			current,

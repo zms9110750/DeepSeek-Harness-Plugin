@@ -182,7 +182,16 @@ const GOAL: KindDef = {
 const DESIGN: KindDef = {
 	id: 'design',
 	letter: 'D',
-	initialStatus: S.AUTH_REQUIRED,
+	/*
+	 * 初始 = 草稿（`UNSPECIFIED`），**不是 `AUTH_REQUIRED`**。
+	 *
+	 * 用户 `16:05` 裁定：设计卡建出来应该是草稿，**采纳后才变「需要授权」**。
+	 * ⇒ 采纳这条转移（`草稿 → 需要授权`）才有起点；此前 `initialStatus` 直接是
+	 *   `AUTH_REQUIRED`，导致矩阵里那条转移**永远走不到**。
+	 *
+	 * ⚠ `baseStatus` 仍是 `AUTH_REQUIRED` —— 采纳后的落点没变，采不采纳是另一回事。
+	 */
+	initialStatus: S.UNSPECIFIED,
 	baseStatus: () => S.AUTH_REQUIRED,
 	computeRules: [
 		{
@@ -248,7 +257,15 @@ const WORK: KindDef = {
 const RECORD: KindDef = {
 	id: 'record',
 	letter: 'R',
-	initialStatus: S.AUTH_REQUIRED,
+	/*
+	 * 初始 = 草稿（`UNSPECIFIED`），**不是 `AUTH_REQUIRED`**。
+	 *
+	 * 用户 `16:05` 裁定：记录卡建出来应该是草稿，**采纳后才变「需要授权」**。
+	 * 与 `design` 同一裁定、同一理由（采纳那条转移要有起点）。
+	 *
+	 * ⚠ `baseStatus` 仍是 `AUTH_REQUIRED`。
+	 */
+	initialStatus: S.UNSPECIFIED,
 	baseStatus: () => S.AUTH_REQUIRED,
 	computeRules: [],
 	quota: [],
@@ -324,11 +341,40 @@ export function registerKind(def: KindDef): void {
 }
 
 /**
+ * 某分类**是否已注册**。
+ *
+ * 给调用方一个**不靠异常**的查询途径。
+ *
+ * ## 为什么需要它
+ *
+ * 「分类不存在」是**数据现实**，不是编程错误：
+ *   - 旧卡引用了已注销的分类（mod 被卸载 / 分类被删）；
+ *   - 调用方传了拼错的 `kind`（**用户 / AI 可输入**）。
+ *
+ * ③ 的多数函数（`initialStatus` / `kindLetter` / `deriveStatus` / `canTransition` /
+ * `adoptTargetOf`）对未注册分类**抛错**（因为"我算不出结果"）。
+ * ⇒ 若调用方只能靠 `try/catch` 判断分类是否存在，**每个入口都要包一次** = 同一逻辑多处实现。
+ * ⇒ **本函数让"存在与否"成为可查询的事实**，调用方在入口查一次即可。
+ *
+ * ## 与 `getKind` 的区别
+ *
+ * - `getKind` 返回**定义对象**（需要读 `initialStatus` / `computeRules` 等字段时用）；
+ * - `hasKind` **只回答是 / 否**（只需要"能不能用这个分类"时用）。
+ *
+ * 两者都**不抛错**。需要"拿到定义、没有就抛"的语义时，用 `initialStatus` 一类的函数。
+ */
+export function hasKind(kind: string): boolean {
+	return KINDS.has(kind);
+}
+
+/**
  * 取分类的编号字母（单个大写字母）。
  *
  * 编号前缀 = **分类字母 + 模板的 `codePrefix`**；分类这一段只能从这里取，
  * **模板配置不写它**。未注册的分类 ⇒ 抛错（调用方违约，不猜字母 ——
  * 猜一个会造出撞号的前缀，比失败更糟）。
+ *
+ * ⚠ 若调用方只是想**判断能不能取**，先调 `hasKind`，不要靠 catch。
  */
 export function kindLetter(kind: string): string {
 	const def = KINDS.get(kind);
@@ -361,7 +407,35 @@ export function initialStatus(kind: string): TaskState {
 	return def.initialStatus;
 }
 
-/** 某分类的占位状态集合（仅 `work` 非空）。 */
+/**
+ * 某分类的占位状态集合（仅 `work` 非空，其余为空数组）。
+ *
+ * ## ⚠️ 未注册分类 ⇒ 返回 `[]`，**不抛错**（与 `initialStatus` 等不同）
+ *
+ * **这是有意的，不是遗漏**（已裁）：
+ *
+ * | 情况 | 语义 | 本函数 |
+ * |---|---|---|
+ * | 分类已注册、但该分类没有配额（`goal` / `design` / `record`） | **合法答案**："这个分类不占位" | 返回 `[]` ✅ |
+ * | 分类**未注册** | **无法回答**："我不知道这个分类占不占位" | 返回 `[]` ⚠️ |
+ *
+ * **⇒ 两者在本函数里返回相同值** ⇒ **调用方若需要区分，必须先调 `hasKind`**：
+ * ```ts
+ * if (!hasKind(kind)) {
+ *   // 分类不存在，是数据/输入问题，单独处理
+ * }
+ * const quota = quotaStatesOf(kind);   // 此时 [] 一定是"真的没有配额"
+ * ```
+ *
+ * ## 为什么不像 `initialStatus` 那样抛
+ *
+ * `initialStatus` / `kindLetter` / `deriveStatus` 对未注册分类抛错，是因为**它们算不出结果**
+ * （必须返回一个确定的 `TaskState` / 字母 / 状态）。
+ * 而本函数的返回值是**集合**，**空集合本身就是合法返回值** ⇒ 没有"算不出"这个中间态。
+ *
+ * ⚠ **代价（如实记录）**：它把"没有配额"与"分类不存在"压成同一个返回值。
+ * 这是本包**唯一**一处未注册分类不抛错的地方 —— 调用方要区分就得自己先 `hasKind`。
+ */
 export function quotaStatesOf(kind: string): readonly TaskState[] {
 	return KINDS.get(kind)?.quota ?? [];
 }

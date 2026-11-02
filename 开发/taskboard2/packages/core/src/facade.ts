@@ -79,14 +79,13 @@ export interface CoreService {
 		readonly sections?: Readonly<Record<string, unknown>>;
 		readonly relations?: { readonly parent?: string; readonly links?: readonly { readonly label: string; readonly to: string }[] };
 		readonly note?: string;
-		readonly kind?: string;
 		readonly origin: CreateOrigin;
 	}): WriteResult;
 	/** UI 单章编辑（只校验 L1）。 */
 	updateBody(cardId: string, sectionId: string, payload: unknown): WriteResult;
 	/** 整卡编辑（标题 / 备注 / 章节 / 关系）。 */
 	updateCard(cardId: string, editable: Readonly<Record<string, unknown>>): WriteResult;
-	fork(cardId: string, options?: { readonly templateRef?: string; readonly kind?: string }): ReturnType<typeof forkCard>;
+	fork(cardId: string, options?: { readonly templateRef?: string }): ReturnType<typeof forkCard>;
 	/**
 	 * 采纳（**v2 签名**：加了 `principal` / `actor`）。
 	 *
@@ -129,6 +128,36 @@ export interface WriteSuccess {
 }
 
 export type WriteResult = WriteSuccess | Failure;
+
+/**
+ * 会被"最后一道网"包住的**写方法**名单。
+ *
+ * ## 为什么是显式列表，而不是"包所有方法"
+ *
+ * 读方法（`list` / `get` / `search` / `currentWorkspaceId` / `listWorkspaces` /
+ * `activate` / `templatesStatus`）的返回形状**不是** `{ ok, error }` 系的：
+ *   · `list` 返回 `Card[]`；
+ *   · `activate` 返回 `{ ok:true, count } | Failure`（**没有 `card`**）。
+ * ⇒ 把它们也包成 `{ ok:false, error }` 会**破坏返回类型**（调用方拿到的形状对不上）。
+ *
+ * ⇒ 只包**失败形状统一**的写方法，一个一个列出来（**不靠猜返回值形状**）。
+ *
+ * ⚠ `runPlan` 也在这个名单里 —— 它的成功形状是 `{ ok:true, changed, recomputed }`
+ * （与 `WriteResult` 不同，**没有 `card`**），但**失败形状同样是 `Failure`**
+ * ⇒ 兜底只产失败值，所以**同一个包装器适用**。
+ */
+const WRITE_METHODS = [
+	'create',
+	'updateBody',
+	'updateCard',
+	'fork',
+	'adopt',
+	'claim',
+	'release',
+	'remove',
+	'transition',
+	'runPlan',
+] as const;
 
 /**
  * 造门面。
@@ -205,7 +234,7 @@ export function createFacade(options: FacadeOptions): CoreService {
 		return active === undefined ? undefined : findCard(active, cardId);
 	}
 
-	return {
+	const facade: CoreService = {
 		/* ── 空间 ── */
 		listWorkspaces(includeArchived = false) {
 			return ports.store.listWorkspaces(includeArchived);
@@ -325,7 +354,7 @@ export function createFacade(options: FacadeOptions): CoreService {
 			return { ok: true, card: result.card, recomputed: result.recomputed };
 		},
 
-		fork(cardId: string, options?: { readonly templateRef?: string; readonly kind?: string }) {
+		fork(cardId: string, options?: { readonly templateRef?: string }) {
 			/* 降级模式：fork 要选新模板 ⇒ 过闸（用户 14:50）。 */
 			const allowed = requireTemplates();
 			if (allowed !== undefined) return allowed;
@@ -333,7 +362,6 @@ export function createFacade(options: FacadeOptions): CoreService {
 			if (!workspace.ok) return workspace;
 			const result = forkCard(ports, workspace.workspace, cardId, {
 				...(options?.templateRef === undefined ? {} : { templateRef: options.templateRef }),
-				...(options?.kind === undefined ? {} : { kind: options.kind }),
 				at: now(),
 			});
 			/*
@@ -409,4 +437,56 @@ export function createFacade(options: FacadeOptions): CoreService {
 			return result;
 		},
 	};
+
+	/*
+	 * ── 最后一道网：门面**绝不把业务异常抛给调用方** ──
+	 *
+	 * ## 为什么需要它（尽管它不该触发）
+	 *
+	 * ⑦ 的契约是「纯函数、返回拒绝原因、不抛错」。**但那个契约目前是假的** ——
+	 * ⑦ 内部有 5 个 `canTransition` 调用点 + `adoptTargetOf` / `initialStatus`，
+	 * 而 ③ 对这些**未注册分类一律抛错**（数据现实里"旧卡引用了已注销的分类"可达）。
+	 * ⇒ ⑦ 的收口**已派但未完成** ⇒ ⑧ 不能假定它守约。
+	 *
+	 * ⑧ 是**对外契约的唯一保证人**（⑨⑩ 拿到的必须是 `Failure`，不是异常）。
+	 * ⇒ 异常冒到 Cordis 的调用方会**炸掉整个插件** —— 代价远大于"多一层 try"。
+	 *
+	 * ## 为什么只包 10 个写方法（不是全部）
+	 *
+	 * 见 `WRITE_METHODS` 的注释：读方法的返回形状不是 `{ ok, error }` 系，
+	 * 包成失败值会**破坏返回类型**。⇒ **显式列名，不靠猜形状。**
+	 *
+	 * ## 为什么是"一处循环"而不是"10 个方法各写 try"
+	 *
+	 * 兜底逻辑只有一份 ⇒ 不会出现"补了 9 处漏了 1 处"，
+	 * 也不会出现 10 份实现各自漂移。
+	 *
+	 * ⚠ **触发即告警**：正常路径永不进入 `catch`。若真的进了，说明**上游又违约** ——
+	 *   那是要修上游的信号，不是"用户操作失败"。
+	 */
+	const guarded = facade as unknown as Record<string, unknown>;
+	for (const methodName of WRITE_METHODS) {
+		const original = guarded[methodName];
+		if (typeof original !== 'function') continue;
+
+		guarded[methodName] = function guardedWrite(this: unknown, ...args: unknown[]): unknown {
+			try {
+				return (original as (...a: unknown[]) => unknown).apply(this, args);
+			} catch (error) {
+				console.error(
+					`[taskboard2-core] 门面方法 ${methodName} 抛出异常（上游违约，应修上游）：`,
+					error,
+				);
+				return {
+					ok: false,
+					error: coreError(
+						'INTERNAL_ERROR',
+						`${methodName} 执行失败（这是内部错误，不是操作被拒）：${error instanceof Error ? error.message : String(error)}`,
+					),
+				};
+			}
+		};
+	}
+
+	return facade;
 }

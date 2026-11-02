@@ -289,6 +289,19 @@ export interface TypesPort {
 	 *   · `TEMPLATE_REGISTRY_NOT_READY` 是**时序 bug**（⑧ 认为该就绪、③ 说没有）。
 	 */
 	isTemplateRegistryReady(): boolean;
+	/**
+	 * 采纳的目的地状态（按分类）。
+	 *
+	 * `goal` / `work` ⇒ `SUBMITTED`；`design` / `record` ⇒ `AUTH_REQUIRED`。
+	 *
+	 * ⚠ **必须调 ③ 的，不得自己在 ⑧ 写分类名单** —— ③ 的 `canTransition` 内部的 `isAdopt`
+	 *   也是调这个函数（"哪些分类去哪个状态"全仓只有一处）。
+	 *   若 ⑧ 自己写一份名单，将来加第五类时 ③ 的改了、⑧ 的没改 ⇒ ⑧ 算出 `SUBMITTED`、
+	 *   `isAdopt` 判为假 ⇒ **采纳被拒，而错误是运行期的 `not-draft`**，没人看得出为什么。
+	 *
+	 * ⚠ **未注册分类 ⇒ ③ 会抛错**（不猜、不默认）⇒ 调用方必须 `try/catch` 转成 `CoreError`。
+	 */
+	adoptTargetOf(kind: string): string;
 	nextId(prefix: string, usedIds: readonly string[]): string;
 	/** 转展示形（插连字符）。缺失时本包退回原样返回 —— 展示形只影响 UI，不影响身份。 */
 	toDisplay?(id: string): string;

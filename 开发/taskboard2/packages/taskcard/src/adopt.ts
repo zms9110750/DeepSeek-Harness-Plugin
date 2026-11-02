@@ -3,7 +3,20 @@
  *
  * ## 采纳是什么
  *
- * **纯状态转移**：`未指定 → 提交`（`【用户指令，2026-11-01 03:00】` 批；只能用户）。
+ * **纯状态转移**：从草稿转到一个**按分类决定的目的地**。
+ *
+ * · `goal` / `work` ⇒ 草稿 → **「提交」**（进入计算 / 可领取）
+ * · `design` / `record` ⇒ 草稿 → **「需要授权」**
+ *
+ * `【用户指令，2026-11-02 16:05】`「设计卡 / 记录卡建出来应该是草稿，采纳后才变『需要授权』」
+ * ⇒ 四类初始都是草稿，**采纳是唯一入口**。
+ *
+ * ⚠ **目的地由 ③ 的 `adoptTargetOf(kind)` 给，⑦ 不写分类名单**
+ * （名单在 ③ 只有一份，与 `isAdopt` 同源；抄进 ⑦ 会在加第五类时静默漂移）。
+ *
+ * ⚠ **actor 限制按分类不同**（用户 `13:15`）：`goal` / `work` 只能用户；`design` / `record`
+ * 允许 ai。这条在 ③ 的 `canTransition` 里判，⑦ 只透传 `actor`。
+ *
  * **采纳本身不产生任何关系** —— 取代边在 fork 时就已建好（`05:52`「采纳了才执行取代」
  * 说的是**执行**，不是建立）。
  *
@@ -92,16 +105,35 @@ export function planAdopt(
 
 	// ── ② 目标状态与转移判决：问 ③（⑦ 不自己判） ──
 	//
-	// ⚠ 交给 ③ 的是 **`input.actor`（权限类别）**，不是 `input.principal`（身份）。
+	// **采纳的目的地由 ③ 给**（`ports.types.adoptTargetOf`）：
+	// `goal` / `work` → 「提交」；`design` / `record` → 「需要授权」。
+	// `【用户指令，2026-11-02 16:05】`「设计卡 / 记录卡建出来应该是草稿，采纳后才变『需要授权』」
+	// ⇒ 四类初始都是草稿，**采纳是唯一入口**，而目的地按分类不同。
+	//
+	// ⚠ **⑦ 不写分类名单** —— 名单在 ③ 只有一份（与 `isAdopt` 同源）。抄一份进 ⑦，
+	// 将来加第五类时会静默漂移：⑦ 算出 `SUBMITTED`、③ 判 `isAdopt` 为假 ⇒ 采纳被拒且看不出原因。
+	//
+	// ⚠ 交给 ③ 的判决参数是 **`input.actor`（权限类别）**，不是 `input.principal`（身份）。
 	// ⑦ **不做 `principal → actor` 的映射**（`【用户指令，2026-11-02 14:05】`「各用各的不要映射」）。
-	const target = ports.types.states.SUBMITTED;
-	if (!ports.types.canTransition(card.template.kind, card.status, target, input.actor)) {
-		return { ok: false, reason: { kind: 'not-draft' } };
+	const target = ports.types.adoptTargetOf(card.template.kind);
+	// `undefined` = ③ 拒绝判决（分类未注册）⇒ 数据问题，不抛，走 reason。
+	if (target === undefined) {
+		return { ok: false, reason: { kind: 'kind-unavailable', kindId: card.template.kind } };
+	}
+	const verdict = ports.types.canTransition(card.template.kind, card.status, target, input.actor);
+	if (verdict === undefined) {
+		return { ok: false, reason: { kind: 'kind-unavailable', kindId: card.template.kind } };
+	}
+	if (!verdict) {
+		// ⚠ 走到这里说明 ③ 的 `adoptTargetOf` 与 `canTransition` **互不一致**
+		// （① 已保证是草稿）⇒ 这是**规则分叉**，不是"卡不是草稿"。
+		// 具体分两种：**权限不够**（如 goal/work 由 ai 采纳）或规则冲突。
+		return { ok: false, reason: { kind: 'adopt-not-allowed', actor: input.actor } };
 	}
 
 	const items: PlanItem[] = [];
 
-	// ── ③ 本卡：转「提交」。动因在 events 里，items 不带 reason ──
+	// ── ③ 本卡：转目的地。动因在 events 里，items 不带 reason ──
 	items.push({ op: 'setStatus', cardId: card.id, to: target });
 
 	// ── ④ 逐张处置被取代的旧卡 ──
@@ -136,8 +168,10 @@ export function planAdopt(
 		events.push({
 			at: input.at,
 			action: ADOPT_ACTION,
-			// 身份写进历史：知道"哪个消息循环 / 用户"采纳的。
-			detail: { principal: describePrincipal(input.principal) },
+			// `to` 必须记：`adopt` 对不同分类结果不同（`goal`/`work` → 提交，
+			// `design`/`record` → 需要授权）⇒ 不记 `to` 就分不出"变成了什么"。
+			// `principal` 记身份：知道"哪个消息循环 / 用户"采纳的。
+			detail: { from: card.status, to: target, principal: describePrincipal(input.principal) },
 		});
 		if (edges.length > 0) {
 			events.push({

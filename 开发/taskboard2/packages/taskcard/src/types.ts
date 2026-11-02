@@ -196,6 +196,16 @@ export type RejectReason =
 	| { kind: 'not-draft' }
 	/** 需要非草稿态（fork / 采纳）但当前是草稿。 */
 	| { kind: 'is-draft'; action: 'fork' | 'adopt' }
+	/**
+	 * 采纳被 ③ 的状态机拒绝（**前已确认是草稿**）。
+	 *
+	 * ⚠ **不能再用 `not-draft`**：那是"卡不是草稿"，而走到这里时卡**确实是草稿**
+	 * （① 已校验）⇒ 真正的原因通常是**权限不够**（`goal` / `work` 的采纳只允许用户，
+	 * 由 ai 调用就拒）或 ③ 的 `adoptTargetOf` 与 `canTransition` 分叉。
+	 *
+	 * `actor` 一并带出，⑧ 才能说清"是谁没权限"。
+	 */
+	| { kind: 'adopt-not-allowed'; actor: Actor }
 	| { kind: 'not-claimable'; why: 'already-claimed' | 'not-submitted' | 'quota-exhausted' }
 	| { kind: 'not-releasable'; why: 'not-working' | 'not-holder' }
 	| { kind: 'template-missing'; ref: string }
@@ -239,7 +249,19 @@ export type RejectReason =
 	 * 只管「提交 → 处理中」）⇒ 由 ⑦ 的 `planTransition` 自己判。
 	 * `depsAllEnded` 缺失时**同样拒**（fail-closed：不知道 ≠ 满足）。
 	 */
-	| { kind: 'deps-not-ended' };
+	| { kind: 'deps-not-ended' }
+	/**
+	 * **卡引用了未注册的分类** ⇒ ⑦ 无法问 ③（它对这个分类一律抛错）。
+	 *
+	 * 成因：旧卡 + 新版本把该分类注销了 / 卡上的 `template.kind` 被写坏。
+	 * ⇒ **数据问题，不是调用方违约** ⇒ 走 `Rejection`，**不抛**
+	 * （`【Lead 决定，2026-11-02 16:40】`「新增一个笼统的 reason 比给 6 种各起一个名字好，
+	 * 因为根因相同」）。
+	 *
+	 * ⚠ 覆盖 ⑦ 里**所有**问 ③ 的调用点（`canTransition` / `adoptTargetOf` / `initialStatus`）——
+	 * 它们在 ③ 侧对未注册分类**全部抛错**，⑦ 在 `ports()` 适配层统一转成 `undefined`。
+	 */
+	| { kind: 'kind-unavailable'; readonly kindId: Kind };
 
 /** 拒绝结果。 */
 export interface Rejection {
@@ -306,14 +328,46 @@ export interface ChildSnapshot {
 	readonly deleted: boolean;
 }
 
-/** ③ types 的服务面（⑦ 用到的子集）。 */
+/**
+ * ③ types 的服务面（⑦ 用到的子集）。
+ *
+ * ## ⚠ 三个方法与 ③ 的"抛错"口径
+ *
+ * `initialStatus` / `adoptTargetOf` / `canTransition` 在 **③ 侧对未注册分类一律抛错**。
+ * ⑦ 的契约是**纯函数、失败走 `Rejection`、不抛**（`docs` §6.5）⇒
+ * **⑦ 在 `apply()` 的 `ports()` 适配层统一 `try/catch`，把这三处转成 `undefined`**，
+ * 业务函数看到 `undefined` 就返回 `kind-unavailable`。
+ *
+ * ⇒ 所以这三个方法**返回类型都带 `| undefined`**：`undefined` = "③ 拒绝判决"（数据问题），
+ * 与"判决为否"（业务上不允许）是两件事，**不可混**。
+ */
 export interface TypesPort {
 	/** 九态常量表。 */
 	readonly states: StatesTable;
 	/** 草稿态常量：`states.UNSPECIFIED`（单独给出便于判定式读起来像一句话）。 */
 	readonly DRAFT: TaskState;
-	/** 建卡时的初始状态（按分类）。 */
-	initialStatus(kind: Kind): TaskState;
+	/**
+	 * 建卡时的初始状态（按分类）。
+	 *
+	 * **`undefined` = ① 的分类未注册**（③ 抛错被适配层转掉）⇒ 调用方返回 `kind-unavailable`。
+	 */
+	initialStatus(kind: Kind): TaskState | undefined;
+	/**
+	 * **「采纳」这个动作的目的地状态**（按分类）。
+	 *
+	 * · `goal` / `work` ⇒ 「提交」（`SUBMITTED`）
+	 * · `design` / `record` ⇒ 「需要授权」（`AUTH_REQUIRED`）
+	 *
+	 * `【用户指令，2026-11-02 16:05】`「设计卡 / 记录卡建出来应该是草稿，采纳后才变『需要授权』」
+	 * ⇒ 四类的 `initialStatus` 都是草稿，**采纳是它们唯一的入口**。
+	 *
+	 * ⚠ **这条规则只有 ③ 一份**（③ 的 `isAdopt` 与它同源）——
+	 * ⑦ **不写分类名单**，否则第五类（mod 自带）出现时两边会静默漂移
+	 * （⑦ 算出 `SUBMITTED`、③ 判 `isAdopt` 为假 ⇒ 采纳被拒且看不出原因）。
+	 *
+	 * **`undefined` = 分类未注册** ⇒ 调用方返回 `kind-unavailable`。
+	 */
+	adoptTargetOf(kind: Kind): TaskState | undefined;
 	/**
 	 * 转移判决（⑦ 不自己判，只转问）。
 	 *
@@ -322,6 +376,11 @@ export interface TypesPort {
 	 *
 	 * `ctx` **按需**：③ 只在真正用到某个事实的分支才 require 它，用不到的分支可以不传。
 	 * 已传就必须是完整对象（两个字段都是 boolean），不许只给一半。
+	 *
+	 * **三态返回**：
+	 * · `true` = 允许
+	 * · `false` = 明确不允许（业务拒绝）
+	 * · **`undefined` = 无法判决**（分类未注册，③ 抛错被适配层转掉）⇒ `kind-unavailable`
 	 */
 	canTransition(
 		kind: Kind,
@@ -329,7 +388,7 @@ export interface TypesPort {
 		to: TaskState,
 		actor: Actor,
 		ctx?: TransitionCtx,
-	): boolean;
+	): boolean | undefined;
 	/** 是否属于「完成」组（成功 / 失败 / 取消 / 拒绝）。⑦ 不写状态字面量，只调它。 */
 	isCompletedGroup(status: TaskState): boolean;
 	/**

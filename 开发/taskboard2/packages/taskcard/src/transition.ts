@@ -167,7 +167,12 @@ export function planTransition(
 	//   · `actorHasActiveWork` 是领取的配额，同样只对 `→ WORKING` 有意义。
 	//
 	// ⇒ 不传 = **不编造**。③ 走不到那两个分支，也就不会抛错（按需校验）。
-	if (!ports.types.canTransition(card.template.kind, card.status, input.to, input.actor)) {
+	const verdict = ports.types.canTransition(card.template.kind, card.status, input.to, input.actor);
+	// `undefined` = ③ 拒绝判决（分类未注册）⇒ 数据问题，不抛，走 reason。
+	if (verdict === undefined) {
+		return { ok: false, reason: { kind: 'kind-unavailable', kindId: card.template.kind } };
+	}
+	if (!verdict) {
 		return { ok: false, reason: { kind: 'transition-not-allowed' } };
 	}
 

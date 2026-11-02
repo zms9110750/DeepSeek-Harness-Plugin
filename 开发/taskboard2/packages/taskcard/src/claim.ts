@@ -132,7 +132,18 @@ export function planClaim(
 		depsAllEnded: ctx.depsAllEnded,
 		actorHasActiveWork: ctx.actorHasActiveWork,
 	};
-	if (!ports.types.canTransition(card.template.kind, card.status, target, actor, transitionCtx)) {
+	const verdict = ports.types.canTransition(
+		card.template.kind,
+		card.status,
+		target,
+		actor,
+		transitionCtx,
+	);
+	// `undefined` = ③ 拒绝判决（分类未注册）⇒ 数据问题，不抛，走 reason。
+	if (verdict === undefined) {
+		return { ok: false, reason: { kind: 'kind-unavailable', kindId: card.template.kind } };
+	}
+	if (!verdict) {
 		return { ok: false, reason: { kind: 'not-claimable', why: 'not-submitted' } };
 	}
 

@@ -82,8 +82,37 @@ export function adoptCard(
 		return { ok: false, error: coreError('CARD_NOT_FOUND', `找不到这张卡：${cardId}`, { cardId }) };
 	}
 
-	/* ① ⑦ 出采纳计划（含旧卡终止意图）。`principal` / `actor` 分开传，⑧ 不推断。 */
-	const plan = ports.cards.planAdopt(card, workspace.cards, { principal, actor, at });
+	/*
+	 * ① ⑦ 出采纳计划（含旧卡终止意图）。`principal` / `actor` 分开传，⑧ 不推断。
+	 *
+	 * ## ⚠ 这层 `try/catch` 是**纵深防御**，正常路径永不触发
+	 *
+	 * ⑦ 的契约是「**纯函数、返回拒绝原因、不抛错**」。它内部调 ③ 的
+	 * `adoptTargetOf(card.template.kind)`，而 ③ 对未注册分类是**抛错**（不猜、不默认）。
+	 *
+	 * **⇒ ⑦ 已在自己的 `planAdopt` 里把 ③ 的抛收口**（`【Lead 决定，2026-11-02 16:30】`「已派 ⑦ 收口」）
+	 * **⇒ 所以这个 `catch` 走不到。**
+	 *
+	 * **那为什么还留？** 因为 **⑧ 的对外契约是「返回结果，绝不抛业务异常」**——
+	 * 这条必须由 ⑧ 自己保证，**不能依赖上游守约**。若这里真触发了，说明 **⑦ 又违约了**：
+	 * 那是一条**该修 ⑦ 的信号**，不是"正常错误"。⇒ 转成 `ADOPT_TARGET_UNAVAILABLE`
+	 * 而不是让它冒到门面外面。
+	 *
+	 * ⇒ 与 `ids.ts` 处理 `kindLetter` 抛错**同一套做法**（同一个包内两种处理方式会让人猜）。
+	 */
+	let plan: ReturnType<Ports['cards']['planAdopt']>;
+	try {
+		plan = ports.cards.planAdopt(card, workspace.cards, { principal, actor, at });
+	} catch (error) {
+		return {
+			ok: false,
+			error: coreError(
+				'ADOPT_TARGET_UNAVAILABLE',
+				`取分类「${card.template.kind}」的采纳目的地失败：${error instanceof Error ? error.message : String(error)}`,
+				{ cardId, kind: card.template.kind },
+			),
+		};
+	}
 	if (!plan.ok) {
 		return {
 			ok: false,

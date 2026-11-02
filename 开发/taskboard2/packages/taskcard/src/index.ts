@@ -18,7 +18,8 @@
  *
  * `inject = ['taskboard2Types', 'taskboard2Relation', 'taskboard2Actions']`
  *
- * · ③：`DRAFT` / `Kind` / `initialStatus` / `canTransition` / `isCompletedGroup` / `liveChildren` / `resolve`
+ * · ③：`DRAFT` / `Kind` / `initialStatus` / **`adoptTargetOf`** / `canTransition` /
+ *   `isCompletedGroup` / `liveChildren` / `resolve`
  * · ④：`validateRelations` / `applyRelationsChange` / `LINK_KINDS`
  * · ②：**只调 `isDeclarationOnlyChange`**（经服务面，**不 import 运行时值** —— 它依赖
  *   `$type → 答案位置` 的注册数据，不是纯函数）
@@ -165,6 +166,30 @@ export interface CardsService {
 /** 去掉函数签名的第一个参数（`ports`）—— 端口由服务闭包绑定，调用方不需要知道它。 */
 type OmitFirst<T extends readonly unknown[]> = T extends readonly [unknown, ...infer Rest] ? Rest : never;
 
+/**
+ * 把 ③ 的"抛错"收成 `undefined`（**⑦ 的异常收口点，全包只有这一处**）。
+ *
+ * ## 为什么要有它
+ *
+ * ③ 的 `initialStatus` / `adoptTargetOf` / `canTransition` 对**未注册分类**一律抛错。
+ * ⑦ 的契约是**纯函数、失败走 `Rejection`、不抛**（`docs` §6.5）——
+ * 若让异常漏出去，**每个调用方（⑧⑨⑩）都要各写一份 `try/catch`** ⇒ N 份兜底 = 同一逻辑多处实现。
+ *
+ * ⚠ **只该捕 ③ 的"数据问题"类异常**。这不是在掩盖 bug：
+ * · ⑦ 侧的**装配缺陷**（如 `planClaim` 漏传 `ctx`）**仍然抛** —— 那是调用方违约，早炸早好；
+ * · 这里捕的是"卡上的 `template.kind` 指向一个已注销的分类"这类**数据不一致**，
+ *   它的正确归宿是 `{ ok:false, reason:{ kind:'kind-unavailable' } }`，让用户看到。
+ *
+ * ⇒ 判据与全包一致：**调用方违约 ⇒ 抛；数据/环境问题 ⇒ 走 reason。**
+ */
+function guarded<T>(call: () => T): T | undefined {
+	try {
+		return call();
+	} catch {
+		return undefined;
+	}
+}
+
 export function apply(ctx: any): void {
 	/*
 	 * 端口**惰性取**：`apply` 执行时三个服务未必已经 provide 完成
@@ -189,14 +214,27 @@ export function apply(ctx: any): void {
 			types: {
 				states: types.TaskState,
 				DRAFT: types.DRAFT,
-				initialStatus: (kind: string) => types.initialStatus(kind),
+				/*
+				 * ↓ 以下三个方法在 **③ 侧对未注册分类一律抛错**。
+				 *   ⑦ 的契约是"纯函数、失败走 Rejection、不抛" ⇒ **在这一层统一转成 `undefined`**，
+				 *   业务函数看到 `undefined` 就返回 `kind-unavailable`。
+				 *
+				 * ⚠ **为什么收口在适配层而不是 7 个业务函数各写 try/catch**：
+				 *   ① 一处收口胜过 7 处；② 这层**本来就**在处理"③ 与 ⑦ 的形状不匹配"
+				 *   （判决对象 → boolean），"异常不匹配"是同一类事；
+				 *   ③ 若将来 ③ 改成不抛（返回 undefined），只需删这里的 try/catch。
+				 */
+				initialStatus: (kind: string) => guarded(() => types.initialStatus(kind)),
+				// 采纳目的地按分类定（goal/work → 提交，design/record → 需要授权）。
+				// 规则只有 ③ 一份，⑦ 不写分类名单。
+				adoptTargetOf: (kind: string) => guarded(() => types.adoptTargetOf(kind)),
 				canTransition: (
 					kind: string,
 					from: string,
 					to: string,
 					actor: Actor,
 					transitionCtx?: TransitionCtx,
-				) => types.canTransition(kind, from, to, actor, transitionCtx).ok === true,
+				) => guarded(() => types.canTransition(kind, from, to, actor, transitionCtx).ok === true),
 				isCompletedGroup: (status: string) => types.isEndedStatus(status),
 				liveChildren: (children: readonly ChildSnapshot[]) => types.liveChildren(children),
 				resolve: (name: string) => types.resolve(name),

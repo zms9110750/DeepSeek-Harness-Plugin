@@ -53,18 +53,56 @@ function deny(reason: string): TransitionVerdict {
 const ALLOW: TransitionVerdict = { ok: true };
 
 /**
+ * 采纳的**目的地状态**（按分类）。
+ *
+ *   · `goal` / `work` ⇒ `SUBMITTED`（提交，进入计算 / 可领取）
+ *   · `design` / `record` ⇒ `AUTH_REQUIRED`（需要授权，它们是搁置态的卡）
+ *
+ * ## ⚠ 这是「哪些分类采纳后去哪」的**唯一出口**
+ *
+ * ⑦ 的 `planAdopt` **必须调本函数**取目标，**不得自己写分类名单**。
+ * 理由：若 ⑦ 自己写一份，将来加第五类时 ——
+ *   ③ 的名单改了、⑦ 的没改 ⇒ ⑦ 算出 `SUBMITTED`、`isAdopt` 判为假 ⇒ **采纳被拒**，
+ *   而错误是运行期的 `not-draft`，**不是编译错误**，没人看得出为什么。
+ *
+ * ⇒ `isAdopt` 内部也调本函数（规则只有一份，改一处等于改两处）。
+ *
+ * ## 与 `isAdopt` 的关系
+ *
+ * 两者是**同一条规则的两面**：
+ *   · 本函数给「采纳该去哪个 `to`」；
+ *   · `isAdopt` 判「这个 `(from, to)` 是不是采纳」= `from === 草稿 && to === 本函数结果`。
+ *
+ * **未注册分类 ⇒ 抛错**（与 `canTransition` 同一口径：分类未注册是调用方违约，
+ * 默认成 `SUBMITTED` 会造出一个没人验证过的目的地）。
+ */
+export function adoptTargetOf(kind: string): TaskState {
+	/* 分类必须在册（不猜；`canTransition` 也会在入口先查一次）。 */
+	if (getKind(kind) === undefined) {
+		throw new Error(`taskboard2-types: 未注册的分类 "${kind}"，无法判断采纳目的地`);
+	}
+	return kind === 'design' || kind === 'record' ? S.AUTH_REQUIRED : S.SUBMITTED;
+}
+
+/**
  * 采纳 —— **两种不同目的地的转移，被叫成同一个名字**：
  *
  *   · goal / work：`草稿 → 提交`（进入计算 / 可领取）
- *   · design / record：`草稿 → 需要授权`（生来就是搁置态）
+ *   · design / record：`草稿 → 需要授权`（**采纳后**是搁置态，不是生来就搁置）
  *
  * 两者都从草稿出发、都由「采纳」触发，但**目的地不同** ⇒ 下面的 actor 限制也不同。
  * **目的地按分类判定**，不做"任意草稿→任意非草稿都算采纳"的放宽（那会把非矩阵转移也套上采纳的限制）。
+ *
+ * ⚠ **四类的 `initialStatus` 现在都是 `UNSPECIFIED`**（用户 `16:05` 裁定：
+ * 设计卡 / 记录卡建出来应该是草稿，采纳后才变「需要授权」）。
+ * 此前 `design` / `record` 的 `initialStatus` 是 `AUTH_REQUIRED` ⇒ 它们**永不处于草稿**
+ * ⇒ **本函数对它们的两条分支里，"草稿 → 需要授权"那一条永远走不到**。
+ * 改完之后这条路才真的通。
  */
 function isAdopt(kind: string, from: TaskState, to: TaskState): boolean {
 	if (from !== S.UNSPECIFIED) return false;
-	if (kind === 'design' || kind === 'record') return to === S.AUTH_REQUIRED;
-	return to === S.SUBMITTED;
+	/* ⚠ 目的地规则只有一份（见 `adoptTargetOf`）——别在这里另写分类名单。 */
+	return to === adoptTargetOf(kind);
 }
 
 /**
@@ -148,9 +186,15 @@ export function canTransition(
 	/* 已处终态：任何转移都不允许。 */
 	if (isEndedStatus(from)) return deny('终态不可再转移');
 
-	/* 草稿不可直转处理中：必须先经采纳（安全边界，任何模板都不可覆盖）。 */
+	/*
+	 * 草稿不可直转处理中：必须先经采纳（安全边界，任何模板都不可覆盖）。
+	 *
+	 * ⚠ **文案要中性**：采纳的目的地按分类不同 ——
+	 *   goal / work ⇒ 「提交」；design / record ⇒ 「需要授权」。
+	 * ⇒ 不能写死"「提交」"，否则对 design / record 是错的描述。
+	 */
 	if (from === S.UNSPECIFIED && to === S.WORKING) {
-		return deny('草稿必须先由用户采纳为「提交」，才能领取');
+		return deny('草稿必须先经采纳，才能进入处理中');
 	}
 
 	/*

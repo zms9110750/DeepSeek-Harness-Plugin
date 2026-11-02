@@ -90,7 +90,12 @@ export function planRelease(
 	}
 
 	const target = ports.types.states.SUBMITTED;
-	if (!ports.types.canTransition(card.template.kind, card.status, target, actor)) {
+	const verdict = ports.types.canTransition(card.template.kind, card.status, target, actor);
+	// `undefined` = ③ 拒绝判决（分类未注册）⇒ 数据问题，不抛，走 reason。
+	if (verdict === undefined) {
+		return { ok: false, reason: { kind: 'kind-unavailable', kindId: card.template.kind } };
+	}
+	if (!verdict) {
 		return { ok: false, reason: { kind: 'not-releasable', why: 'not-working' } };
 	}
 
