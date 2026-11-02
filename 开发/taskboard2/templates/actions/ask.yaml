@@ -1,20 +1,14 @@
-# ═══════════════════════════════════════════════════════════
-#  Action —— ask
-#  一个 ask 里可以装复数个提问。
-# ═══════════════════════════════════════════════════════════
-
 $type: ask
 
 summary: 选项选择，单选或多选，恒有「未选择」和自填框
 
-# ── 架构 ──
 schema:
   type: object
   required: [$type, items]
   properties:
     $type:
       const: ask
-    items: # 一个 ask 可以装复数个提问
+    items:
       type: array
       minItems: 1
       items:
@@ -22,9 +16,9 @@ schema:
         required: [options]
         properties:
           header:
-            type: string # 副标题，灰小字
+            type: string
           question:
-            type: string # 主标题，大字
+            type: string
           options:
             type: array
             items:
@@ -32,55 +26,36 @@ schema:
               required: [label]
               properties:
                 label:
-                  type: string # 选项名
+                  type: string
                 description:
-                  type: string # 选项小字
+                  type: string
               additionalProperties: true
           multi_select:
             type: boolean
             default: false
-            #   false = 单选：至多一项，且可以取消到一项都不选
-            #   true  = 多选：可以有任意多项，包括 0
-          picked: # 用户选中的选项。三态见下方
+          picked:
             type: array
             items:
               type: string
-          custom: # 用户自填的答案（不在 options 里的）。与 picked 分开放
+          custom:
             type: array
             items:
               type: string
           placeholder:
-            type: string # 自填框的灰字
+            type: string
         additionalProperties: true
   additionalProperties: true
 
-# ── picked 的三态（「未选择」的表达）──
-#   字段不存在  → 未选择（我没看这张卡）
+# ── picked 的三态 ──
+#   字段不存在  → 未选择
 #   []         → 看了，但都不要
 #   ["A"]      → 选了 A
-#
-#   ⚠ 自填值不进 picked，进 custom。
-#     picked 只装 options 里有的 label，这样"选了"与"自己填了"不会被混成一个数组。
+# 自填值不进 picked，进 custom。
 
-# ── 渲染 ──
-#   create / active —— 选项按钮 + 「未选择」按钮 + 自填输入框（三样恒存在，不是参数开关）
-#   ended  —— 只读展示选择结果，可刮取
-#   plain  —— 问题 / 描述 / 选项 / 用户选择，纯文本
-render:
-  create: |
-    选项按 multi_select 分支：
-      false → 点一下选中，再点同一项取消（至多一项）
-      true  → 点一下加入 / 移出 picked（可多项，也可一项都不选）
-    「未选择」按钮 → picked = []
-    自填框 → 填的串进 custom
-
-  active: |
-    与 create 相同：选项按钮 + 「未选择」按钮 + 自填输入框。
-
-  ended: |
-    选项逐行列出，被选中的高亮；custom 里的值作为额外一行显示。
-    无按钮、无输入框。允许鼠标框选复制。
-
-  plain: |
-    逐条输出：header / question / 选项（含描述、标记选中）/ 用户选择。
-    custom 里的值并入「用户选择」一行。
+# ── 渲染器 ──
+# create 与 active 用同一个函数（交互相同），ended 只读，plain 纯文本。
+renderer:
+  create: askEditable
+  active: askEditable
+  ended: askEnded
+  plain: askPlain

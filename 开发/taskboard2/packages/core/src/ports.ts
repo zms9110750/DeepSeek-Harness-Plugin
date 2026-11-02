@@ -115,13 +115,16 @@ export interface StorePort {
  * ② action
  * ───────────────────────────────────────────────────────────── */
 
-/** `accepts`：`string[]` 非空 / `[]` 禁止一切 / `'any'` 未限制。 */
-export type Accepts = readonly string[] | 'any';
-
-/** 章节规格（③ 的清单转来）。 */
+/**
+ * 章节规格（③ 的清单转来）。
+ *
+ * ⚠ **`accepts` 已彻底移除**（用户 11:26 裁决）：章节不再声明"接受哪些 action"。
+ * 取而代之的是 **`default`** —— 该章初始化时的 payload（fork 补缺章用它）。
+ */
 export interface SectionSpec {
 	readonly id: string;
-	readonly accepts: Accepts;
+	/** 该章初始化时的 payload。**可能缺**（模板没写）⇒ 调用方必须显式处理"没有默认值"。 */
+	readonly default?: unknown;
 }
 
 /** 校验问题的层级。`L3` 已作废，永不复用。 */
@@ -157,14 +160,18 @@ export interface ActionsPort {
 		payloads: Readonly<Record<string, unknown>>,
 		sections: readonly SectionSpec[],
 	): ValidateResult;
-	validateForEdit(payload: unknown, opts: { readonly accepts: Accepts; readonly sectionId?: string }): ValidateResult;
+	/**
+	 * 编辑期校验（只跑 L1）。
+	 *
+	 * ⚠ **不再收 `accepts`**（用户 11:26 裁决：`accepts` 彻底移除）——
+	 * 只剩 `sectionId`，用于把问题定位回章节。
+	 */
+	validateForEdit(payload: unknown, opts: { readonly sectionId?: string }): ValidateResult;
 	toIssueForUI(issue: Issue): IssueForUI;
 	/** 声明 / 答案切分；本包用它判 fork 丢弃的章节「有没有用户内容」。 */
 	splitPayload(payload: unknown): { readonly declaration: unknown; readonly answer: readonly unknown[] };
 	/** 用户表达视角的「有内容」（`ask.picked = []` 算有内容）。 */
 	hasUserContent(payload: unknown): boolean;
-	/** 按 `accepts` 造空 payload；`undefined` = 该章构造不出（**不得**当"随便挑一个"）。 */
-	emptyPayloadFor(accepts: Accepts): Record<string, unknown> | undefined;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -192,6 +199,8 @@ export interface StatesTable {
 /** ③ 的模板解析结果（本包用到的子集）。 */
 export interface ResolvedTemplate {
 	readonly name: string;
+	/** 中文显示名。**派生按钮拼标题要用它**（`label` 缺失时回落）。 */
+	readonly displayName: string;
 	readonly kind: string;
 	readonly domain: string;
 	readonly codePrefix: string;
@@ -202,28 +211,49 @@ export interface ResolvedTemplate {
 export interface TemplateSectionDef {
 	readonly id: string;
 	readonly label: string;
-	readonly accepts: Accepts;
 	readonly hint?: string;
 	readonly required?: boolean;
+	/** 该章初始化时的 payload。fork 补缺章用它；缺了就报错，不猜。 */
+	readonly default?: unknown;
 }
 
-/** 注册一个模板时的形状（③ 的 `TemplateDef` 的结构子集）。 */
+/**
+ * 注册一个模板时的形状（③ 的 `TemplateDef` 的结构子集）。
+ *
+ * ⚠ **无 `presetOf`**（预设已取消，用户 11:26）；**无 `accepts`**（已彻底移除）。
+ */
 export interface TemplateDefForRegistry {
 	readonly name: string;
+	/** 中文显示名。**必填**（派生按钮拼标题依赖它）。 */
+	readonly displayName: string;
 	readonly kind: string;
 	readonly domain: string;
 	readonly codePrefix: string;
 	readonly sections: readonly TemplateSectionDef[];
-	readonly displayName?: string;
 	readonly usage?: string;
 	readonly description?: string;
-	/** 预设模板指向的目标模板 `name`。**有它就是预设**。 */
-	readonly presetOf?: string;
+	/** 派生按钮（并列、有序）。 */
+	readonly derive?: readonly DeriveButton[];
+}
+
+/**
+ * 一个派生按钮。
+ *
+ * 用户 11:26：按钮的行为**写死在代码里**（`create.ts` 的 `deriveDefaults`）：
+ * 模板 = `template`、父任务 = 当前卡、标题 = `父标题-label`（`label` 缺 ⇒ `displayName`）。
+ */
+export interface DeriveButton {
+	/** 指向的模板 `name`。 */
+	readonly template: string;
+	/** 按钮文字；**也是拼标题的后半段**。缺了就用模板的 `displayName`。 */
+	readonly label?: string;
+	/** 按钮悬浮描述（纯展示）。 */
+	readonly description?: string;
 }
 
 /** ③ 的注册面（启动期由 ⑧ 编排调用）。 */
 export interface TypesRegistry {
-	registerTemplate(def: TemplateDefForRegistry, opts?: { readonly actionTypes?: readonly string[] }): void;
+	registerTemplate(def: TemplateDefForRegistry): void;
 	markTemplateRegistryReady(): void;
 }
 
@@ -285,10 +315,18 @@ export interface RuleInput {
 	readonly children: readonly ChildSnapshot[];
 }
 
-/** 判定用的子任务快照（③ 的结构形状）。 */
+/**
+ * 判定用的子任务快照（③ 的结构形状）。
+ *
+ * ⚠ **`template` 是模板 `name`（如 `'research'`），不是分类 `kind`（如 `'work'`）**。
+ * `card.template` 是 `TemplateRef`，它同时有 `ref` 与 `kind` 两个字段 ——
+ * 填错不会报错（都是 `string`），只会让依赖它的规则（如 `design.2.2`）**静默永不命中**。
+ */
 export interface ChildSnapshot {
 	readonly id: string;
 	readonly kind: string;
+	/** 模板 `name`（= `card.template.ref`）。**不是** `card.template.kind`。 */
+	readonly template: string;
 	readonly status: string;
 	readonly deleted: boolean;
 }
@@ -453,7 +491,8 @@ export interface ForkPlan {
 	readonly relations: unknown;
 	readonly events: readonly unknown[];
 	readonly droppedSections: readonly { readonly sectionId: string; readonly payload: unknown }[];
-	readonly missingSections: readonly { readonly sectionId: string; readonly accepts: readonly string[] }[];
+	/** 新模板有、源卡无的章节。**只给 id** —— 补什么由 ⑧ 从 ③ 的 `default` 取。 */
+	readonly missingSections: readonly { readonly sectionId: string }[];
 }
 
 export type ForkResult = ForkPlan | Extract<PlanResult, { ok: false }>;

@@ -18,7 +18,7 @@
 
 import { coreError, describeReject, type CoreError } from './errors.js';
 import type { Card, Ports, SectionSpec } from './ports.js';
-import { recomputeUpward } from './recompute.js';
+import { appendHistory, type HistoryEvent } from './status-write.js';
 import type { ActiveWorkspace } from './workspace.js';
 import { findCard } from './workspace.js';
 
@@ -105,9 +105,8 @@ export function updateBody(
 		};
 	}
 
-	/* ② 单章校验：accepts 从模板取（卡上旧章节则退回 'any' —— 模板已改版）。 */
-	const accepts = known?.accepts ?? 'any';
-	const result = ports.actions.validateForEdit(payload, { accepts, sectionId });
+	/* ② 单章校验：`accepts` 已移除（用户 11:26）⇒ 只传 `sectionId` 用于问题定位。 */
+	const result = ports.actions.validateForEdit(payload, { sectionId });
 	if (!result.ok) {
 		return {
 			ok: false,
@@ -134,7 +133,6 @@ export function updateBody(
 
 	/* ④ 事务内落地。 */
 	let updated: Card | undefined;
-	let recomputed: Card[] = [];
 	let failure: CoreError | undefined;
 
 	ports.store.transaction(workspace.wsId, (tx) => {
@@ -157,30 +155,29 @@ export function updateBody(
 			if (item.op === 'updateCard') updated = item.card;
 		}
 		if (updated === undefined) return;
-		tx.write([updated]);
 
 		/*
-		 * 监听链：**只在状态真的变了时**触发。
+		 * ── 编辑：**不触发状态转移，因而不广播、不写历史** ──
 		 *
-		 * `updateBody` / `updateCard` 通常改的是 sections / title / note / relations，
-		 * 状态不变 ⇒ 父卡无需重算。但 `editable` 里若带了 status（将来可能扩展），
-		 * 这里会自动接上，不需要再改一次。
+		 * 用户 12:46：「编辑不会产生历史。只有状态转移会留下历史。」
+		 * 且 ⑦ 的 `planChange` **完全不碰 status**（只改 title / note / sections / relations）。
+		 * ⇒ 这里既不需要判等、也不需要 `recomputeUpward`。
+		 *
+		 * ⚠ 曾写过 `if (updated.status !== fresh.status) { recomputeUpward... }` ——
+		 * 那个条件**恒为 false**（⑦ 不改 status），是一段"看起来接上了、其实永不执行"的死代码，已删。
+		 *
+		 * ⑦ 若将来产出 events（当前 `EDIT_ACTION` 按用户口径要删），仍由这里统一追加 ——
+		 * 「谁产出事件」与「谁追加历史」是两件事，收口保持通用。
 		 */
-		if (updated.status !== fresh.status) {
-			const result = recomputeUpward(ports, tx, [updated.id], { at });
-			recomputed = [...result.changed];
-			if (result.failures.length > 0) {
-				console.error('[taskboard2-core] 编辑后重算失败：');
-				for (const item of result.failures) console.error(`  · [${item.code}] ${item.message}`);
-			}
-		}
+		updated = appendHistory(updated, plan.events as readonly HistoryEvent[]);
+		tx.write([updated]);
 	});
 
 	if (failure !== undefined) return { ok: false, error: failure };
 	if (updated === undefined) {
 		return { ok: false, error: coreError('EDIT_VALIDATION_FAILED', '编辑未产出新卡。') };
 	}
-	return { ok: true, card: updated, recomputed };
+	return { ok: true, card: updated, recomputed: [] };
 }
 
 /** 整卡编辑（标题 / 备注 / 章节 / 关系）。走 ⑦ 的 `planChange`。 */
@@ -235,27 +232,19 @@ export function updateCard(
 	}
 
 	let updated: Card | undefined;
-	let recomputed: Card[] = [];
 	ports.store.transaction(workspace.wsId, (tx) => {
 		for (const item of plan.items) {
 			if (item.op === 'updateCard') updated = item.card;
 		}
 		if (updated === undefined) return;
-		tx.write([updated]);
 
-		/* 监听链：只有状态真的变了才触发（改标题/备注不影响父卡推导）。 */
-		if (updated.status !== card.status) {
-			const result = recomputeUpward(ports, tx, [updated.id], { at });
-			recomputed = [...result.changed];
-			if (result.failures.length > 0) {
-				console.error('[taskboard2-core] 编辑后重算失败：');
-				for (const item of result.failures) console.error(`  · [${item.code}] ${item.message}`);
-			}
-		}
+		/* 编辑不产生状态转移 ⇒ 不广播、不写历史（同 `updateBody`）。 */
+		updated = appendHistory(updated, plan.events as readonly HistoryEvent[]);
+		tx.write([updated]);
 	});
 
 	if (updated === undefined) {
 		return { ok: false, error: coreError('EDIT_VALIDATION_FAILED', '编辑未产出新卡。') };
 	}
-	return { ok: true, card: updated, recomputed };
+	return { ok: true, card: updated, recomputed: [] };
 }

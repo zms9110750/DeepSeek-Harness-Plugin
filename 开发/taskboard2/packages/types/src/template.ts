@@ -1,8 +1,8 @@
 /**
- * ③ template —— 模板注册表：元数据 + 章节声明，**不含任何 payload**。
+ * ③ template —— 模板注册表：元数据 + 章节声明。
  *
  * 本文件提供三件事：
- *   1) `registerTemplate`：注册（普通模板与预设模板走同一张表，用 `presetOf` 判别）；
+ *   1) `registerTemplate`：注册（**只有一种模板，没有"预设"这个概念**）；
  *   2) `resolve` / `sectionsOf` / `templateMeta`：三个查询面（分别给 ⑧⑦ / ⑧ / ⑩）；
  *   3) `findByFullName`：入口别名解析（`fullName → name`）。
  *
@@ -10,21 +10,13 @@
  *   - **零依赖、不读 YAML、不碰文件系统**：注册由 ⑧ 在启动期读 YAML 解析后调用本函数。
  *   - **`apply` 里不自动注册任何模板**：`apply` 跑完模板并不在，必须 ⑧ 显式触发。
  *   - **`ref` 就是 `name`**：卡上字段叫 `template.ref`，值是模板的 `name` 字符串。
+ *
+ * 不解释、不校验的两个字段：
+ *   - `SectionDef.default`：一份填好的 action payload，**③ 不透明**（合法性归 ②）；
+ *   - `TemplateDef.domain`：纯展示字符串，**不校验语言**。
  */
 
 import { getKind, type Kind } from './kind.js';
-
-/**
- * 章节接受哪些 action。
- *
- * 三态：
- *   - 非空数组 = 只允许这些 `$type`；
- *   - `[]` = **该章节不接受任何 action**（禁止）；
- *   - `'any'` = 章节省略了 `accepts` ⇒ 任意已注册 action。
- *
- * **没有第四态**：模板 / 章节查不到时由查询函数整体返回 `undefined`。
- */
-export type Accept = readonly string[] | 'any';
 
 /** 章节声明。 */
 export type SectionDef = {
@@ -32,11 +24,17 @@ export type SectionDef = {
 	readonly id: string;
 	/** 纯文本标签，不渲染 md。 */
 	readonly label: string;
-	readonly accepts: Accept;
-	/** 纯元数据，无校验语义（② 不读、⑧ 不拦）。可省，省 = 未声明。 */
-	readonly required?: boolean;
 	/** 给 AI 挑 action 看的「我要什么」。 */
 	readonly hint?: string;
+	/**
+	 * 该章节的预填 payload（一份填好的 action）。
+	 *
+	 * **③ 不解释、不校验**：形状归 ②，合法性最终在建卡时由 ② 的 `validateForCreate` 判。
+	 * 用 `unknown` 而不是对象类型 —— 写成对象类型会暗示"③ 懂它的形状"。
+	 *
+	 * 用途：⑧ 的 fork 补缺章用它，⑩ 的预填也用它。
+	 */
+	readonly default?: unknown;
 };
 
 /** 模板注册项。 */
@@ -52,51 +50,41 @@ export type TemplateDef = {
 	readonly codePrefix: string;
 	/** 章节声明。可省（= 零章节，如空模板）。 */
 	readonly sections?: readonly SectionDef[];
-	/** 展示名（不落中文 —— 中文只在终端）。 */
-	readonly displayName?: string;
+	/** 展示名。**必填** —— 派生按钮拼标题要用它，给兜底值是 ③ 在造数据。 */
+	readonly displayName: string;
 	/** 列表里那行小字（给 ⑩，core 不读）。 */
 	readonly usage?: string;
 	/** 点模板才展开的完整说明（给 ⑩，core 不读）。 */
 	readonly description?: string;
-	/** 预设模板指向的目标模板 `name`。**有它就是预设**。 */
-	readonly presetOf?: string;
-};
-
-/** `registerTemplate` 的可选入参。 */
-export type RegisterTemplateOptions = {
-	/**
-	 * 已注册的 action `$type` 清单。
-	 *
-	 * 传了就校验 `accepts ⊆ actionTypes`；不传则跳过该项校验。
-	 * **生产装配必须传**（API 可选只为单测）—— 不传等于放弃一道校验。
-	 */
-	readonly actionTypes?: readonly string[];
 };
 
 /** `resolve` 的返回：core / taskcard 用的最小元数据。 */
 export type ResolvedTemplate = {
 	readonly name: string;
+	readonly displayName: string;
 	readonly kind: Kind;
 	readonly domain: string;
 	readonly codePrefix: string;
-	readonly sections: readonly { readonly id: string; readonly accepts: Accept }[];
+	readonly sections: readonly { readonly id: string; readonly default?: unknown }[];
 };
 
 /** `sectionsOf` 的返回元素。 */
-export type SectionAccepts = {
+export type SectionInfo = {
 	readonly id: string;
-	readonly accepts: Accept;
+	/** 该章节预填 payload；没有就是 `undefined`（⑧ fork 补缺章时"没有就报错，不猜"）。 */
+	readonly default?: unknown;
 };
 
 /** `templateMeta` 的返回：给 ⑩ 的展示面。 */
 export type TemplateMeta = {
-	readonly displayName?: string;
+	readonly displayName: string;
 	readonly usage?: string;
 	readonly description?: string;
 	readonly sections: readonly {
 		readonly id: string;
 		readonly label: string;
 		readonly hint?: string;
+		readonly default?: unknown;
 	}[];
 };
 
@@ -128,11 +116,6 @@ export function isTemplateRegistryReady(): boolean {
 	return initialized;
 }
 
-/** `accepts` 的运行时形状守卫（`Accept` 只有三态，没有第四态）。 */
-function isAccept(value: unknown): value is Accept {
-	return value === 'any' || Array.isArray(value);
-}
-
 /** 校验章节声明。任何一条不合规即抛错（fail-closed）。 */
 function assertSections(sections: readonly SectionDef[], templateName: string): void {
 	const seen = new Set<string>();
@@ -146,17 +129,11 @@ function assertSections(sections: readonly SectionDef[], templateName: string): 
 			throw new Error(`taskboard2-types: 模板 "${templateName}" 的章节 id 重复（${section.id}）`);
 		}
 		seen.add(section.id);
-		const accepts: unknown = section.accepts;
-		if (!isAccept(accepts)) {
-			throw new Error(
-				`taskboard2-types: 模板 "${templateName}" 章节 "${section.id}" 的 accepts 非法（必须是数组或 'any'）`,
-			);
-		}
 	}
 }
 
-/** 注册一个模板（或预设模板）。已存在同名 ⇒ 抛错（不静默覆盖）。 */
-export function registerTemplate(def: TemplateDef, opts?: RegisterTemplateOptions): void {
+/** 注册一个模板。已存在同名 ⇒ 抛错（不静默覆盖）。 */
+export function registerTemplate(def: TemplateDef): void {
 	if (typeof def?.name !== 'string' || def.name === '') {
 		throw new Error('taskboard2-types: 模板必须有非空 name');
 	}
@@ -168,53 +145,16 @@ export function registerTemplate(def: TemplateDef, opts?: RegisterTemplateOption
 			`taskboard2-types: 模板 "${def.name}" 的 codePrefix 必须是字符串（'' 合法，null 非法）`,
 		);
 	}
+	if (typeof def.displayName !== 'string' || def.displayName === '') {
+		throw new Error(`taskboard2-types: 模板 "${def.name}" 必须有非空 displayName`);
+	}
 	/* `kind` 值域 = 已注册分类的英文 id。中文值会被拒（fail-closed），不静默进库。 */
 	if (getKind(def.kind) === undefined) {
 		throw new Error(
 			`taskboard2-types: 模板 "${def.name}" 的 kind 非法（${String(def.kind)}），必须是已注册分类的英文 id`,
 		);
 	}
-	const sections: readonly SectionDef[] = def.sections ?? [];
-	assertSections(sections, def.name);
-
-	/* 预设：目标模板必须已注册。 */
-	const presetOf: string | undefined = def.presetOf;
-	if (presetOf !== undefined) {
-		const target = TEMPLATES.get(presetOf);
-		if (target === undefined) {
-			throw new Error(
-				`taskboard2-types: 预设模板 "${def.name}" 指向的模板 "${presetOf}" 未注册`,
-			);
-		}
-		/* 预设的章节集必须与目标模板一致（同样的 id）。 */
-		const want = (target.sections ?? []).map((section) => section.id).join('\u0000');
-		const have = sections.map((section) => section.id).join('\u0000');
-		if (want !== have) {
-			throw new Error(
-				`taskboard2-types: 预设模板 "${def.name}" 的章节集与目标模板 "${presetOf}" 不一致`,
-			);
-		}
-	}
-
-	/*
-	 * 可选：若调用方给了 action 名单，则校验 accepts ⊆ actionTypes。
-	 * 不传 ⇒ 跳过（生产装配必须传；API 可选只为单测）。
-	 */
-	const actionTypes = opts?.actionTypes;
-	if (actionTypes !== undefined) {
-		const allowed = new Set<string>(actionTypes);
-		for (const section of sections) {
-			const accepts = section.accepts;
-			if (accepts === 'any') continue;
-			for (const type of accepts) {
-				if (!allowed.has(type)) {
-					throw new Error(
-						`taskboard2-types: 模板 "${def.name}" 章节 "${section.id}" 声明了未注册的 action（${type}）`,
-					);
-				}
-			}
-		}
-	}
+	assertSections(def.sections ?? [], def.name);
 
 	TEMPLATES.set(def.name, def);
 }
@@ -258,26 +198,31 @@ export function resolve(ref: string): ResolvedTemplate | undefined {
 	if (def === undefined) return undefined;
 	return {
 		name: def.name,
+		displayName: def.displayName,
 		kind: def.kind,
 		domain: def.domain,
 		codePrefix: def.codePrefix,
 		sections: (def.sections ?? []).map((section) => ({
 			id: section.id,
-			accepts: section.accepts,
+			default: section.default,
 		})),
 	};
 }
 
 /**
- * 取模板的权威章节集（`{ id, accepts }` 数组，顺序 = 声明顺序）。
+ * 取模板的权威章节集（`{ id, default? }` 数组，顺序 = 声明顺序）。
  *
- * 建卡时 ⑧ 用它做「缺章 / 多章」双向比对。
+ * 建卡时 ⑧ 用它做「缺章 / 多章」双向比对；**fork 补缺章时取该章的 `default`**
+ * （没有 `default` ⇒ 报错，不猜）。
  * 模板不存在 ⇒ 整体 `undefined`（元素级不可能「解析失败」）。
  */
-export function sectionsOf(ref: string): readonly SectionAccepts[] | undefined {
+export function sectionsOf(ref: string): readonly SectionInfo[] | undefined {
 	const def = getTemplate(ref);
 	if (def === undefined) return undefined;
-	return (def.sections ?? []).map((section) => ({ id: section.id, accepts: section.accepts }));
+	return (def.sections ?? []).map((section) => ({
+		id: section.id,
+		default: section.default,
+	}));
 }
 
 /**
@@ -285,6 +230,9 @@ export function sectionsOf(ref: string): readonly SectionAccepts[] | undefined {
  *
  * **不含任何中文以外的"文案"**：`displayName` / `usage` / `description` 由模板声明提供，
  * 本函数只做搬运，不生成任何语言。
+ *
+ * `sections[].default` 一并带出：**⑩ 预填要用它**（与 ⑧ 的 `sectionsOf` 取自同一处，
+ * 但两条路各自完整，不互相依赖）。
  */
 export function templateMeta(ref: string): TemplateMeta | undefined {
 	const def = getTemplate(ref);
@@ -297,6 +245,7 @@ export function templateMeta(ref: string): TemplateMeta | undefined {
 			id: section.id,
 			label: section.label,
 			hint: section.hint,
+			default: section.default,
 		})),
 	};
 }

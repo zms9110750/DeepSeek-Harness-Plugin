@@ -16,11 +16,16 @@
  *   2. **冻结期不得改声明**（问 ② 的 `isDeclarationOnlyChange`，⑦ 不看 payload）
  *   3. **关系必须过 ④ 的收口**（`validateRelations` / `applyRelationsChange`）
  *
+ * ## 不产历史（`【用户指令，2026-11-02 12:46】`）
+ *
+ * 「编辑不会产生历史。只有状态转移会留下历史。」⇒ `events` **恒为空**。
+ * 改 `title` / `note` / `sections` / `relations` 都不是"卡的状态变化"。
+ *
  * ⚠ **⑦ 不校验"新增 `sectionId` 是否属于模板"** —— 那需要模板知识，归 ⑧ 的落库入口
  * （`docs` §3.3 第 7 条，(丙) 方案）。本文件**不查模板**。
  */
 
-import type { Card, HistoryEntry, Plan, PlanResult, Ports, RelationPatch, Relations } from './types.js';
+import type { Card, Plan, PlanResult, Ports, RelationPatch, Relations } from './types.js';
 
 /** 冻结期内允许改的字段（只有它们不在冻结集合里）。 */
 export const UNFROZEN_FIELDS = ['note', 'sections'] as const;
@@ -40,11 +45,22 @@ export interface ChangeInput {
 	editable: EditableFields;
 	/** 计划项式最小操作（④ 的级联计划）。与 `editable` 二选一或并存。 */
 	patch?: readonly RelationPatch[];
-	/** 由 ⑧ 在事务内盖；⑦ 不取时钟。省略则不写历史。 */
+	/**
+	 * 由 ⑧ 在事务内盖的时间戳。
+	 *
+	 * ⚠ **保留但已无用**：`【用户指令，2026-11-02 12:46】`「编辑不会产生历史」⇒
+	 * `planChange` 的 `events` 恒为空，不再需要 `at`。留着是为了⑧的调用签名不破。
+	 */
 	at?: number;
 }
 
-/** 编辑写进历史的动作名（"编辑"是行为，不是状态）。 */
+/**
+ * 编辑的历史动作名 —— **保留常量以兼容 ⑧/⑤ 的 import，但 ⑦ 不再产出它**。
+ *
+ * `【用户指令，2026-11-02 12:46】`「编辑不会产生历史。只有状态转移会留下历史。」
+ * ⇒ `planChange` 的 `events` **恒为空**。若外部仍引用此常量，行为应是"无事件可写"，
+ * 而不是"写一条 `edit`"。
+ */
 export const EDIT_ACTION = 'edit';
 
 /** 取两个对象键集的差集（`a` 有、`b` 没有）。 */
@@ -138,15 +154,22 @@ export function planChange(ports: Ports, card: Card, input: ChangeInput): PlanRe
 		next.relations = applied.value;
 	}
 
-	const events: HistoryEntry[] = [];
-	if (input.at !== undefined) {
-		events.push({ at: input.at, action: EDIT_ACTION });
-	}
-
+	/*
+	 * ⚠ **编辑不产任何历史事件**（`【用户指令，2026-11-02 12:46】`）。
+	 *
+	 * 用户原话：
+	 *   「编辑不会产生历史。只有状态转移会留下历史。记录编辑这得要多少个历史事件啊。」
+	 *   「history 记录的是卡。而编辑，是模板内容。卡不穿透到模板里面保存，只保存自己这个卡
+	 *     提供的额外的变化。所以状态是他的，创建是他的，归档是他的。所以他存。」
+	 *
+	 * ⇒ 改 `title` / `note` / `sections` / `relations` **都不留历史**：它们要么是模板内容
+	 *   （`sections`），要么是卡的附属字段，**不是"卡的状态变化"**。
+	 * ⇒ 因此 `events` **恒为空**。`at` 仍然照收（⑧ 可能仍传），但 ⑦ 不再用它产事件。
+	 */
 	const plan: Plan = {
 		ok: true,
 		items: [{ op: 'updateCard', card: next }],
-		events,
+		events: [],
 	};
 	return plan;
 }

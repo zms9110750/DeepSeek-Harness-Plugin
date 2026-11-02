@@ -24,9 +24,8 @@
 
 import { coreError, describeReject, type CoreError } from './errors.js';
 import { allocateId } from './ids.js';
-import type { Card, Ports, Principal, TypesPort } from './ports.js';
-import { recomputeUpward } from './recompute.js';
-import { presetPayloadsOf } from './templates.js';
+import type { Card, DeriveButton, Ports, Principal, TypesPort } from './ports.js';
+import { applyStatus, type HistoryEvent } from './status-write.js';
 import { assertSectionsComplete } from './validate.js';
 import type { ActiveWorkspace } from './workspace.js';
 import { findCard } from './workspace.js';
@@ -39,9 +38,9 @@ export interface CreateCardInput {
 	/** 模板名（= ③ 的 `name`）。 */
 	readonly templateRef: string;
 	readonly title: string;
-	/** `{ [sectionId]: payload }`。省略时：预设模板用预设 payload，普通模板用 `{}`。 */
+	/** `{ [sectionId]: payload }`。省略 ⇒ 用各章的 `default` 预填（见 `sectionsFromDefaults`）。 */
 	readonly sections?: Readonly<Record<string, unknown>>;
-	/** 关系（**未替换变量**的形态不接受 —— 由调用方先替换完）。 */
+	/** 关系。 */
 	readonly relations?: { readonly parent?: string; readonly links?: readonly { readonly label: string; readonly to: string }[] };
 	readonly note?: string;
 	/** 分类覆盖。省略 ⇒ 用模板的 `kind`。 */
@@ -103,12 +102,71 @@ export function checkRelationTargets(
 }
 
 /**
+ * 用模板各章的 `default` 铺一份初始 `sections`。
+ *
+ * **只铺有 `default` 的章**：没写 `default` 的章留空 —— "该补什么"由调用方决定
+ * （建卡面板会让用户填、fork 会单独报错）。这里**不猜**。
+ */
+export function sectionsFromDefaults(
+	sections: readonly { readonly id: string; readonly default?: unknown }[],
+): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const section of sections) {
+		if (section.default === undefined) continue;
+		/* 深拷贝一层：`default` 来自注册表，调用方会改它，不能共享引用。 */
+		out[section.id] = structuredClone(section.default);
+	}
+	return out;
+}
+
+/** `deriveDefaults` 的产物：建卡时的三个初始字段。 */
+export interface DeriveInit {
+	/** 用哪个模板。 */
+	readonly templateRef: string;
+	/** 新卡标题。 */
+	readonly title: string;
+	/** 关系：父任务 = 当前卡。 */
+	readonly relations: { readonly parent: string; readonly links: readonly [] };
+}
+
+/**
+ * 派生按钮的**初始化行为**（用户 11:26 写死在代码里的那三条）。
+ *
+ * > 「选择派生提供的模板，把关系里面设置对方为父任务，标题用父任务的标题，
+ * >   加上 `-`，然后加上父任务对这个派生按钮写的 label。如果没有 label，就加模板名字。」
+ *
+ * ```
+ * templateRef = derive.template
+ * relations.parent = parentCard.id
+ * title = `${parentCard.title}-${derive.label ?? template.displayName}`
+ * ```
+ *
+ * ⚠ **这只是初始化**：返回的是"建卡面板的预填值"，用户随后可以改模板、改标题、删关系。
+ * 中途改模板时**标题不会跟着自动改** —— 因为标题一旦预填就是普通字段，
+ * 由用户/面板自己维护，**⑧ 不再回算**。
+ *
+ * 纯函数：不碰存储、不产生计划、不取时钟。
+ */
+export function deriveDefaults(
+	parentCard: Pick<Card, 'id' | 'title'>,
+	derive: DeriveButton,
+	templateDisplayName: string,
+): DeriveInit {
+	/* 按钮按钮文字优先；没写就用模板的中文显示名。 */
+	const suffix = derive.label !== undefined && derive.label !== '' ? derive.label : templateDisplayName;
+	return {
+		templateRef: derive.template,
+		title: `${parentCard.title}-${suffix}`,
+		relations: { parent: parentCard.id, links: [] },
+	};
+}
+
+/**
  * 建卡。
  *
  * **三入口共用**：`origin` 只影响历史动作名，**不影响任何校验强度**。
  */
 export function createCard(ports: Ports, workspace: ActiveWorkspace, input: CreateCardInput): CreateResult {
-	/* ── ① 模板解析 ── */
 	const template = ports.types.resolve(input.templateRef);
 	if (template === undefined) {
 		return {
@@ -119,14 +177,11 @@ export function createCard(ports: Ports, workspace: ActiveWorkspace, input: Crea
 		};
 	}
 
-	/* ── ② 预置 sections ── */
-	const preset = presetPayloadsOf(input.templateRef);
+	/* ── ② 章节初值：调用方给了就用；没给就用模板各章的 `default` ── */
 	const sections: Record<string, unknown> =
 		input.sections !== undefined
 			? { ...input.sections }
-			: preset !== undefined
-				? { ...preset }
-				: {};
+			: sectionsFromDefaults(template.sections);
 
 	/* ── ③ 章节校验（事务外）── */
 	const chapterCheck = assertSectionsComplete(
@@ -148,7 +203,6 @@ export function createCard(ports: Ports, workspace: ActiveWorkspace, input: Crea
 
 	/* ── ⑤ 事务内：发号 + 建卡计划 + 写卡 ── */
 	let created: Card | undefined;
-	let recomputed: Card[] = [];
 	let failure: CoreError | undefined;
 
 	ports.store.transaction(workspace.wsId, (tx) => {
@@ -194,34 +248,31 @@ export function createCard(ports: Ports, workspace: ActiveWorkspace, input: Crea
 			return;
 		}
 
-		tx.write([created]);
-
 		/*
-		 * ── 监听链：新卡是"别人的子任务" ──
+		 * ── 收口：**初值**（`mode:'init'`）──
 		 *
-		 * 建卡改变了**父卡的子任务集合** ⇒ 父卡要重算。
-		 * ⚠ 这里传的是**新卡的 id**（不是父卡）：`recomputeUpward` 会去找它的父卡。
-		 * 没有父卡（顶层）时队列为空，什么也不做。
+		 * 用户 12:46：「建卡，fork，这两个卡的状态初始值，严格上不算转移。」
+		 * ⇒ **不判等、不广播**。⑦ 已把 `initialStatus` 写进卡里，这里只确认它过收口这一层。
 		 *
-		 * ⚠ `cards` 必须**包含刚建的这张**：否则索引里查不到它，就找不到它的父卡，
-		 * 整条链会在起点空转（静默地"什么也没发生"—— 比报错更难查）。
+		 * ⚠ **建卡不调 `recomputeUpward`** —— 草稿不是有效卡（用户 12:46），
+		 * 父卡看不到它，也就没有"子任务变了"这回事。
+		 * （更彻底地说：**初值不广播**，不管它恰好是不是草稿。）
 		 */
-		const result = recomputeUpward(ports, tx, [created.id], {
-			at: input.at,
-			cards: [...current, created],
+		const outcome = applyStatus({
+			card: created,
+			to: created.status,
+			events: plan.events as readonly HistoryEvent[],
+			mode: 'init',
 		});
-		recomputed = [...result.changed];
-		if (result.failures.length > 0) {
-			console.error('[taskboard2-core] 建卡后重算失败：');
-			for (const item of result.failures) console.error(`  · [${item.code}] ${item.message}`);
-		}
+		created = outcome.card;
+		tx.write([created]);
 	});
 
 	if (failure !== undefined) return { ok: false, error: failure };
 	if (created === undefined) {
 		return { ok: false, error: coreError('CREATE_VALIDATION_FAILED', '建卡未产出新卡。') };
 	}
-	return { ok: true, card: created, recomputed };
+	return { ok: true, card: created, recomputed: [] };
 }
 
 /** 供门面转发给 ⑩ 的会话主体类型（`Principal` 与 ③ 的 `Actor` 不是同一套）。 */

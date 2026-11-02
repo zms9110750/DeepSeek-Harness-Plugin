@@ -7,27 +7,28 @@
  * 它只提供 `registerTemplate(obj)` —— 收**已解析的 JS 对象**。
  * ⇒ **"读 YAML、解析、注册"整个动作必须在 ⑧ 完成**（③ 的 `apply` 不注册任何东西）。
  *
- * ## 本文件同样零 `@local/*` import
+ * ## 本文件零 `@local/*` import
  *
  * ③ 的能力以**参数**传入（`TypesRegistry`）。理由与 `ports.ts` 相同：
  * 编译期没有 `node_modules` 可解析，`import` 会直接编译失败；
  * 而且"服务名是契约"要求走运行时 inject，不走编译期焊死。
  *
- * ## 目录位置
+ * ## 目录位置与扫描范围
  *
  * 模板文件在**仓库根** `templates/`（不在 `packages/core/` 里）。构建后本文件位于
  * `packages/core/lib/templates.js`，所以包根是 `lib/` 的上一级，仓库根再上一级。
  *
+ * **扫描范围**：
+ *   1. `templates/` 根目录下散落的 `.yaml`（若有）；
+ *   2. `templates/` 的**一级子目录**（`core/`、`code/`、将来新增的领域目录…），
+ *      **排除 `actions/`** —— 那里是行为定义，不是模板。
+ *
+ * ⚠ **不递归**：`templates/` 只有两层，递归会连 `actions/` 的子层也扫进来，
+ * 而"按已知层级扫"比"递归乱扫 + 黑名单"更稳。
+ *
  * ⚠ **不写死单一路径**：按候选顺序逐个探测，第一个存在的即用。
  * 因为"模板运行期从哪读"是待裁项（见 `docs/08-core.md` U2），
  * 单一路径会把一个未裁结论焊进代码。
- *
- * ## 预设模板的 payload 存在哪
- *
- * ③ 的 `TemplateDef` **不含 payload**（它只存声明）。而预设的意义就是"内容已填好"。
- * ⇒ **预设的 payload 由 ⑧ 自己保存**（`PRESET_PAYLOADS`），③ 只知道有这么一个模板。
- * 注册给 ③ 的预设项，章节声明**从目标模板继承**（同 id、同 label、同 accepts）——
- * 这样 ③ 的"预设章节集 = 目标章节集"校验天然成立。
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -37,10 +38,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 
 import { coreError, type CoreError } from './errors.js';
-import type { Accepts, TemplateDefForRegistry, TypesRegistry } from './ports.js';
-
-/** 预设模板 `name` → 该模板各章的 payload（`{ [sectionId]: payload }`）。 */
-const PRESET_PAYLOADS = new Map<string, Record<string, unknown>>();
+import type { TemplateDefForRegistry, TypesRegistry } from './ports.js';
 
 /** 本文件所在目录（构建后是 `.../packages/core/lib`）。 */
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -58,6 +56,14 @@ const CANDIDATES = [
 	join(HERE, 'templates'),
 ];
 
+/**
+ * 不作为模板目录扫描的一级子目录。
+ *
+ * `actions/` 放的是**行为定义**（`text` / `ask` / `markdown`），不是模板：
+ * 它们没有 `name` / `kind` / `codePrefix`，混进来会被当成坏模板报错。
+ */
+const NON_TEMPLATE_DIRS = new Set(['actions']);
+
 /** 找到模板根目录；找不到返回 `undefined`（不抛错 —— 由调用方决定怎么报）。 */
 export function findTemplatesDir(): string | undefined {
 	for (const candidate of CANDIDATES) {
@@ -73,6 +79,40 @@ function yamlFilesIn(dir: string): string[] {
 	return readdirSync(dir)
 		.filter((name) => name.endsWith('.yaml') || name.endsWith('.yml'))
 		.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+/** 列出 `dir` 下的一级子目录名（排除非模板目录）。目录不存在 ⇒ 空数组。 */
+function templateSubdirsIn(dir: string): string[] {
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name)
+		.filter((name) => !NON_TEMPLATE_DIRS.has(name))
+		.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+/**
+ * 收集全部模板 YAML：根目录 + 一级子目录。
+ *
+ * 返回 `{ file, displayPath }`：`displayPath` 是相对模板根的可读路径，
+ * **只用于报错定位**（错误里写 `core/userNeed.yaml` 比写绝对路径有用）。
+ */
+function collectTemplateFiles(dir: string): { file: string; displayPath: string }[] {
+	const out: { file: string; displayPath: string }[] = [];
+
+	/* ① 根目录散落的 yaml（当前没有，但保留 —— 否则将来有人放根目录会静默扫不到）。 */
+	for (const name of yamlFilesIn(dir)) {
+		out.push({ file: join(dir, name), displayPath: name });
+	}
+
+	/* ② 一级子目录（排除 actions/）。 */
+	for (const sub of templateSubdirsIn(dir)) {
+		for (const name of yamlFilesIn(join(dir, sub))) {
+			out.push({ file: join(dir, sub, name), displayPath: join(sub, name) });
+		}
+	}
+
+	return out;
 }
 
 /** 读一个 YAML 文件并解析。解析失败 ⇒ 收集成 `CoreError`，**不抛**。 */
@@ -115,22 +155,16 @@ function asString(value: unknown): string | undefined {
 	return typeof value === 'string' ? value : undefined;
 }
 
-/** 一章的声明（YAML 侧）。 */
-interface RawSection {
-	readonly id: string;
-	readonly label: string;
-	readonly accepts: Accepts;
-	readonly hint?: string;
-	readonly required?: boolean;
-}
-
 /**
  * 把 YAML 的 `sections`（object：章节名 → 声明）转成数组。
  *
  * **顺序 = YAML 里的书写顺序**（`Object.entries` 保持插入序）。
  * 为什么要数组：③ 的"全章齐"要按清单遍历；object 的 key 顺序不可依赖。
+ *
+ * ⚠ **`accepts` 已彻底移除**：章节不再声明"接受哪些 action"，
+ * 取而代之的是 `default` —— 该章初始化时的 payload。
  */
-function sectionsOf(raw: unknown, file: string, failures: CoreError[]): RawSection[] {
+function sectionsOf(raw: unknown, file: string, failures: CoreError[]) {
 	const record = asRecord(raw);
 	if (record === undefined) {
 		if (raw !== undefined) {
@@ -139,7 +173,7 @@ function sectionsOf(raw: unknown, file: string, failures: CoreError[]): RawSecti
 		return [];
 	}
 
-	const out: RawSection[] = [];
+	const out: NonNullable<TemplateDefForRegistry['sections']>[number][] = [];
 	for (const [id, value] of Object.entries(record)) {
 		const section = asRecord(value);
 		if (section === undefined) {
@@ -151,90 +185,43 @@ function sectionsOf(raw: unknown, file: string, failures: CoreError[]): RawSecti
 			failures.push(coreError('TEMPLATE_PARSE_FAILED', `${file}: 章节「${id}」缺 label`));
 			continue;
 		}
-		const acceptsRaw = section['accepts'];
-		let accepts: Accepts;
-		if (acceptsRaw === undefined) {
-			accepts = 'any';
-		} else if (Array.isArray(acceptsRaw) && acceptsRaw.every((item) => typeof item === 'string')) {
-			accepts = acceptsRaw as readonly string[];
-		} else {
-			failures.push(
-				coreError('TEMPLATE_PARSE_FAILED', `${file}: 章节「${id}」的 accepts 必须是字符串数组`),
-			);
-			continue;
-		}
 		const hint = asString(section['hint']);
-		const out0: RawSection = {
+		/*
+		 * `default`：该章初始化时的 payload（fork 补缺章就用它）。
+		 * **不做形状校验** —— schema 只在创建时由 ② 校验，模板侧只搬运。
+		 */
+		const fallback = section['default'];
+		out.push({
 			id,
 			label,
-			accepts,
 			...(hint === undefined ? {} : { hint }),
 			...(typeof section['required'] === 'boolean' ? { required: section['required'] } : {}),
-		};
-		out.push(out0);
+			...(fallback === undefined ? {} : { default: fallback }),
+		});
 	}
 	return out;
 }
 
-/**
- * 一份 YAML 解析出来的两种东西。
- *
- * **判据是"有没有 `template` 字段"**：有 ⇒ 预设（`presetOf` 指向目标），无 ⇒ 普通模板。
- * 这条判据来自模板文件自己的注释：「预设必有 template，普通模板必无 —— 双射」。
- *
- * 用判别式联合而不是拿空串占位：预设**没有** `kind` / `domain` / `codePrefix` /
- * `sections` 声明（全部继承自目标模板）。拿占位值硬塞进注册项，会造出一个
- * "看起来合法、其实字段是空的"中间态 —— 那种值一旦被别处读到，就是第二处真值。
- */
-type ParsedTemplate =
-	| { readonly type: 'normal'; readonly def: TemplateDefForRegistry }
-	| {
-			readonly type: 'preset';
-			readonly name: string;
-			readonly presetOf: string;
-			readonly displayName?: string;
-			readonly payloads: Record<string, unknown>;
-	  };
-
-/** 把一份 YAML 解析成普通模板或预设。解析不出 ⇒ 记 `failure` 并返回 `undefined`。 */
+/** 把一份 YAML 解析成 ③ 的注册项。解析不出 ⇒ 记 `failure` 并返回 `undefined`。 */
 function parseTemplate(
 	raw: Record<string, unknown>,
 	file: string,
 	failures: CoreError[],
-): ParsedTemplate | undefined {
+): TemplateDefForRegistry | undefined {
 	const name = asString(raw['name']);
 	if (name === undefined || name === '') {
 		failures.push(coreError('TEMPLATE_PARSE_FAILED', `${file}: 缺 name`));
 		return undefined;
 	}
 
-	const displayName = asString(raw['displayName']);
-
-	/* ── 预设模板：只带 name / presetOf / displayName / payloads ── */
-	const presetOf = asString(raw['template']);
-	if (presetOf !== undefined) {
-		if (presetOf === '') {
-			failures.push(coreError('TEMPLATE_PARSE_FAILED', `${file}: template 不能是空串`));
-			return undefined;
-		}
-		const payloads = asRecord(raw['sections']);
-		if (payloads === undefined) {
-			failures.push(coreError('TEMPLATE_PARSE_FAILED', `${file}: 预设必须给出 sections`));
-			return undefined;
-		}
-		return {
-			type: 'preset',
-			name,
-			presetOf,
-			...(displayName === undefined ? {} : { displayName }),
-			payloads: { ...payloads },
-		};
-	}
-
-	/* ── 普通模板 ── */
 	const kind = asString(raw['kind']);
 	const domain = asString(raw['domain']);
 	const codePrefix = asString(raw['codePrefix']);
+	/*
+	 * `displayName`：**派生按钮拼标题要用它**（`title = 父标题-label`，
+	 * label 缺失时回落到模板的 `displayName`）⇒ 必填。
+	 */
+	const displayName = asString(raw['displayName']);
 
 	if (kind === undefined || kind === '') {
 		failures.push(coreError('TEMPLATE_PARSE_FAILED', `${file}: 缺 kind`));
@@ -248,23 +235,99 @@ function parseTemplate(
 		failures.push(coreError('TEMPLATE_PARSE_FAILED', `${file}: 缺 codePrefix`));
 		return undefined;
 	}
+	if (displayName === undefined || displayName === '') {
+		failures.push(coreError('TEMPLATE_PARSE_FAILED', `${file}: 缺 displayName`));
+		return undefined;
+	}
 
 	const usage = asString(raw['usage']);
 	const description = asString(raw['description']);
+	/* 派生按钮。**数组**（并列按钮）；每项 `{ label?, description?, template }`。 */
+	const derive = parseDerive(raw['derive'], file, failures);
 
 	return {
-		type: 'normal',
-		def: {
-			name,
-			kind,
-			domain,
-			codePrefix,
-			sections: sectionsOf(raw['sections'], file, failures),
-			...(displayName === undefined ? {} : { displayName }),
-			...(usage === undefined ? {} : { usage }),
-			...(description === undefined ? {} : { description }),
-		},
+		name,
+		kind,
+		domain,
+		codePrefix,
+		displayName,
+		sections: sectionsOf(raw['sections'], file, failures),
+		...(usage === undefined ? {} : { usage }),
+		...(description === undefined ? {} : { description }),
+		...(derive === undefined ? {} : { derive }),
 	};
+}
+
+/**
+ * 解析 `derive`（派生按钮）。
+ *
+ * **⑧ 只负责搬运**：注册到 ③ 供 ⑩ 画按钮、供 ⑧ 拼初始化字段。
+ * 按钮点下去之后的建卡行为在 `create.ts` 的 `deriveDefaults` 里（纯函数）。
+ *
+ * `template` 必填；`label` 可省（缺了拼标题时回落到 `displayName`）；`description` 可省。
+ *
+ * ## ⚠ 为什么 ⑧ 要在这里拦字段
+ *
+ * ③ 的 `TemplateDef` **没有 `derive`**，而 `registerTemplate` **不拒多余字段**（宽收）⇒
+ * **`derive` 的结构错误 ③ 拦不住，只能 ⑧ 在 YAML 解析层拦**。
+ *
+ * 特别是 `title` / `relations`：它们**已从语法里删除**（用户 11:26 把派生行为改成写死）。
+ * 接受它们等于"字段已删但被静默忽略" —— 有人写了会以为生效。⇒ **显式报错。**
+ */
+function parseDerive(
+	raw: unknown,
+	file: string,
+	failures: CoreError[],
+): NonNullable<TemplateDefForRegistry['derive']> | undefined {
+	if (raw === undefined) return undefined;
+	if (!Array.isArray(raw)) {
+		failures.push(coreError('TEMPLATE_PARSE_FAILED', `${file}: derive 必须是数组`));
+		return undefined;
+	}
+
+	/** 派生按钮里**不许出现**的字段（已从语法删除，出现即配置错误）。 */
+	const REMOVED_FIELDS = ['title', 'relations'] as const;
+
+	const out: NonNullable<TemplateDefForRegistry['derive']>[number][] = [];
+	for (const [index, item] of raw.entries()) {
+		const entry = asRecord(item);
+		if (entry === undefined) {
+			failures.push(
+				coreError('TEMPLATE_PARSE_FAILED', `${file}: derive[${index}] 必须是对象`),
+			);
+			continue;
+		}
+
+		/* 已删除的字段：显式拒绝，不静默忽略。 */
+		const removed = REMOVED_FIELDS.filter((field) => Object.hasOwn(entry, field));
+		if (removed.length > 0) {
+			failures.push(
+				coreError(
+					'TEMPLATE_PARSE_FAILED',
+					`${file}: derive[${index}] 含已删除字段（${removed.join(' / ')}）——` +
+						'派生按钮的行为已写死在代码里，不再由模板声明。请删掉这些字段。',
+					{ index, removed },
+				),
+			);
+			continue;
+		}
+
+		const template = asString(entry['template']);
+		if (template === undefined || template === '') {
+			failures.push(
+				coreError('TEMPLATE_PARSE_FAILED', `${file}: derive[${index}] 缺 template`),
+			);
+			continue;
+		}
+		const label = asString(entry['label']);
+		const description = asString(entry['description']);
+		out.push({
+			template,
+			...(label === undefined ? {} : { label }),
+			...(description === undefined ? {} : { description }),
+		});
+	}
+	return out;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -275,26 +338,20 @@ function parseTemplate(
 export interface LoadTemplatesOptions {
 	/** ③ 的注册面（`registerTemplate` / `markTemplateRegistryReady`）。 */
 	readonly registry: TypesRegistry;
-	/** 已注册的 action `$type`（② 的 `list()`）。**生产装配必须传** —— 不传等于放弃一道校验。 */
-	readonly actionTypes: readonly string[];
 	/** 覆盖模板根目录（测试用）。省略则按 `findTemplatesDir` 探测。 */
 	readonly dir?: string;
 }
 
 /** `loadTemplates` 的结果。 */
 export interface LoadTemplatesResult {
-	/** 成功注册的模板名（含预设）。 */
+	/** 成功注册的模板名。 */
 	readonly registered: readonly string[];
 	/** 失败项。非空 ⇒ 调用方必须决定中止（本函数不替你吞掉）。 */
 	readonly failures: readonly CoreError[];
 }
 
 /**
- * 读 `templates/` 与 `templates/presets/` 下的全部 YAML，注册进 ③。
- *
- * **顺序**：
- *   1. 先注册普通模板（预设要指向它们）；
- *   2. 再注册预设（章节声明**从目标模板继承**，于是 ③ 的"章节集一致"校验天然成立）。
+ * 读 `templates/`（根目录 + 一级子目录，排除 `actions/`）下的全部 YAML，注册进 ③。
  *
  * **失败处理**：逐个收集、**不中途抛**，让一次启动就能看到全部问题；
  * 全部跑完后调用方若发现 `failures` 非空，应中止启动。
@@ -313,50 +370,42 @@ export function loadTemplates(options: LoadTemplatesOptions): LoadTemplatesResul
 		return { registered: [], failures };
 	}
 
-	const normal: TemplateDefForRegistry[] = [];
-	const presets: Extract<ParsedTemplate, { type: 'preset' }>[] = [];
-
-	/* ── 1. 普通模板 ── */
-	for (const name of yamlFilesIn(dir)) {
-		const data = readYamlFile(join(dir, name), name, failures);
-		const record = asRecord(data);
-		if (record === undefined) continue;
-		const parsed = parseTemplate(record, name, failures);
-		if (parsed === undefined) continue;
-		if (parsed.type === 'preset') presets.push(parsed);
-		else normal.push(parsed.def);
+	const files = collectTemplateFiles(dir);
+	if (files.length === 0) {
+		failures.push(
+			coreError('TEMPLATES_DIR_MISSING', `模板目录「${dir}」里没有找到任何 .yaml 文件`),
+		);
+		return { registered: [], failures };
 	}
 
-	/* ── 2. 预设模板 ── */
-	const presetDir = join(dir, 'presets');
-	for (const name of yamlFilesIn(presetDir)) {
-		const displayPath = join('presets', name);
-		const data = readYamlFile(join(presetDir, name), displayPath, failures);
+	const registered: string[] = [];
+	const seen = new Map<string, string>();
+
+	for (const { file, displayPath } of files) {
+		const data = readYamlFile(file, displayPath, failures);
 		const record = asRecord(data);
 		if (record === undefined) continue;
-		const parsed = parseTemplate(record, displayPath, failures);
-		if (parsed === undefined) continue;
-		if (parsed.type !== 'preset') {
+
+		const def = parseTemplate(record, displayPath, failures);
+		if (def === undefined) continue;
+
+		/* 同名模板：**两份文件撞名**是配置错误，报出来而不是让后者静默覆盖。 */
+		const previous = seen.get(def.name);
+		if (previous !== undefined) {
 			failures.push(
 				coreError(
-					'TEMPLATE_PARSE_FAILED',
-					`${displayPath}: presets/ 下的文件必须带 template 字段`,
+					'TEMPLATE_REGISTER_REJECTED',
+					`模板「${def.name}」在 ${previous} 与 ${displayPath} 重复定义`,
+					{ name: def.name, files: [previous, displayPath] },
 				),
 			);
 			continue;
 		}
-		presets.push(parsed);
-	}
 
-	/* ── 3. 注册普通模板 ── */
-	const registered: string[] = [];
-	const byName = new Map<string, TemplateDefForRegistry>();
-
-	for (const def of normal) {
 		try {
-			options.registry.registerTemplate(def, { actionTypes: options.actionTypes });
+			options.registry.registerTemplate(def);
 			registered.push(def.name);
-			byName.set(def.name, def);
+			seen.set(def.name, displayPath);
 		} catch (error) {
 			failures.push(
 				coreError(
@@ -367,65 +416,8 @@ export function loadTemplates(options: LoadTemplatesOptions): LoadTemplatesResul
 		}
 	}
 
-	/* ── 4. 注册预设：章节声明从目标模板继承 ── */
-	for (const preset of presets) {
-		const target = byName.get(preset.presetOf);
-		if (target === undefined) {
-			failures.push(
-				coreError(
-					'TEMPLATE_REGISTER_REJECTED',
-					`预设「${preset.name}」指向的模板「${preset.presetOf}」未注册成功`,
-				),
-			);
-			continue;
-		}
-		/*
-		 * 章节声明整份继承自目标模板 —— 于是 ③ 的「预设章节集 = 目标章节集」校验天然成立，
-		 * 且预设与目标的 `accepts` 不会各写一份（那是第二处真值）。
-		 */
-		const def: TemplateDefForRegistry = {
-			name: preset.name,
-			presetOf: preset.presetOf,
-			kind: target.kind,
-			domain: target.domain,
-			codePrefix: target.codePrefix,
-			sections: target.sections,
-			...(preset.displayName === undefined ? {} : { displayName: preset.displayName }),
-		};
-		try {
-			options.registry.registerTemplate(def, { actionTypes: options.actionTypes });
-			registered.push(def.name);
-			/* payload 只在注册成功后保存：注册失败的预设不该留下"可建卡"的假象。 */
-			PRESET_PAYLOADS.set(preset.name, preset.payloads);
-		} catch (error) {
-			failures.push(
-				coreError(
-					'TEMPLATE_REGISTER_REJECTED',
-					`预设「${preset.name}」注册失败：${error instanceof Error ? error.message : String(error)}`,
-				),
-			);
-		}
-	}
-
-	/* ── 5. 只有零失败才标记就绪 ── */
+	/* 只有零失败才标记就绪。 */
 	if (failures.length === 0) options.registry.markTemplateRegistryReady();
 
 	return { registered, failures };
-}
-
-/**
- * 取某个预设模板的 payload 集合（建卡时作为 `sections` 初值）。
- *
- * 普通模板 ⇒ `undefined`（没有预置内容，由用户填）。
- */
-export function presetPayloadsOf(name: string): Record<string, unknown> | undefined {
-	const payloads = PRESET_PAYLOADS.get(name);
-	if (payloads === undefined) return undefined;
-	/* 返回副本：调用方会把它当 `sections` 改，不能污染注册表里那份。 */
-	return { ...payloads };
-}
-
-/** 清空预设 payload 缓存（测试 / 重新装配用）。 */
-export function resetPresetPayloads(): void {
-	PRESET_PAYLOADS.clear();
 }

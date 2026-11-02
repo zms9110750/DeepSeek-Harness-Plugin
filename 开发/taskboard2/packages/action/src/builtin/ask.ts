@@ -1,11 +1,10 @@
 /**
  * 内置 action：`ask` —— 选项选择，单选或多选。
  *
- * 四态：
- *   create —— 可点选项 + 自填框 + 「未选择」
- *   active —— 同上（可改）
- *   ended  —— 只读展示选择结果，可刮取
- *   plain  —— 问题 / 描述 / 选项 / 用户选择，纯文本
+ * 四态（YAML `renderer:` 里一一对应）：
+ *   askEditable —— 可点选项 + 自填框 + 「未选择」（**`create` 与 `active` 共用同一个函数，这是有意的**）
+ *   askEnded    —— 只读展示选择结果，可刮取
+ *   askPlain    —— 问题 / 描述 / 选项 / 用户选择，纯文本
  *
  * **「未选择」和自填框恒存在**，不是参数开关（用户 02:35）。
  * `picked` 三态：键不存在（未选择）/ `[]`（看了但都不要）/ `["A"]`（选了）。
@@ -14,7 +13,7 @@
  * 模板的 default 不填它，AI 想填就填 —— 不校验语义。
  */
 
-import { element, fragment, isPlainObject, readField, text, type Node } from '../nodes.js';
+import { element, isPlainObject, readField, text, type Node } from '../nodes.js';
 import type { ActionDefinition, ActionPayload, SchemaNode } from '../types.js';
 
 const schema: SchemaNode = {
@@ -94,7 +93,7 @@ function readStringArray(item: Record<string, unknown>, key: string): string[] {
 }
 
 /** ended：只读展示选择结果，可刮取。 */
-function endedView(payload: unknown): Node {
+export function askEnded(payload: unknown): Node {
 	const p = asPayload(payload);
 
 	const itemsRead = readField<unknown[]>(p, 'items', 'array', true);
@@ -137,11 +136,16 @@ function endedView(payload: unknown): Node {
 	);
 }
 
-/** create / active：恒提供「未选择」按钮与自填框。 */
-function editableView(
+/**
+ * create / active 共用：恒提供「未选择」按钮与自填框。
+ *
+ * **不收 `phase` 参数**：YAML 里 `create` 与 `active` 指向同一个函数，
+ * 它无法知道自己是哪个态 —— 而 ⑩ 按态调函数，本来就知道。
+ * ⇒ 节点上**不带 `data-phase`**。
+ */
+export function askEditable(
 	payload: unknown,
 	onChange: (next: ActionPayload) => void,
-	phase: 'create' | 'active',
 ): Node {
 	const p = asPayload(payload);
 
@@ -158,7 +162,7 @@ function editableView(
 
 	return element(
 		'div',
-		{ 'data-action': 'ask', 'data-phase': phase },
+		{ 'data-action': 'ask' },
 		items.map((item, index) => {
 			const picked = readStringArray(item, 'picked');
 			const custom = readStringArray(item, 'custom');
@@ -240,7 +244,7 @@ function editableView(
 }
 
 /** plain：问题 / 描述 / 选项 / 用户选择。 */
-function plain(payload: unknown): string {
+export function askPlain(payload: unknown): string {
 	const p = asPayload(payload);
 	const items: unknown[] = Array.isArray(p.items) ? p.items : [];
 
@@ -275,9 +279,9 @@ export const askAction: ActionDefinition = {
 	summary: '选项选择，单选或多选，恒有「未选择」和自填框',
 	schema,
 	render: {
-		create: (payload, onChange) => editableView(payload, onChange, 'create'),
-		active: (payload, onChange) => editableView(payload, onChange, 'active'),
-		ended: endedView,
-		plain,
+		create: askEditable,
+		active: askEditable,
+		ended: askEnded,
+		plain: askPlain,
 	},
 };

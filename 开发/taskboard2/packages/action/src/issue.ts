@@ -21,8 +21,3 @@ export function toIssueForUI(source: Issue): IssueForUI {
 		...(source.path === undefined ? {} : { path: source.path }),
 	};
 }
-
-/** 批量投影。 */
-export function toIssuesForUI(sources: readonly Issue[]): IssueForUI[] {
-	return sources.map(toIssueForUI);
-}

@@ -9,20 +9,21 @@
  *
  * 而这两个清单要变成"可落库的卡"，需要**两件 ⑦ 做不到的事**：
  *   1. **判"丢的那章有没有用户内容"** ⇒ 调 ② 的 `hasUserContent`（payload 语义）
- *   2. **给缺的章补空 payload** ⇒ 调 ② 的 `emptyPayloadFor(accepts)`
+ *   2. **给缺的章补 payload** ⇒ 用 ③ 的 `sectionsOf` 给出的该章 `default`
  *
  * ⇒ ⑧ 在这一条路径上不是纯转发，而是**编排 + 消费 ② 的判定**。
  *   ⚠ 但"要不要因丢弃而阻断"是**已裁策略**（允许丢弃 + history 留痕），
  *   **不是 core 每次运行时做的决定** —— 所以这里没有 `if (hasContent && !allow) 拒绝`。
  *
- * ## 两个失败必须分开报
+ * ## 缺章没有 `default` 怎么办
  *
- * | 情形 | 错误 |
- * |---|---|
- * | `accepts: []`（该章禁一切 action） | `SECTION_ACCEPTS_NOTHING` |
- * | `accepts` 非空但都构造不出空 payload | `SECTION_NO_EMPTY_PAYLOAD` |
+ * **报错，不猜。** `accepts` 移除后（用户 11:26），"从候选 action 里挑一个"的依据不存在了；
+ * 剩下的唯一依据是模板为该章声明的 `default`。没有它就没有任何合法初值可造 ——
+ * 猜一个 `$type` 等于替模板作者做决定。
  *
- * 合并成"系统错误"会让用户分不清"模板设计如此"与"能力缺口"。
+ * ⚠ **实测：17 个模板 52 章里 8 章没有 `default`**（`delivery.yaml` 全部三章、
+ *   `question.yaml` 的 `blocked` 等）⇒ 这条报错会真的触发，是**模板内容问题**，
+ *   报错信息要能指出是哪一章。
  *
  * ## 丢弃的 payload 不被持久化
  *
@@ -33,6 +34,7 @@
 import { coreError, describeReject, type CoreError } from './errors.js';
 import { allocateId } from './ids.js';
 import type { Card, Ports } from './ports.js';
+import { applyStatus, type HistoryEvent } from './status-write.js';
 import { assertSectionsComplete } from './validate.js';
 import type { ActiveWorkspace } from './workspace.js';
 import { findCard } from './workspace.js';
@@ -71,7 +73,7 @@ export type ForkResult = ForkSuccess | ForkFailure;
  * ```
  * ⑦ planFork → { newCard, relations, droppedSections, missingSections }
  * 对 dropped：② hasUserContent(payload) ⇒ hadContent
- * 对 missing：② emptyPayloadFor(accepts) ⇒ 补 payload（undefined ⇒ 报错）
+ * 对 missing：③ sectionsOf 里该章的 default ⇒ 补 payload（没有 ⇒ EMPTY_PAYLOAD_UNAVAILABLE）
  * assertSectionsComplete(新模板, 补齐后的 payloads)
  * 事务：发号 + 写卡 + 历史
  * ```
@@ -125,33 +127,33 @@ export function forkCard(
 		hadContent: ports.actions.hasUserContent(section.payload),
 	}));
 
-	/* ④ 给缺的章补空 payload（② 的构造器） */
+	/*
+	 * ③ 给缺的章补 payload —— **用该章的 `default`**。
+	 *
+	 * `accepts` 已彻底移除（用户 11:26）⇒ "从候选 action 里挑一个"的依据不存在了。
+	 * 现在唯一的依据是模板为该章声明的 `default`。
+	 * **没有 `default` ⇒ 报错，不猜**（猜一个 action 就是替模板作者做决定）。
+	 */
 	const payloads: Record<string, unknown> = { ...preview.newCard.sections };
 	const filled: FilledRecord[] = [];
 
 	for (const section of preview.missingSections) {
-		const accepts = section.accepts;
-		const empty = ports.actions.emptyPayloadFor(accepts as never);
+		const spec = newSections.find((item) => item.id === section.sectionId);
+		const fallback = spec?.default;
 
-		if (empty === undefined) {
-			/* 两种失败分开报：禁一切 vs 构造不出。 */
-			const isForbidden = Array.isArray(accepts) && accepts.length === 0;
+		if (fallback === undefined) {
 			return {
 				ok: false,
-				error: isForbidden
-					? coreError(
-							'SECTION_ACCEPTS_NOTHING',
-							`章节「${section.sectionId}」不接受任何输入组件，fork 无法自动补全，需人工处理。`,
-							{ sectionId: section.sectionId },
-						)
-					: coreError(
-							'SECTION_NO_EMPTY_PAYLOAD',
-							`章节「${section.sectionId}」的候选组件都无法自动初始化，需人工填写。`,
-							{ sectionId: section.sectionId, accepts },
-						),
+				error: coreError(
+					'EMPTY_PAYLOAD_UNAVAILABLE',
+					`章节「${section.sectionId}」在模板「${templateRef}」里没有 default，fork 无法自动补全，需人工填写。`,
+					{ sectionId: section.sectionId, templateRef },
+				),
 			};
 		}
-		payloads[section.sectionId] = empty;
+
+		/* 深拷贝：`default` 来自注册表，新卡要独立持有。 */
+		payloads[section.sectionId] = structuredClone(fallback);
 		filled.push({ sectionId: section.sectionId });
 	}
 
@@ -197,32 +199,45 @@ export function forkCard(
 		}
 
 		/* 用补齐后的 payloads 覆盖 ⑦ 给的 sections（⑦ 只保留了新模板里存在的章）。 */
-		const card: Card = {
-			...plan.newCard,
-			sections: payloads,
-			history: [
-				...plan.newCard.history,
-				...(dropped.length === 0
-					? []
-					: [
-							{
-								at: options.at,
-								action: 'fork_discarded',
-								/* ⚠ 只记 id 与"有没有内容"，**不记 payload**。 */
-								detail: dropped.map((item) => ({ sectionId: item.sectionId, hadContent: item.hadContent })),
-							},
-						]),
-				...(filled.length === 0
-					? []
-					: [
-							{
-								at: options.at,
-								action: 'fork_filled',
-								detail: filled.map((item) => item.sectionId),
-							},
-						]),
-			],
-		};
+		const base: Card = { ...plan.newCard, sections: payloads };
+
+		/*
+		 * ── 收口：**初值**（`mode:'init'`）──
+		 *
+		 * 用户 12:46：「建卡，fork，这两个卡的状态初始值，严格上不算转移。」
+		 * ⇒ **不判等、不广播**。fork 出的是顶层卡（`parent: ''`），本来也没有父卡要通知。
+		 *
+		 * fork 自造的两条历史（`fork_discarded` / `fork_filled`）一并经收口追加 ——
+		 * `history` 的追加只实现一次（`appendHistory`），不在别处再拼一次。
+		 */
+		const events: HistoryEvent[] = [
+			...(dropped.length === 0
+				? []
+				: [
+						{
+							at: options.at,
+							action: 'fork_discarded',
+							/* ⚠ 只记 id 与"有没有内容"，**不记 payload**。 */
+							detail: dropped.map((item) => ({ sectionId: item.sectionId, hadContent: item.hadContent })),
+						},
+					]),
+			...(filled.length === 0
+				? []
+				: [
+						{
+							at: options.at,
+							action: 'fork_filled',
+							detail: filled.map((item) => item.sectionId),
+						},
+					]),
+		];
+
+		const card = applyStatus({
+			card: base,
+			to: base.status,
+			events,
+			mode: 'init',
+		}).card;
 
 		tx.write([card]);
 		created = card;

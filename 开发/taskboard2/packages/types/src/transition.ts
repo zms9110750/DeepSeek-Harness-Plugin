@@ -46,9 +46,39 @@ function deny(reason: string): TransitionVerdict {
 
 const ALLOW: TransitionVerdict = { ok: true };
 
-/** 采纳：草稿 → 提交（只能用户）。 */
-function isAdopt(from: TaskState, to: TaskState): boolean {
-	return from === S.UNSPECIFIED && to === S.SUBMITTED;
+/**
+ * 采纳 —— **两种不同目的地的转移，被叫成同一个名字**：
+ *
+ *   · goal / work：`草稿 → 提交`（进入计算 / 可领取）
+ *   · design / record：`草稿 → 需要授权`（生来就是搁置态）
+ *
+ * 两者都从草稿出发、都由「采纳」触发，但**目的地不同** ⇒ 下面的 actor 限制也不同。
+ * **目的地按分类判定**，不做"任意草稿→任意非草稿都算采纳"的放宽（那会把非矩阵转移也套上采纳的限制）。
+ */
+function isAdopt(kind: string, from: TaskState, to: TaskState): boolean {
+	if (from !== S.UNSPECIFIED) return false;
+	if (kind === 'design' || kind === 'record') return to === S.AUTH_REQUIRED;
+	return to === S.SUBMITTED;
+}
+
+/**
+ * 采纳的 actor 限制。
+ *
+ * 依据（用户 `13:15`）：「我现在允许设计和记录，由actor为ai的时候通过。」
+ * 与 `docs/状态转移矩阵.md` 一致：
+ *   - 目标（三/草稿）、工作（五/草稿）：**只列「用户点击采纳」** ⇒ 仅 `user`
+ *   - 设计（四/草稿）、记录（六/草稿）：列了「用户点击采纳」+「**ai 调用采纳**」 ⇒ `user` / `ai`
+ *
+ * ⚠ 用户 `01:29`「采纳只能用户」的适用范围是 **goal/work 的草稿→提交**；
+ * design/record 的草稿→需要授权是**另一条转移**，当时被我实现成"全分类一刀切"，已修正。
+ *
+ * `host` 不在矩阵里出现 ⇒ **一律不允许**（不猜）。
+ */
+function adoptActorAllowed(kind: string, actor: Actor): boolean {
+	/* 设计与记录的采纳放开给 ai（用户 13:15）；用户始终可以。 */
+	if (kind === 'design' || kind === 'record') return actor === 'user' || actor === 'ai';
+	/* 其余分类（goal / work / 外部注册）保持原口径：只能用户。 */
+	return actor === 'user';
 }
 
 /** 领取：提交 → 处理中。 */
@@ -117,8 +147,14 @@ export function canTransition(
 		return deny('草稿必须先由用户采纳为「提交」，才能领取');
 	}
 
-	/* 采纳只能用户。 */
-	if (isAdopt(from, to) && actor !== 'user') return deny('采纳只能由用户执行');
+	/*
+	 * 采纳的 actor 限制：**按分类分**（用户 13:15）。
+	 *   · goal / work  → 仅 user
+	 *   · design / record → user 或 ai
+	 */
+	if (isAdopt(kind, from, to) && !adoptActorAllowed(kind, actor)) {
+		return deny(`「${kind}」的采纳不能由 ${actor} 执行`);
+	}
 
 	/* 依赖门：工作的「提交 → 处理中」要求依赖全部进入「完成」组。 */
 	if (kind === 'work' && isClaim(from, to) && !facts.depsAllEnded) {

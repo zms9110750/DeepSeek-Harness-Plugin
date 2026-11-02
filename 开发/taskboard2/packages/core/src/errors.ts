@@ -30,10 +30,14 @@ export type CoreErrorCode =
 	| 'CREATE_VALIDATION_FAILED'
 	/** 编辑校验未通过（携带 ② 的 issues）。 */
 	| 'EDIT_VALIDATION_FAILED'
-	/** 章节不接受任何 action，无法自动补空 payload。 */
-	| 'SECTION_ACCEPTS_NOTHING'
-	/** 该章节的候选 action 都构造不出空 payload。 */
-	| 'SECTION_NO_EMPTY_PAYLOAD'
+	/**
+	 * fork 补缺章时，模板没给该章 `default` ⇒ 没有任何合法初值可造。
+	 *
+	 * ⚠ `accepts` 移除后（用户 11:26），"从候选 action 里挑一个"的依据不存在了 ——
+	 * `default` 是唯一依据。**没有它就不猜**（猜 `$type` = 替模板作者做决定）。
+	 * 错误里必须带 `sectionId`，否则用户不知道要补哪一章。
+	 */
+	| 'EMPTY_PAYLOAD_UNAVAILABLE'
 	/** 关系目标非法（不存在 / 草稿 / 跨空间）。 */
 	| 'RELATION_TARGET_INVALID'
 	/** 关系补丁应用失败（④ 拒绝）。 */

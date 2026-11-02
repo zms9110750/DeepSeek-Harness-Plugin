@@ -28,6 +28,7 @@
 import { coreError, describeReject, type CoreError } from './errors.js';
 import type { Card, Ports, Principal, Tx } from './ports.js';
 import { recomputeUpward } from './recompute.js';
+import { appendHistory, applyStatus, type HistoryEvent } from './status-write.js';
 import type { ActiveWorkspace } from './workspace.js';
 import { findCard } from './workspace.js';
 
@@ -134,27 +135,85 @@ export function claimCard(
 	let updated: Card | undefined;
 	let recomputed: Card[] = [];
 	ports.store.transaction(workspace.wsId, (tx) => {
+		/*
+		 * 把 ⑦ 的计划意图翻译成 `(字段来源卡, 目标值, 旧值基准)` 三元组。
+		 *
+		 * 两种 `op` 形状不同：
+		 *   · `updateCard` —— ⑦ 给**整卡**，status **已经是目标值** ⇒ 目标值从卡上读，
+		 *     旧值基准取事务内的旧卡；
+		 *   · `setStatus`  —— ⑦ 只给"改成什么" ⇒ 字段来源与旧值基准**都是**事务内旧卡，
+		 *     目标值用 `item.to`。**不需要先拼一张 `{...fresh, status: item.to}` 的假卡。**
+		 *
+		 * ⇒ 两种形状在这里收敛成三元组，**后续只有一条 `applyStatus` 调用**；
+		 *   与 `adopt.ts` 的写法一致（那里也是"直接传卡 + to"，不预拼整卡）。
+		 *
+		 * ## ⚠ `setStatus` 分支当前**无调用方**（保留是因为它服务于已知的演化方向）
+		 *
+		 * ⑦ 产出 `setStatus` 的只有 `taskcard/adopt.ts:85,106`，而它走的是**本包的 `adopt.ts`**、
+		 * 不是这里。**领取 / 释放的 ⑦ 计划只产 `updateCard`**
+		 * （`taskcard/claim.ts:110`、`taskcard/release.ts:88`，都是单元素数组字面量）
+		 * ⇒ **本函数的 `setStatus` 分支今天走不到。**
+		 *
+		 * **为什么"留 `setStatus` 分支"但"不留多条 intent 的防御"** —— 两者判据不同，写清免得看起来随心：
+		 *   · `setStatus` 分支：服务于**已知的演化方向**（⑦ 若把 `planClaim` / `planRelease` 改成
+		 *     只给"改成什么"而非整卡，就会走到）。**代价 ~6 行，收益是那时不用改这里。**
+		 *   · 多条 intent 的防御：服务于**假想情形**（没有已知计划要这么做）；且真要发生，
+		 *     根因在函数形状（`claimCard` 返回 `card: Card` 而非 `cards: Card[]`），
+		 *     **加运行时抛错只是让它更深处炸，不会让它变对。**
+		 *
+		 * ## ⚠ 隐式契约（**两条**，都由 ⑦ 的形状保证，不由本函数保证）
+		 *
+		 * 1. **只含一条状态意图** —— 本循环是"后写覆盖先写"，多条时前面的会被**静默丢弃**；
+		 * 2. **不混用 op** —— 若一条 `updateCard` + 一条 `setStatus`，落盘只看最后一条，
+		 *    "落哪张卡"就从"按 op 推"退化成"按顺序推"。
+		 * ⇒ 任一条件被 ⑦ 打破，这里必须改（且**不会报错**，只会静默按最后一条落盘）。
+		 */
+		let intent: { readonly card: Card; readonly to: string; readonly from: string } | undefined;
+
 		for (const item of plan.items) {
-			if (item.op === 'updateCard') updated = item.card;
-			else if (item.op === 'setStatus') {
-				const fresh = tx.read(item.cardId);
-				if (fresh === undefined) continue;
-				updated = { ...fresh, status: item.to };
+			if (item.op === 'updateCard') {
+				const before = tx.read(item.card.id);
+				if (before === undefined) continue;
+				intent = { card: item.card, to: item.card.status, from: before.status };
+			} else if (item.op === 'setStatus') {
+				const before = tx.read(item.cardId);
+				if (before === undefined) continue;
+				intent = { card: before, to: item.to, from: before.status };
 			}
 		}
-		if (updated === undefined) return;
+		if (intent === undefined) return;
 
-		/* 历史事件由 ⑦ 给（不含时间戳则空），⑧ 在事务内补齐。 */
-		const events = plan.events as readonly { at: number; action: string; detail?: unknown }[];
-		if (events.length > 0) updated = { ...updated, history: [...updated.history, ...events] };
+		const events = plan.events as readonly HistoryEvent[];
+		const outcome = applyStatus({
+			card: intent.card,
+			to: intent.to,
+			from: intent.from,
+			events,
+			mode: 'transition',
+		});
+
+		/*
+		 * 同值时落的盘：`intent.card`。
+		 *
+		 * ⚠ **这个正确性是按 op 各自推出来的，不是设计天然安全** —— 两种情况要分开看：
+		 *   · `setStatus`  —— `intent.card` = 事务内旧卡。⑦ 只说"改状态"，状态没变 ⇒ 别的也没变
+		 *     ⇒ 落旧卡等于**无变化的写**（幂等，无害）；
+		 *   · `updateCard` —— `intent.card` = ⑦ 的整卡。⑦ 可能**同时**改了 `claimedBy` / `title` /
+		 *     `sections` 等，那些与 status 无关、必须落盘 ⇒ 落 `item.card` 正确。
+		 *
+		 * ⇒ 两种都对，但**理由不同**；若将来加第三种 op，必须重新推一遍它在这种情形下该落哪张卡。
+		 * ⇒ 不写历史、不广播（用户「不切是必要的」）。
+		 */
+		updated = outcome.changed ? outcome.card : intent.card;
 
 		tx.write([updated]);
 
 		/*
-		 * 监听链：领取让状态变了 ⇒ 父卡重算。
+		 * 监听链：**只有 status 真的变了**才通知父卡。
+		 * 领取在正常路径上一定变（提交 → 处理中），但收口后不再假设。
 		 * **同一个事务**内做，否则会出现"子卡已领、父卡状态没更新"的中间态。
 		 */
-		recomputed = [...recomputeAfter(ports, tx, updated, at)];
+		if (outcome.changed) recomputed = [...recomputeAfter(ports, tx, updated, at)];
 	});
 
 	if (updated === undefined) {
@@ -213,19 +272,32 @@ export function releaseClaim(
 	let updated: Card | undefined;
 	let recomputed: Card[] = [];
 	ports.store.transaction(workspace.wsId, (tx) => {
+		let proposed: Card | undefined;
 		for (const item of plan.items) {
-			if (item.op === 'updateCard') updated = item.card;
+			if (item.op === 'updateCard') proposed = item.card;
 		}
-		if (updated === undefined) return;
+		if (proposed === undefined) return;
 
-		const events = plan.events as readonly { at: number; action: string; detail?: unknown }[];
+		const before = tx.read(proposed.id);
+		if (before === undefined) return;
+
+		const events = plan.events as readonly HistoryEvent[];
 		/* 强制释放的判定在 ⑦（它知道 `claimedBy` 与主体的关系）；这里只搬运事件。 */
-		if (events.length > 0) updated = { ...updated, history: [...updated.history, ...events] };
+		const outcome = applyStatus({
+			card: proposed,
+			to: proposed.status,
+			from: before.status,
+			events,
+			mode: 'transition',
+		});
+
+		/* status 同值 ⇒ 不写历史、不广播；但 ⑦ 清的占用字段仍要落盘。 */
+		updated = outcome.changed ? outcome.card : proposed;
 
 		tx.write([updated]);
 
-		/* 监听链：释放改了状态 ⇒ 父卡重算（同事务）。 */
-		recomputed = [...recomputeAfter(ports, tx, updated, at)];
+		/* 监听链：**只有 status 真的变了**才通知父卡（同事务）。 */
+		if (outcome.changed) recomputed = [...recomputeAfter(ports, tx, updated, at)];
 	});
 
 	if (updated === undefined) {
@@ -262,30 +334,38 @@ export function deleteCard(
 	}
 
 	let updated: Card | undefined;
-	let recomputed: Card[] = [];
 	ports.store.transaction(workspace.wsId, (tx) => {
 		for (const item of plan.items) {
 			if (item.op === 'updateCard') updated = item.card;
 		}
 		if (updated === undefined) return;
-		const events = plan.events as readonly { at: number; action: string; detail?: unknown }[];
-		if (events.length > 0) updated = { ...updated, history: [...updated.history, ...events] };
-		tx.write([updated]);
 
 		/*
-		 * 监听链：删除**改变了父卡的子任务集合** ⇒ 父卡要重算。
+		 * 归档：**只置 `deleted`，不改 status** ⇒ 走 `appendHistory`，不走 `applyStatus`。
 		 *
-		 * 墓碑在 ③ 的 `liveChildren` 里被滤掉 ⇒ 父卡的推导会看到"这个孩子不在了"。
-		 * ⚠ 这里传的是**被删卡的 id**：`recomputeUpward` 会去找它的父卡。
+		 * ## 为什么不广播 —— 三个前提缺一不可
+		 *
+		 * 1. **③ 的 `liveChildren` 滤草稿** ⇒ 父卡的 `children` 里本来就没有草稿子卡；
+		 * 2. **删除 = 标记墓碑**（`【用户指令，2026-11-01 03:32】`「删除是标记为删除」）
+		 *    且 **`liveChildren` 也滤墓碑** ⇒ 墓碑对父卡同样不可见；
+		 * 3. **被归档的卡在归档前必须是草稿**（⑦ 的 `planDelete` 强制 `DRAFT`；
+		 *    `【用户指令，2026-11-02 13:15】`「归档在现阶段只有草稿才能归档」）。
+		 *
+		 * ⇒ 归档前不可见（前提 1 + 3）、归档后仍不可见（前提 2）⇒ **父卡看到的东西没变** ⇒ 不通知。
+		 *
+		 * ⚠⚠ **前提 3 是"现阶段"的规则，不是永久约束。** 若将来允许"非草稿也能归档"，
+		 * 那张卡归档前对父卡**是可见的**、归档后不可见 ⇒ **父卡看到的东西变了 ⇒ 这里必须改成广播**。
+		 *
+		 * ⚠⚠ **本结论依赖 ③ 的 `liveChildren`（`packages/types/src/kind.ts`）同时滤墓碑与草稿。**
+		 * 若 ③ 改了那个函数的过滤口径，**本结论立刻失效，而 ⑧ 这边不会有任何编译或运行报错** ——
+		 * 只会静默地少通知一次父卡重算。**改 ③ 的人请回来看这一行。**
+		 *
+		 * ⇒ 一句话：**这条"不广播"是三个前提共同支撑的，任何一个变松它都会静默失效。**
 		 */
-		const result = recomputeUpward(ports, tx, [updated.id], { at });
-		recomputed = [...result.changed];
-		if (result.failures.length > 0) {
-			console.error('[taskboard2-core] 删除后重算失败：');
-			for (const item of result.failures) console.error(`  · [${item.code}] ${item.message}`);
-		}
+		updated = appendHistory(updated, plan.events as readonly HistoryEvent[]);
+		tx.write([updated]);
 	});
 
 	/* 幂等：已墓碑时 ⑦ 给空计划 ⇒ 返回原卡。 */
-	return { ok: true, card: updated ?? card, recomputed };
+	return { ok: true, card: updated ?? card, recomputed: [] };
 }

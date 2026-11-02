@@ -17,7 +17,7 @@
  *
  * **⑦ 只算 `sectionId` 全集**（纯键集运算），**payload 原样透传、不解释**：
  *   · `droppedSections`：源卡有、新模板无 ⇒ ⑧ 调 ② 判 `hadContent` 后写历史
- *   · `missingSections`：新模板有、源卡无 ⇒ ⑧ 用 ② 的 `emptyPayloadFor(accepts)` 补
+ *   · `missingSections`：新模板有、源卡无 ⇒ ⑧ 自己从 ③ 拿 `default` 补空 payload
  *
  * ⚠ 清单非空 **≠** 数据有问题：只是键集差异的如实报告（`docs` §3.8 第 28 条）。
  */
@@ -41,16 +41,14 @@ export interface DroppedSection {
 	payload: unknown;
 }
 
-/** 缺失的一章：⑦ 只给 `sectionId` + `accepts`（由入参透传，⑦ 不查模板）。 */
+/**
+ * 缺失的一章：⑦ 只给 `sectionId`。
+ *
+ * ⚠ 这里**故意不带 `accepts`**：③ 已彻底移除它（`sectionsOf` 只返回 `{ id, default? }`）。
+ * 补空 payload 需要的是**该章的 `default`**，由 ⑧ 自己从 ③ 拿 —— ⑦ 只报"缺哪几章"。
+ */
 export interface MissingSection {
 	sectionId: string;
-	/**
-	 * 该章接受的 action 类型，**从入参原样透传**。
-	 *
-	 * ⚠ 三态：`'any'` = 不限 / `[]` = 禁一切 / 具体列表 = 候选集。
-	 * ⑦ **不解释它**，只把它交给 ⑧；补空 payload 时的挑选是 ② 的 `emptyPayloadFor(accepts)`。
-	 */
-	accepts: readonly string[] | 'any';
 }
 
 /** `planFork` 的产物 —— **不是** `Plan`（它还带着给 ⑧ 的两个清单）。 */
@@ -119,7 +117,7 @@ export function planFork(
 	const missingSections: MissingSection[] = [];
 	for (const section of newTemplateSections) {
 		if (!haveIds.has(section.id)) {
-			missingSections.push({ sectionId: section.id, accepts: section.accepts });
+			missingSections.push({ sectionId: section.id });
 		}
 	}
 

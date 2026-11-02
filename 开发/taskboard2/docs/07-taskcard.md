@@ -45,6 +45,7 @@
 | **取代是可以编辑的；新建的时候可以取代多个卡；fork 只是快速的创建一个卡、帮你填写字段；「取代只能有一个」这个要求改掉** | `2026-11-01 13:18` |
 | **关系是有行为的，所以是英文 + 显示名；但「有行为」的只有「依赖」——效果是所有依赖对象都进入了完成态，这个卡才能被领取（提交 → 处理中那个按钮）** | `2026-11-01 13:18` |
 | **template 要有领域的**（卡上 `template.domain` 存快照；`domain` 仍纯展示、不校验语言） | `2026-11-02 00:23` |
+| **派生按钮的行为一律携带：选择派生提供的模板，把关系里面设置对方为父任务，标题用父任务的标题，加上 `-`，然后加上父任务对这个派生按钮写的 label。如果没有 label，就加模板名字。这只是初始化的行为，如果中途改变了模板，标题不会附随自动更改** | `2026-11-02 11:26` |
 
 以下两条为本轮设计过程中由 **Lead 转达、成员未亲收** 的表述，正文引用时按此强度处理：
 - 「采纳前可以原地改任何东西；采纳后不可原地改，要改只能 fork」
@@ -95,14 +96,14 @@ planRelease(card, principal): Plan                  // principal = {type:'user'}
 planClaim(card, actor, ctx): Plan                   // ctx.actorHasActiveWork 必填
 planDelete(card): Plan
 planForkTransfer(src, all): { transfer, skip }      // 只读，供 fork 面板预览
-applyRelationPatch(card, patch): { ok:true; value: Relations } | { ok:false; issues: Issue[] }
+applyRelationPatches(card, patches): { ok:true; value: Relations } | { ok:false; issues: Issue[] }
 ```
 
 - **所有 plan 只产出「意图」，不写盘**；落盘与事务归 ⑧。
-- **意图里给"卡的完整最终字段"，不给 diff**（⑧ 不反推字段语义）。
+- **意图里给"卡的最终完整字段"，不给 diff**（⑧ 不反推字段语义）。
 - **`changeIntent` 的结果不得作为任何 plan 的输入**（TOCTOU：两次调用之间卡状态可能被别的消息循环改掉）⇒ ⑦ 内部重判。
 - `planFork` 的返回额外含两个清单（见 2.5）。
-- `applyRelationPatch`：**所有 relations 写入必须经 ⑦** 的落实点（Lead D1 裁定）。
+- **`applyRelationPatches`（复数）**：**所有 relations 写入必须经 ⑦** 的落实点（Lead D1 裁定）；入参是 **`patches: RelationPatch[]`**，**按数组顺序应用**。
 
 **历史动作名常量（⑦ 导出，供 ⑤⑧⑨⑩ 引用，禁止各包自写字面量）**
 
@@ -142,18 +143,29 @@ applyRelationPatch(card, patch): { ok:true; value: Relations } | { ok:false; iss
 10. **`sections` 的内容归 ②**：⑦ 不校验、不解释、不补默认、不修正，**只整体透传**。
     唯一的结构性接触是 `isDeclarationOnlyChange(prev, next) → boolean`（**只收布尔，不收字段**），以及**键集比较**（键不是内容）。
 
-### 2.4 `derive` 变量（四个）
+### 2.4 `derive` 派生按钮的行为（**变量概念已整个消失**）
 
-| 变量 | 含义 |
+> `【用户指令，2026-11-02 11:26】`
+> **派生按钮的行为一律携带：选择派生提供的模板，把关系里面设置对方为父任务，标题用父任务的标题，加上 -，然后加上父任务对这个派生按钮写的 label。如果没有 label，就加模板名字。这只是初始化的行为，如果中途改变了模板，标题不会附随自动更改。**
+
+**⇒ 规则（写死在代码里，不再是模板里的变量替换）：**
+
+| 项 | 值 |
 |---|---|
-| `{{ title }}` | **源卡（当前卡，即触发 derive 的那张卡）的标题** |
-| `{{ parent }}` | **源卡（当前卡）的编号** |
-| `{{ kind }}` | **新建卡的分类** |
-| `{{ domain }}` | **新建卡的领域**（`【用户指令，2026-11-02 00:23】` 恢复：卡上 `template.domain` 有快照） |
+| **模板** | `derive[].template` |
+| **父任务** | **当前卡**（`relations.parent` = 当前卡） |
+| **标题** | **`{父任务标题}-{derive[].label}`**；**`label` 缺失 ⇒ 用模板的 `displayName`** |
+| **关系** | `parent` = 当前卡 |
 
-- **`{{ domain }}` 已恢复**（11-01 12:48 曾删除，原因见作废表 §4 的"已恢复"条）。
-- ⚠ `{{ parent }}` 与 `{{ title }}` 是两个不同变量。`userNeed.yaml` 的 `title: "{{ parent }} 的设计"` 用的是**编号**，不是标题。
-- **derive 本身没有行为**：它只是"新建面板的预填"，用户点提交时产生的仍是一次**普通建卡**，照常过校验。**【用户指令】**「这只是快速创建，没有行为……改了什么都不会发生。」
+**模板的 `derive` 只剩三个字段**：`label` / `description` / `template`。
+**`title` 与 `relations` 已从模板语法中删除**（旧 YAML 若仍写它们，属过期写法）。
+
+**⚠ 三条边界**
+1. **只是"初始化"**：点按钮的那一刻算一次标题与关系；**中途改模板，标题不会自动跟着变**。
+2. **derive 本身仍然"没有行为"**：它只是"新建面板的预填"，用户点提交时产生的仍是一次**普通建卡**，照常过校验。
+3. **拼接归谁**：**归 ⑧（"按 derive 打开新建面板"那一刻）**，⑦ 的 `planCreate` **只接受最终的 `title` / `relations` 参数**，**不做任何拼接、不读 `label` / `displayName`**（`【实现判断】`，理由：⑦ 不认识"按钮"这个概念，兜底规则还依赖模板元数据）。
+
+**§2.4 旧内容（四个 `{{ }}` 变量）已整体作废，理由与全文见 §4 作废表。**
 
 ### 2.5 `planFork` 的两个清单
 
@@ -161,13 +173,13 @@ applyRelationPatch(card, patch): { ok:true; value: Relations } | { ok:false; iss
 planFork(src, newTemplateSections) → {
   newCard, relations, events,
   droppedSections: Array<{ sectionId: string; payload: unknown }>,   // 源卡有、新模板无
-  missingSections: Array<{ sectionId: string; accepts: string[] }>   // 新模板有、源卡无
+  missingSections: Array<{ sectionId: string }>                      // 新模板有、源卡无
 }
 ```
 
 - **⑦ 能算**：两个清单的 `sectionId` 全集（纯键集运算：源卡 `sections` 键集 vs 新模板章节集）。
 - **⑦ 不能算**：`hadContent`（"这章有没有填内容"是 payload 语义，⑦ 零参与）⇒ **⑦ 原样透传 `payload`，`hadContent` 由 ⑧ 判**。
-- `missingSections.accepts` **由入参 `newTemplateSections` 透传**，⑦ 不查模板。
+- **`missingSections` 只带 `sectionId`**：`accepts` 已由 ③ 彻底移除；补空 payload 需要的 `default` 由 **⑧ 自己从 ③ 拿**（`【实现判断】`：⑦ 不需要 `default`，它只报"缺哪几章"）。
 - **清单非空 ≠ 数据有问题**：只是键集差异的如实报告；"这一章本来该不该存在"归 ②/③。
 
 ### 2.6 用户 12:48 的四条（已答）
@@ -175,8 +187,9 @@ planFork(src, newTemplateSections) → {
 | 问题 | 答案 |
 |---|---|
 | 草稿能否作为关系目标 | **不含草稿**（草稿不能被指） |
-| `{{ title }}` 指谁 | **源卡（当前卡）的标题** |
+| ~~`{{ title }}` 指谁~~ | ~~源卡（当前卡）的标题~~ ⇒ **该变量已作废**（11-02 11:26，见 §2.4） |
 | domain 存什么 | **保持纯展示**（不校验语言、不建注册表）—— ⚠ **11-02 00:23 补充裁定：卡上仍要存 `template.domain` 快照**，因为要按领域筛选 |
+| 提交之后的空章节 | **提交时必须有**；**编辑期间可以是内存状态**；**但只要上了草稿就必须有行为** |
 
 ### 2.6.1 用户 11-02 00:23 的一条（已答）
 
@@ -187,10 +200,9 @@ planFork(src, newTemplateSections) → {
 | 卡上 `template.domain` | ✅ **要有**（快照字段，挂在已有的 `template` 引用里，**不新增必须项**） |
 | `domain` 是否仍"纯展示" | ✅ **是** —— **不校验语言、不建注册表、不参与逻辑分支** |
 | 加它的理由 | **要按领域筛选** ⇒ **卡上必须能拿到该值**（不能每次回查模板：模板可改版） |
-| `{{ domain }}` 变量 | ✅ **恢复**（derive 变量回到四个） |
+| ~~`{{ domain }}` 变量~~ | ❌ **已作废**（11-02 11:26 变量概念整个消失，见 §2.4 与 §4） |
 | **存什么值** | **中文**（`核心` / `代码`），**按中文字符串精确比较**（`【实现判断】`，依据：用户 12:48 选"纯展示"时答的是"存中文还是英文标识"，**未改口**） |
 | ⚠ 已知风险 | **将来若改英文标识，历史卡与新卡会分属两套词汇**（筛"部分命中"）—— **这是用户 12:48 知情后选择的取舍**，不因此改为英文 |
-| 提交之后的空章节 | **提交时必须有**；**编辑期间可以是内存状态**；**但只要上了草稿就必须有行为** |
 
 ### 2.7 用户 13:18 的三条（已答）
 
@@ -240,7 +252,8 @@ planFork(src, newTemplateSections) → {
 8. **⑦ 不校验 `sections` 唯一性/重复键**。
    上游（③ 的注册解析）已保证解析后唯一；**若发现重复，行为未定义**（不是"静默接受"，也**不是 ⑦ 保证唯一**）。
 9. **⑦ 不校验 payload 合法性、不碰 `$type` 字面量**。
-   两个判定都在 ②：`payloadHasContent(payload)`、`emptyPayloadFor(accepts)`。⑦ 侧**承诺不出现任何 action 类型字面量**（否则 ② 新增第四个 action 时会静默出错）。
+   判定在 ②：`payloadHasContent(payload)`。⑦ 侧**承诺不出现任何 action 类型字面量**（否则 ② 新增第四个 action 时会静默出错）。
+   · ⚠ **`emptyPayloadFor(accepts)` 已作废**（11-02 12:10，`accepts` 从 ③ 彻底移除）⇒ 补空 payload 改用**该章的 `default`**，由 ⑧ 从 ③ 拿。
 
 ### 3.4 占用 / 释放
 
@@ -326,7 +339,7 @@ planFork(src, newTemplateSections) → {
 | 被作废的方案 | 作废原因 |
 |---|---|
 | ~~**卡形状 v2：`template: { ref, kind, domain }`**~~ **→ 已恢复** | **结论变了，不是当初判错了**：<br>· **当时（11-01 12:48）的理由**：用户裁「domain 保持纯展示」⇒ 卡上不需要存<br>· **现在（11-02 00:23）的理由**：用户裁「template 要有领域的」，**因为要按领域筛选** ⇒ 卡上必须能拿到该值<br>⇒ **`domain` 仍是纯展示，但"纯展示"不等于"不能存快照"** |
-| ~~**`{{ domain }}` 变量**~~ **→ 已恢复** | 随上一条恢复：derive 变量回到四个 |
+| ~~**`{{ domain }}` 变量**~~ **→ 已再次作废（最终状态：不存在）** | 11-02 00:23 曾恢复（随 `template.domain` 快照），**11-02 11:26 随整个变量机制再次作废**。⇒ **当前不存在任何 `{{ }}` 变量。** |
 | **`everClaimedBy` / `everClaimedAt`（"曾领取"）** | 用户裁「可以释放」⇒ "曾领取"不再单调，改「当前持有」 |
 | **`claimedBy` 存会话 id** | 用户「会话的子消息也可以另外领取」⇒ 必须存消息循环 id |
 | **~~「取代不可编辑」读法一~~** | **整条作废**：`【用户指令，2026-11-01 13:18】`「取代是可以编辑的。甚至新建的时候可以取代多个卡。」⇒ 取代可新建、可编辑、可多条 |
@@ -349,6 +362,11 @@ planFork(src, newTemplateSections) → {
 | **`normalizeRelations` 作者三档**（`user` / `fork` / `system-transfer`） | 取代不再限来源 ⇒ 三档失去意义 |
 | **`LINK_KINDS` 里多个 `hasBehavior: true`** | 用户 13:18：**「有行为」的只有「依赖」**，其余全 `false`（判据见 §6.6.1：**准入条件**，而非"是否产生状态效应"） |
 | **「`hasBehavior` 看是否产生状态变化」这种理解的错误版本** | `【Lead 指令，2026-11-01 13:40】` 裁定：**看"是否作为状态转移的准入条件"**；取代有执行效应但 `hasBehavior = false` |
+| **`derive` 的四个 `{{ }}` 变量**（`{{ title }}` / `{{ parent }}` / `{{ kind }}` / `{{ domain }}`） | `【用户指令，2026-11-02 11:26】`：**变量概念整个消失**，派生按钮的行为改为**在代码里写死**（见 §2.4）。<br>· 旧：模板里写 `title: "{{ parent }} 的设计"`，由替换引擎展开。<br>· 新：模板 `derive` 只剩 `label` / `description` / `template`；标题由 ⑧ 按 `{父任务标题}-{label 或模板 displayName}` **现拼**。<br>· **注意**：这不是"当初判错了"，是**机制换了**（从"模板里写表达式"变成"代码里定死行为"）。 |
+| **模板 `derive` 语法里的 `title` / `relations` 字段** | 同上（11-02 11:26）：**已从模板语法删除**。父任务不再由 YAML 写 `relations.parent`，而是**派生按钮的行为固定为"父任务 = 当前卡"**。 |
+| **`TemplateSection.accepts` / `MissingSection.accepts`** | `【Lead 决定，2026-11-02 12:10】`：③ 已彻底移除 `accepts`（`sectionsOf` 只返回 `{id, default?}`）⇒ ⑦ 侧留它会导致**运行时 `undefined` 而编译不报错**。补空 payload 改用**该章的 `default`**。 |
+| **`emptyPayloadFor(accepts)`** | 随 `accepts` 移除而作废（11-02 12:10）；补空 payload 改用 ③ 的 `default`。 |
+| **`{{ domain }}` 恢复条（11-02 00:23 那条）** | 先恢复、后随整个变量机制在 11-02 11:26 再次作废。**最终状态：不存在。** |
 
 ---
 
@@ -389,11 +407,12 @@ planFork(src, newTemplateSections) → {
 |---|---|
 | `validateRelations(unknown)` | `→ { ok:true; value: Relations } \| { ok:false; issues: Issue[] }`；**纯校验 + 定型**；空数组语义已废 |
 | `Relations` / `EditableRelations` / `RelationEntry` / `LinkLabel` | 类型由 ④ 导出，**⑦ 不手写** |
-| `LINK_KINDS` | 对象数组 `as const`（id / editable / direction / **hasBehavior**）；⑦ 只消费派生类型 |
+| **`LinkKind`（七 与 ④ 必须完全一致的形状）** | ```ts<br>LinkKind = {<br>  id: LinkLabel<br>  displayName: string<br>  direction: 'forward' \| 'both'<br>  hasBehavior: boolean<br>}<br>```<br>**这四个字段与 ④ 的 `LINK_KINDS` 完全一致；⑦ 不读 `editable`（该字段已作废）。**<br>⚠ 历史教训：⑦ 曾多带一个 `editable`，而结构类型多字段**不报错** ⇒ 直到 ⑧ 传 ④ 的值时才暴露。**结构类型"能多不能少"，所以这里只能照抄 ④ 的四字段、不多不少。** |
+| `LINK_KINDS` | 对象数组 `as const`（`id` / `displayName` / `direction` / **`hasBehavior`**）；⑦ 只消费派生类型 |
 | **`hasBehavior` 只有「依赖」为 `true`** | `【用户指令，2026-11-01 13:18】`「关系是有行为的……但是有行为的只有『依赖』」；**判据见 §6.6.1**（准入条件，非状态效应）⇒ 其余（取代/约束/相关/参考）全 `false` |
 | `makeRelations` | **不导出**、不 provide；④ 内部唯一 cast 点 |
 | 三步流程 | `validateRelations(current)` → 应用变更 → `validateRelations(merged)`；**首步不可省、不采信"已校验"声称** |
-| `applyRelationPatch` | ⑦ 新增的入口（Lead D1）：`(card, patch) → {ok,value} \| {ok:false,issues}` |
+| `applyRelationPatches`（**复数**） | ⑦ 新增的入口（Lead D1）：`(card, patches: RelationPatch[]) → {ok,value} \| {ok:false,issues}`；**按数组顺序应用** |
 | `RelationPatch` | 判别式联合，当前只有 `{ op:'retargetLink'; from; to; label }`；语义：匹配 `label`+`to===from` 的那一条 → 改 `to` 不改 `label` → **匹配 0 条跳过、>1 条报 Issue**；**按数组顺序应用** |
 | 取代的编辑性 | **可新建 / 可编辑 / 可多条**（13:18）⇒ ⑦ **不设取代特殊通道**；`normalizeRelations` 三档作者作废；只剩"写入必须经 `validateRelations`" |
 | 词汇语言 | **英文标识 + 中文显示名**（13:18 已裁，见 6.6） |
@@ -405,7 +424,7 @@ planFork(src, newTemplateSections) → {
 | 依赖形态 | **经 inject 服务面**（`ctx.taskboard2Actions`），**不 import ② 的运行时值**（仅类型 import） |
 | `isDeclarationOnlyChange(prev, next)` | `→ boolean`；唯一出参，**不提供 diff**；⑦ 用它判"是否只改了答案" |
 | `payloadHasContent(payload)` | `→ boolean`；供 ⑧ 判 `hadContent`（⑦ 不调） |
-| `emptyPayloadFor(accepts)` | `→ payload \| undefined`；供 ⑧ 补缺章（⑦ 不调）；**`accepts: []` 必返回 `undefined`** |
+| ~~`emptyPayloadFor(accepts)`~~ | ❌ **已作废**（11-02 12:10）：`accepts` 已从 ③ 彻底移除 ⇒ 补空 payload 改用**该章的 `default`**（由 ⑧ 从 ③ 拿） |
 | `splitPayload` | **⑦ 不消费**；供 ⑧ 判 `hadContent`（挂服务面，⑦ 不用） |
 | ⑦ 的承诺 | **不出现任何 action 类型字面量**（`text`/`ask`/`markdown`）；不校验 payload、不解释 `$type` |
 | 校验归属 | `validateForEdit`（单章 L1）/ `validateForCreate`（L1+L2+schema+`MISSING_SECTION`+`SECTION_NOT_IN_TEMPLATE` 双向）；**⑦ 不调**，全由 ⑧ 调 |
@@ -415,14 +434,15 @@ planFork(src, newTemplateSections) → {
 
 - **所有 plan 由 ⑧ 调**；**事务由 ⑧ 开**（发号 + 写卡 + 历史 + 取代边同一事务）。
 - ⑧ 交 ⑦ 的输入：`{ cards（业务全量：保留草稿、剔墓碑）, context }`；**墓碑 id 集合单列**。
-- **契约要点**：`planChange` / `applyRelationPatch` 的意图只含"最终字段/定型后的 `Relations`"，⑧ 不反推语义。
+- **契约要点**：`planChange` / `applyRelationPatches` 的意图只含"最终字段/定型后的 `Relations`"，⑧ 不反推语义。
 - **⑧ 的两个落盘前检查**（不属 ⑦）：
   1. **新增 `sectionId` ∈ 模板章节集**（(丙)）；
   2. **关系目标合法性**（存在 / 非草稿 / 非墓碑 / 同空间）—— ⑦ 没有空间概念，判不了。
 - **⑧ 算「依赖是否全部进入完成组」，作为入参交给 ③ 的 `canTransition`**（13:18 的"依赖行为"落点，见 3.5 第 18 条）—— ⑦ **不做这个跨卡聚合**。
 - **⑧ 对 `droppedSections[].payload` 只做"判空"一个用途，用完即弃、不持久化**；`history` 只记 `{ sectionId, hadContent }`，**不记内容**。
 - **`planFork` 的两个清单由 ⑦ 给**（避免"哪些章丢/缺"出现第二份实现）。
-- ⑧ 补缺章：`missingSections` + ② 的 `emptyPayloadFor(accepts)`；**失败要分两种信息**：(i) `accepts: []` ⇒ "该章节不接受任何输入组件"；(ii) 候选都构造不出 ⇒ "候选组件均无法自动初始化"。
+- ⑧ 补缺章：**按 `missingSections` 里的 `sectionId`，从 ③ 取该章的 `default`（或自行构造最小空 payload）**。
+  · ~~旧写法：`missingSections` + ② 的 `emptyPayloadFor(accepts)`~~ ⇒ **作废**（11-02 12:10，`accepts` 已从 ③ 移除）。
 
 ### 6.5 与 ① store —— **零耦合**
 

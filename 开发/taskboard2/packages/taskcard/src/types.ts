@@ -222,19 +222,17 @@ export interface ResolvedTemplate {
 	sections: readonly TemplateSection[];
 }
 
-/** 模板里的一章（⑦ 只用到 `id` 与 `accepts`）。 */
+/**
+ * 模板里的一章。**⑦ 只用到 `id`**。
+ *
+ * ⚠ 这里**故意只有 `id`**：
+ * · `accepts` 已由 ③ 彻底移除（`sectionsOf` 不再返回它）⇒ 若这里还留着，运行时会是
+ *   `undefined`，而**结构类型多一个字段不会编译报错** —— 正是"编译过、运行时错"那类。
+ * · ③ 的 `sectionsOf` 现在带 `default?`，但**⑦ 不需要**：`default` 是补空 payload 的原料，
+ *   由 ⑧ 自己从 ③ 拿；⑦ 只负责把"缺哪几章"告诉 ⑧。
+ */
 export interface TemplateSection {
 	id: string;
-	/**
-	 * 该章接受的 action 类型。**三态**（与 ③ 的 `sectionsOf` / ② 的 `Accepts` 一致）：
-	 *   · `'any'`      = 不限（任何已注册 action 都行）
-	 *   · `[]`         = **禁一切**（语义与 `'any'` 相反）
-	 *   · `['text',…]` = 候选集
-	 *
-	 * ⚠ 收窄成 `readonly string[]` 会让 ⑧ 传 ③ 的清单时只能强转，**把契约不一致藏起来**。
-	 * ⑦ **不解释它**，只在 `missingSections` 里**原样透传**给 ⑧（补空 payload 由 ② 挑）。
-	 */
-	accepts: readonly string[] | 'any';
 }
 
 /** ④ relation 的服务面（⑦ 用到的子集）。 */

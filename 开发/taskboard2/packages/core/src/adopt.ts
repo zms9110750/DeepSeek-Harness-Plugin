@@ -29,6 +29,7 @@
 import { coreError, describeReject, type CoreError } from './errors.js';
 import type { Card, Ports } from './ports.js';
 import { recomputeUpward } from './recompute.js';
+import { appendHistory, applyStatus, type HistoryEvent } from './status-write.js';
 import type { ActiveWorkspace } from './workspace.js';
 import { findCard, visibleCards } from './workspace.js';
 
@@ -112,6 +113,8 @@ export function adoptCard(
 	const changed: Card[] = [];
 	let recomputed: Card[] = [];
 	let failure: CoreError | undefined;
+	/** **状态真的变了**的卡（只有它们才产生广播）。 */
+	const statusChangedIds = new Set<string>();
 
 	ports.store.transaction(workspace.wsId, (tx) => {
 		const byId = new Map<string, Card>();
@@ -139,53 +142,75 @@ export function adoptCard(
 			changed.push(next);
 		}
 
-		/* ── 阶段二：⑦ 的状态意图（新卡转提交 / 旧卡终止） ── */
+		/*
+		 * ── 阶段二：⑦ 的状态意图（新卡转提交 / 旧卡终止） ──
+		 *
+		 * 逐张走收口（`applyStatus`）：**同值 ⇒ 不写、不写历史、不通知父卡**。
+		 * `statusChangedIds` 只收**真变了的**，`changed` 也只装它们。
+		 */
 		for (const item of plan.items) {
 			if (item.op === 'setStatus') {
 				const target = byId.get(item.cardId);
 				if (target === undefined) continue;
-				const next: Card = { ...target, status: item.to };
-				byId.set(item.cardId, next);
-				if (item.cardId === card.id) updated = next;
-				else changed.push(next);
+
+				const outcome = applyStatus({ card: target, to: item.to, mode: 'transition' });
+				if (!outcome.changed) continue;
+
+				byId.set(item.cardId, outcome.card);
+				statusChangedIds.add(item.cardId);
+				if (item.cardId === card.id) updated = outcome.card;
+				else changed.push(outcome.card);
 			} else if (item.op === 'updateCard') {
-				byId.set(item.card.id, item.card);
-				if (item.card.id === card.id) updated = item.card;
-				else changed.push(item.card);
+				/*
+				 * ⑦ 给的整卡覆写：其它字段（title / sections / relations）⑦ 已收过口，
+				 * 但 **status 若也被它改了，那是一次转移** ⇒ 交给 ⑧ 的收口判等 + 计广播。
+				 *
+				 * ⚠ **这里不做自己的 status 比较、也不自己拼"换回旧值"**：
+				 * `from` 参数表达"基准是旧卡的 status"，由 `applyStatus` 内部判等。
+				 * ⇒ 判等与换基准都只在 `status-write.ts` 一处。
+				 */
+				const before = byId.get(item.card.id);
+				if (before === undefined) continue;
+
+				const outcome = applyStatus({
+					card: item.card,
+					to: item.card.status,
+					from: before.status,
+					mode: 'transition',
+				});
+
+				byId.set(item.card.id, outcome.card);
+				if (outcome.changed) statusChangedIds.add(item.card.id);
+				if (item.card.id === card.id) updated = outcome.card;
+				else changed.push(outcome.card);
 			}
 		}
 
 		if (updated === undefined) return;
 
-		/* ── 阶段三：历史（⑦ 的 events + 本卡自身） ── */
-		const events = plan.events as readonly { at: number; action: string; detail?: unknown }[];
-		updated = {
-			...updated,
-			history: [...updated.history, ...events],
-		};
+		/* ── 阶段三：历史（⑦ 的 events，追加走收口） ── */
+		updated = appendHistory(updated, plan.events as readonly HistoryEvent[]);
 
 		tx.write([updated, ...changed]);
 
 		/*
-		 * ── 监听链：状态变了的卡 ⇒ 唤醒它们的父卡 ──
+		 * ── 监听链：**真的**变了状态的卡 ⇒ 唤醒它们的父卡 ──
 		 *
-		 * 采纳会改**多张**卡的状态（本卡 未指定→提交；旧卡 未完成→取消），
-		 * 所以传的是"所有状态被改过的 id"，不是单个。
+		 * 传 `statusChangedIds` 而非"plan 提到的所有 id"：
+		 * 旧卡可能因「终态粘滞」或「同值」没有真正变化，那些不该产生广播。
 		 * 阶段一改的是 relations（依赖转移），**不触发状态重算**。
 		 */
-		const statusChanged = [
-			card.id,
-			...changed.filter((item) => item.id !== card.id).map((item) => item.id),
-		];
-		const recomputedResult = recomputeUpward(ports, tx, statusChanged, {
-			at,
-			cards: [...byId.values()],
-		});
-		recomputed = [...recomputedResult.changed];
-		if (recomputedResult.failures.length > 0) {
-			console.error('[taskboard2-core] 采纳后重算失败：');
-			for (const item of recomputedResult.failures) {
-				console.error(`  · [${item.code}] ${item.message}`);
+		if (statusChangedIds.size > 0) {
+			const recomputedResult = recomputeUpward(ports, tx, [...statusChangedIds], {
+				at,
+				cards: [...byId.values()],
+			});
+			recomputed = [...recomputedResult.changed];
+			if (recomputedResult.failures.length > 0) {
+				console.error('[taskboard2-core] 采纳后重算失败：');
+				for (const item of recomputedResult.failures) {
+					console.error(`  · [${item.code}] ${item.message}`);
+				}
 			}
 		}
 	});

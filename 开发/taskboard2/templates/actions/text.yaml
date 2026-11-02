@@ -1,16 +1,7 @@
-# ═══════════════════════════════════════════════════════════
-#  Action —— text
-#  一个 action = 一份 JSON 架构 + 若干渲染器（按态）。
-#  schema 只描述「创建时参数长什么样」，运行中不校验。
-#  它不知道卡片、不知道模板、不知道草稿还是采纳。
-# ═══════════════════════════════════════════════════════════
-
 $type: text
 
 summary: 自由文本。创建时填灰字提示，进行时填内容
-#   给 AI 看的一句话：这个 action 能提供什么输入能力。
 
-# ── 架构 ──
 schema:
   type: object
   required: [$type]
@@ -18,32 +9,16 @@ schema:
     $type:
       const: text
     value:
-      type: string # 答案。可省（= 空）
+      type: string
     placeholder:
-      type: string # 灰字。可省
-  additionalProperties: true # 未知字段穿过（旧卡兼容）
+      type: string
+  additionalProperties: true
 
-# ── 渲染 ──
-#   create —— 只画灰字输入框。若 value 已有值（AI 传的），原样保留、不丢失
-#   active —— 内容可编辑，灰字只读展示
-#   ended  —— 只读，可刮取复制
-#   plain  —— 交给 AI tool / 指令调用，返回 value 字符串
-render:
-  create: |
-    一个输入框，编辑的是 placeholder（灰色字）。
-    不画内容框 —— 内容由进行态填。
-    多行与否由渲染器自己决定（自动增长，超高变滚动）。
-
-  active: |
-    灰字以只读文本显示在上方；下方是内容输入框，编辑 value。
-    用户改动 → onChange(下一份完整 payload)。
-
-  ended: |
-    只读文本，保留换行。
-    允许鼠标框选复制；不渲染 markdown。
-
-  plain: |
-    返回 value 原文字符串。
-
-# ⚠ 没有 row 字段：多行由渲染器自动增长，不为 CSS 穷尽可塑性。
-# ⚠ 没有 readonly 字段：只读态由 ended 渲染器负责。
+# ── 渲染器 ──
+# 每态一个函数，不是用字符串描述「要什么」。
+# 名字对应代码里导出的函数；参数与返回值见 docs/渲染器.md。
+renderer:
+  create: textCreate
+  active: textActive
+  ended: textEnded
+  plain: textPlain

@@ -27,6 +27,7 @@
 import { coreError, type CoreError } from './errors.js';
 import type { Card, CascadePlan, Ports } from './ports.js';
 import { recomputeUpward } from './recompute.js';
+import { applyStatus } from './status-write.js';
 import type { ActiveWorkspace } from './workspace.js';
 
 /**
@@ -71,6 +72,8 @@ export function runCascade(
 		for (const card of tx.readAll()) byId.set(card.id, card);
 
 		const touched = new Set<string>();
+		/** **状态真的变了**的卡 —— 独立集合，不能与 `touched` 共用（见阶段二注释）。 */
+		const statusChanged = new Set<string>();
 
 		/* ── 阶段一：改关系 ── */
 		for (const item of plan.relationsPhase) {
@@ -109,15 +112,24 @@ export function runCascade(
 			 */
 			if (ports.types.isEndedStatus(card.status)) continue;
 
-			byId.set(item.cardId, {
-				...card,
-				status: item.targetStatus,
-				history: [
-					...card.history,
-					{ at, action: 'cascade', detail: { to: item.targetStatus, reasons: item.reasons } },
-				],
+			/* 收口：同值 ⇒ 不写盘、不写历史、不通知父卡。 */
+			const outcome = applyStatus({
+				card,
+				to: item.targetStatus,
+				events: [{ at, action: 'cascade', detail: { to: item.targetStatus, reasons: item.reasons } }],
+				mode: 'transition',
 			});
+			if (!outcome.changed) continue;
+
+			byId.set(item.cardId, outcome.card);
 			touched.add(item.cardId);
+			/*
+			 * ⚠ **独立的集合**，不能用 `touched`：
+			 * `touched` 阶段一也在往里加（改关系也算"这张卡要写盘"），
+			 * 拿它当"状态变了"会把"只改了关系、或状态被终态粘滞跳过"的卡误判成变了 ⇒
+			 * 白通知它的父卡重算一次。**不产生错值，但违反"同值不广播"。**
+			 */
+			statusChanged.add(item.cardId);
 		}
 
 		changed = [...touched].map((id) => byId.get(id) as Card);
@@ -127,14 +139,10 @@ export function runCascade(
 		 * ── 监听链：状态变了的卡 ⇒ 唤醒它们的父卡 ──
 		 *
 		 * 与上面的写入**同一个事务**。传 `cards` 让重算复用这份快照，不再重读一次全量。
-		 * ⚠ 只传**状态真的变了**的卡：阶段一改的是 relations，不触发状态重算。
+		 * ⚠ 传的是 `statusChanged`（独立集合、只有真变了的才进），**不是 `touched`**。
 		 */
-		const statusChanged = plan.statusPhase
-			.filter((item) => touched.has(item.cardId))
-			.map((item) => item.cardId);
-
-		if (statusChanged.length > 0) {
-			const result = recomputeUpward(ports, tx, statusChanged, {
+		if (statusChanged.size > 0) {
+			const result = recomputeUpward(ports, tx, [...statusChanged], {
 				at,
 				cards: [...byId.values()],
 			});

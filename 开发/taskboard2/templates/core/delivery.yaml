@@ -1,4 +1,4 @@
-﻿name: delivery
+name: delivery
 displayName: 交付
 kind: record
 domain: 核心
@@ -21,6 +21,8 @@ sections:
     hint: |
       需要一个提交后不可交互组件，展示内容。
       内容里描述你对工作做的实际动作。
+    default:
+      $type: markdown
 
   where:
     label: 在哪里
@@ -28,9 +30,13 @@ sections:
       需要一个提交后不可交互组件，展示内容。
       内容里描述你的工作哪里可以查阅。
       如果是调研汇报类并且没有留下实体文件，此处写证据出处。
+    default:
+      $type: markdown
 
   howToLook:
     label: 怎么查看 / 怎么使用
     hint: |
       需要一个提交后不可交互组件，展示内容。
       内容里描述这个实体结果如何使用或验证是否完成了工作。
+    default:
+      $type: markdown

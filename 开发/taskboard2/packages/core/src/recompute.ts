@@ -44,6 +44,7 @@
 
 import { coreError, type CoreError } from './errors.js';
 import type { Card, ChildSnapshot, Ports, Tx } from './ports.js';
+import { applyStatus } from './status-write.js';
 
 /** 重算写进历史的动作名（**封闭标识，不是文案**）。 */
 export const RECOMPUTE_ACTION = 'recompute';
@@ -82,11 +83,18 @@ interface CardIndex {
 	readonly childrenOf: Map<string, Card[]>;
 }
 
-/** 把一张卡转成 ③ 要的 `ChildSnapshot`。 */
+/**
+ * 把一张卡转成 ③ 要的 `ChildSnapshot`。
+ *
+ * ⚠ **`template` 取 `card.template.ref`（模板 name，如 `'research'`），不是 `.kind`（分类，如 `'work'`）**。
+ * `TemplateRef` 同时有这两个字段、且都是 `string` ⇒ 写错**编译不报错、运行不报错**，
+ * 只会让 `design.2.2`（判 `child.template === 'research'`）**静默永不命中**。
+ */
 function snapshotOf(card: Card): ChildSnapshot {
 	return {
 		id: card.id,
 		kind: card.template.kind,
+		template: card.template.ref,
 		status: card.status,
 		deleted: card.deleted === true,
 	};
@@ -215,17 +223,26 @@ export function recomputeUpward(
 			continue;
 		}
 
-		/* ② 链断条件：结果 = 当前 ⇒ 不写、不通知。 */
+		/*
+		 * 性能早退：避免构造 events 数组再丢掉。**真正的判等在 `applyStatus` 内部**
+		 * （它还会保证"同值 ⇒ 不追加历史"）。
+		 */
 		if (nextStatus === card.status) continue;
 
-		const next: Card = {
-			...card,
-			status: nextStatus,
-			history: [
-				...card.history,
-				{ at, action: RECOMPUTE_ACTION, detail: { from: card.status, to: nextStatus } },
-			],
-		};
+		/*
+		 * 写卡走**收口**（⑧ 唯一的 status 写入口）——
+		 * 循环、队列、`visited` 都不变，只把"赋值 + 追加历史"这一步交出去。
+		 * ⇒ 收口覆盖全部 5 条写 status 的路径，`recompute` 不是例外。
+		 */
+		const outcome = applyStatus({
+			card,
+			to: nextStatus,
+			events: [{ at, action: RECOMPUTE_ACTION, detail: { from: card.status, to: nextStatus } }],
+			mode: 'transition',
+		});
+		if (!outcome.changed) continue;
+
+		const next = outcome.card;
 
 		/* 更新索引：后续若有人读这张卡（它也是别人的子任务）要看到新状态。 */
 		index.byId.set(cardId, next);

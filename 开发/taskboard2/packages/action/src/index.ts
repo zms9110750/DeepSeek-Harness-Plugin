@@ -13,9 +13,9 @@
  * 顶层若有调用语句，它会在 ⑦ 加载时提前执行。
  */
 
-import { askAction } from './builtin/ask.js';
-import { markdownAction } from './builtin/markdown.js';
-import { textAction } from './builtin/text.js';
+import { askAction, askEditable, askEnded, askPlain } from './builtin/ask.js';
+import { markdownAction, markdownCreate, markdownPlain, markdownView } from './builtin/markdown.js';
+import { textAction, textActive, textCreate, textEnded, textPlain } from './builtin/text.js';
 import { emptyPayloadFor } from './empty.js';
 import { toIssueForUI } from './issue.js';
 import { registerAction, list } from './registry.js';
@@ -33,6 +33,29 @@ export const name = 'taskboard2-action';
 
 /** 零依赖 —— ② 不 inject 任何东西。 */
 export const inject: string[] = [];
+
+/**
+ * 9 个具名渲染函数 —— 与 `templates/actions/*.yaml` 的 `renderer:` 名字一一对应。
+ *
+ * ⚠ 它们不是给 inject 方用的：调用方应该用任务板服务面的 `render(payload, phase)`，
+ *   它会按 `$type` 查表、按态回退、并做降级。这些导出只是「YAML 里的名字确实存在」的锚点。
+ *
+ * 共用关系是有意的，不要拆：
+ *   · `markdown` 的 `active` / `ended` 共用 `markdownView`
+ *   · `ask` 的 `create` / `active` 共用 `askEditable`
+ */
+export {
+	textCreate,
+	textActive,
+	textEnded,
+	textPlain,
+	markdownCreate,
+	markdownView,
+	markdownPlain,
+	askEditable,
+	askEnded,
+	askPlain,
+};
 
 /** 内置 action（在 `apply` 内注册，不在此处注册）。 */
 const BUILTINS: readonly ActionDefinition[] = [textAction, askAction, markdownAction];

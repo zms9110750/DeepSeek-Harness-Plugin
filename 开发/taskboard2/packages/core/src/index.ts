@@ -87,32 +87,26 @@ export interface StartupReport {
  *
  * 单独导出，便于测试直接调用（不必跑 Cordis）。
  *
+ * ⚠ **不再需要 ② 的 `actionTypes`** —— `accepts` 移除后（用户 11:26），
+ * 注册期不再校验"章节接受哪些 action"，所以模板注册**不再等 ②**。
+ * ⇒ 唯一前置是 ③ 的注册面。
+ *
  * @param registry ③ 的注册面（`registerTemplate` / `markTemplateRegistryReady`）。
- * @param actionTypes ② 已注册的 `$type` 列表（`taskboard2Actions.list()`）。
  */
-export function bootstrapTemplates(
-	registry: TypesRegistry,
-	actionTypes: readonly string[],
-): StartupReport {
-	const templates = loadTemplates({ registry, actionTypes });
+export function bootstrapTemplates(registry: TypesRegistry): StartupReport {
+	const templates = loadTemplates({ registry });
 	return { templates, failures: templates.failures };
 }
 
 export function apply(ctx: ApplyContext): void {
 	/*
-	 * ① 模板注册要等 ② 的 action 就绪（`accepts ⊆ actionTypes` 校验需要它），
-	 *    也需要 ③ 的注册面。`inject` 保证上游的 `apply` 先跑。
+	 * 模板注册只需要 ③ 的注册面（`accepts` 移除后不再依赖 ② 的 action 清单）。
+	 * `inject` 保证上游的 `apply` 先跑。
 	 */
-	const actions = ctx['taskboard2Actions'] as { list(): string[] } | undefined;
 	const registry = ctx['taskboard2Types'] as TypesRegistry | undefined;
 
-	if (
-		actions !== undefined &&
-		typeof actions.list === 'function' &&
-		registry !== undefined &&
-		typeof registry.registerTemplate === 'function'
-	) {
-		const report = bootstrapTemplates(registry, actions.list());
+	if (registry !== undefined && typeof registry.registerTemplate === 'function') {
+		const report = bootstrapTemplates(registry);
 		/*
 		 * 模板加载失败**不静默**：打印出来（宿主能看见），但**不抛** ——
 		 * 抛错会让整个 bundle 装配失败，而其它包仍可能可用（诊断价值更高）。
@@ -124,7 +118,7 @@ export function apply(ctx: ApplyContext): void {
 			for (const failure of report.failures) console.error(`  · [${failure.code}] ${failure.message}`);
 		}
 	} else {
-		console.error('[taskboard2-core] 模板未加载：缺少 taskboard2Actions 或 taskboard2Types 服务。');
+		console.error('[taskboard2-core] 模板未加载：缺少 taskboard2Types 服务。');
 	}
 
 	/*
@@ -178,13 +172,24 @@ export function apply(ctx: ApplyContext): void {
 
 export { createFacade, type CoreService, type FacadeOptions, type Failure, type WriteResult } from './facade.js';
 export { coreError, describeReject, type CoreError, type CoreErrorCode } from './errors.js';
+export { loadTemplates, findTemplatesDir, type LoadTemplatesResult } from './templates.js';
 export {
-	loadTemplates,
-	findTemplatesDir,
-	presetPayloadsOf,
-	type LoadTemplatesResult,
-} from './templates.js';
+	createCard,
+	deriveDefaults,
+	sectionsFromDefaults,
+	checkRelationTargets,
+	type CreateCardInput,
+	type CreateOrigin,
+	type CreateResult,
+	type DeriveInit,
+} from './create.js';
 export { allocateId, prefixOf, type AllocateIdResult } from './ids.js';
+export {
+	applyStatus,
+	appendHistory,
+	type StatusWriteOutcome,
+	type HistoryEvent,
+} from './status-write.js';
 export { assertSectionsComplete, issuesForUI } from './validate.js';
 export {
 	recomputeUpward,

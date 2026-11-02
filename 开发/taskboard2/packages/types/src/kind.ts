@@ -12,10 +12,17 @@
 
 import { type TaskState, TaskState as S } from './status.js';
 
-/** 判定用的卡快照（只含本包需要的字段）。 */
+/**
+ * 判定用的卡快照（只含本包需要的字段）。
+ *
+ * `template` 是模板 ref（= 模板的 `name`，即卡上 `template.ref` 的值）。
+ * **必填**：`design.2.2` 要判「子任务是否为 `research` 模板」，这是用户 `13:20` 明确的口径。
+ */
 export type ChildSnapshot = {
 	readonly id: string;
 	readonly kind: string;
+	/** 模板 ref（= `card.template.ref` = 模板 `name`）。 */
+	readonly template: string;
 	readonly status: TaskState;
 	readonly deleted: boolean;
 };
@@ -88,9 +95,41 @@ export function isDraftStatus(status: TaskState): boolean {
 	return status === S.UNSPECIFIED;
 }
 
-/** 还活着的子任务（墓碑不参与任何推导）。 */
+/**
+ * 参与推导的子任务 = **有效卡**：还活着（非墓碑）**且已脱离草稿**。
+ *
+ * 依据：
+ *   - 用户 `12:46`「新卡默认草稿。而草稿不是有效卡，创建一个草稿是不广播的。」
+ *   - 用户 `13:15`「这里的计算都要是有效卡，就是进行，或者搁置。草稿是不算的。」
+ *
+ * 为什么草稿要在这里滤、而不是让调用方先滤：
+ *   过滤口径**只有这一处**。⑧ 传完整列表（含墓碑、含草稿、含终态），③ 在这里统一裁。
+ *   两处都滤 ⇒ 将来口径一变就会不一致。
+ *
+ * ⚠️⚠️ **跨包提醒（改本函数前必读）**
+ *
+ * ⑧ 的「**删除不广播**」（`packages/core/src/claims.ts`）**依赖本函数同时滤墓碑与草稿**。
+ * 改本函数的过滤口径会让那条实现**静默失效**（不报错、类型也不报）。
+ *
+ * 那条结论由**三个前提**共同支撑，缺一即失效：
+ *   1. **本函数滤草稿** ← 这里；
+ *   2. **本函数滤墓碑** ← 这里；
+ *   3. **归档的对象在其被标记为墓碑之前必须是草稿**（用户 `13:15`「归档在现阶段只有草稿才能归档」）
+ *      —— 执行点：⑦ 的 `planDelete`（`packages/taskcard/src/delete.ts`）**L42-45**
+ *      强制 `status === DRAFT`，**非草稿直接拒绝**。
+ *      ⚠ **L36-40 另有一处幂等早退**（`if (card.deleted)` ⇒ 返回空计划），
+ *      所以上面那条**只对「非墓碑的卡」成立** —— 已墓碑的卡再归档，什么都不会发生。
+ *
+ * 因果链：
+ *   归档前 —— 该子卡是草稿 ⇒ 前提 1 已让它对父卡**不可见**；
+ *   归档后 —— 该子卡是墓碑 ⇒ 前提 2 让它对父卡**仍不可见**；
+ *   ⇒ **父卡看到的东西前后没变** ⇒ 无需广播。
+ *
+ * ⇒ **改这里之前，先去 `claims.ts` 看那条警告；反之改那边也要回来看这里。**
+ *   （跨包依赖的失效条件，单向留痕必然有一边看不到，所以两边都写。）
+ */
 function liveChildren(children: readonly ChildSnapshot[]): readonly ChildSnapshot[] {
-	return children.filter((child) => !child.deleted);
+	return children.filter((child) => !child.deleted && !isDraftStatus(child.status));
 }
 
 /* ─────────────────────────── 内置四类 ─────────────────────────── */
@@ -147,10 +186,19 @@ const DESIGN: KindDef = {
 	baseStatus: () => S.AUTH_REQUIRED,
 	computeRules: [
 		{
+			/*
+			 * 设计卡：有**调研**子任务且它没结束 ⇒ 需要信息。
+			 *
+			 * ⚠ 判的是**模板**（`research`），不是分类（`work`）——
+			 * 用户 13:20：「出现子任务为调研，这是明确的模板类型。因为调研是真的需要调研。
+			 *             别的工作，我不知道你实际上是做什么。比如写代码。
+			 *             那这个事情跟我的状态是没关系的。」
+			 * ⇒ 校验 / 编写代码 这些 work 子卡**不该**把设计卡顶成需要信息。
+			 */
 			id: 'design.2.2',
 			when: (input) =>
 				liveChildren(input.children).some(
-					(child) => child.kind === 'work' && !isEndedStatus(child.status),
+					(child) => child.template === 'research' && !isEndedStatus(child.status),
 				),
 			then: S.INPUT_REQUIRED,
 		},
@@ -165,21 +213,32 @@ const WORK: KindDef = {
 	baseStatus: (input) => (input.isHeld ? S.WORKING : S.SUBMITTED),
 	computeRules: [
 		{
+			/*
+			 * 工作卡：**有子任务处于「需要信息」⇒ 自己也需要信息**。
+			 *
+			 * ⚠ 纯状态判据，**不看分类、不看模板**。
+			 * 用户 13:20：「子任务能执行才是能执行。如果子任务是被搁置的。
+			 *             那自己的进行依赖子任务。那自己肯定要被搁置。子任务都不做，自己怎么做。」
+			 * ⇒ 任何子任务被搁置在「需要信息」，父工作卡都跟着搁置。
+			 */
 			id: 'work.3.3',
 			when: (input) =>
-				liveChildren(input.children).some(
-					(child) =>
-						(child.kind === 'work' || child.kind === 'design') &&
-						!isEndedStatus(child.status),
-				),
+				liveChildren(input.children).some((child) => child.status === S.INPUT_REQUIRED),
 			then: S.INPUT_REQUIRED,
 		},
 		{
+			/*
+			 * 工作卡：**有子任务处于「需要授权」⇒ 自己也需要授权**。
+			 *
+			 * ⚠ 纯状态判据。**改前只认 `record` 类**（`kind === 'record' && AUTH_REQUIRED`），
+			 * 改后**任何子任务**的「需要授权」都触发 —— 用户 13:20 同句「子任务是被搁置的 ⇒ 自己要被搁置」。
+			 *
+			 * ⚠ **顺序**：本条在 `work.3.3` 之后 ⇒ 「需要信息」优先于「需要授权」。
+			 * 与矩阵一致：「子任务有需要信息 ⇒ 需要信息；**没有**需要信息，且具有需要授权 ⇒ 需要授权」。
+			 */
 			id: 'work.3.4',
 			when: (input) =>
-				liveChildren(input.children).some(
-					(child) => child.kind === 'record' && child.status === S.AUTH_REQUIRED,
-				),
+				liveChildren(input.children).some((child) => child.status === S.AUTH_REQUIRED),
 			then: S.AUTH_REQUIRED,
 		},
 	],

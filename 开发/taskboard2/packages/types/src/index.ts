@@ -56,12 +56,10 @@ import {
 } from './kind.js';
 
 import {
-	type Accept,
 	type SectionDef,
 	type TemplateDef,
-	type RegisterTemplateOptions,
 	type ResolvedTemplate,
-	type SectionAccepts,
+	type SectionInfo,
 	type TemplateMeta,
 	registerTemplate,
 	resetTemplateRegistry,
@@ -157,12 +155,10 @@ export {
 	isActiveStatus,
 	isDraftStatus,
 	/* template */
-	type Accept,
 	type SectionDef,
 	type TemplateDef,
-	type RegisterTemplateOptions,
 	type ResolvedTemplate,
-	type SectionAccepts,
+	type SectionInfo,
 	type TemplateMeta,
 	registerTemplate,
 	resetTemplateRegistry,

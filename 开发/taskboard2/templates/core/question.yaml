@@ -36,3 +36,5 @@ sections:
     label: 不回答的话，这些将无法继续
     hint: |
       需要一个提交后不可交互组件，展示内容。在内容描述问题严重性。
+    default:
+      $type: markdown

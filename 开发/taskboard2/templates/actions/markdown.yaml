@@ -1,13 +1,7 @@
-# ═══════════════════════════════════════════════════════════
-#  Action —— markdown
-#  整条链上唯一会渲染 markdown 的地方。
-# ═══════════════════════════════════════════════════════════
-
 $type: markdown
 
 summary: 富文本。创建时写源码并可预览，进行与终结时只读
 
-# ── 架构 ──
 schema:
   type: object
   required: [$type]
@@ -15,30 +9,15 @@ schema:
     $type:
       const: markdown
     value:
-      type: string # md 源码
+      type: string
     placeholder:
-      type: string # 空值时的灰字
+      type: string
   additionalProperties: true
 
-# ── 渲染 ──
-#   create —— 源码编辑框 + 一个「查看预览」按钮（点开才预览）
-#   active —— 只读渲染
-#   ended  —— 只读渲染，可刮取
-#   plain  —— md 源码原样回报（不渲染）
-render:
-  create: |
-    一个源码编辑框，编辑 value；旁边一个「查看预览」按钮，点开才显示渲染结果。
-    编辑的是源码，不是所见即所得。
-
-  active: |
-    只读，渲染成富文本。
-
-  ended: |
-    只读，渲染成富文本。允许鼠标框选复制。
-
-  plain: |
-    返回 md 源码原样，不做任何渲染。
-
-# ⚠ 这是全项目唯一渲染 markdown 的地方。
-#   其它文本（action 的 value / placeholder / options 里的 label 与 description）
-#   全部按纯文本显示，不解析 markdown。
+# ── 渲染器 ──
+# 每态一个函数。active 与 ended 用同一个函数（只读渲染），这是允许的。
+renderer:
+  create: markdownCreate
+  active: markdownView
+  ended: markdownView
+  plain: markdownPlain
