@@ -117,6 +117,29 @@
 【事实·用户直述，原话明确的部分】**一个 AI 同时只能占 1 个工作。**
 【推断】**占用主体 = 消息循环**（依据：括号里「子消息也可以另外领取」）；原话没有直述这一点。
 
+#### 1.6b 类型名改名：`loop` → `agentMessageLoop`
+
+> 【用户指令，2026-11-02 13:30】
+> **loop确实是ai。但我希望改名。loop名字太离谱里。我说的是"消息循环"。消息必须体现出来。**
+> **loop要改名，前缀改就一起改。**
+> **agentMessageLoop**
+
+⇒ **主体类型从 `{ type: 'loop'; id }` 改为 `{ type: 'agentMessageLoop'; id }`。**
+⇒ **中文措辞「消息循环」保留**（它一直是准确的），**变的是英文类型名与前缀** —— 原名丢了"消息"这个关键语义。
+
+**⚠ 前缀是落库的（`claimedBy` 字段），改名有存量数据后果**：
+
+```
+⚠ 前缀变更（loop: → agentMessageLoop:）：
+  库里已存在的 `loop:xxx` 旧值无法被解析回主体（⑦ 的 principalOfClaim 返回 undefined）。
+  原型阶段无真实数据，不做迁移。
+  若将来要改这段，必须先处理 claimedBy 里的旧前缀。
+```
+
+⚠ **⑧ 与 ⑦ 必须同时改**：前缀由 ⑦ 的 `describePrincipal` 产出、由 ⑧ 的 `claimValueOf` / `samePrincipal` 消费；
+**两边不一致 ⇒ 认不出同一个持有者**（`samePrincipal` 恒 false ⇒ 本人也不能释放自己的卡）。
+
+
 ### 1.7 草稿期能否编辑内容
 
 > 【用户指令，2026-11-01 03:00】〔经 ⑦ 转述，我未亲收〕
@@ -140,6 +163,20 @@
 | 拒绝原因的文案翻译（**查表，不写字面量判断**） | 卡的准入判定 → ⑦（词法） |
 
 **核心里的 `if` 形式的业务规则都是错的。** 判断由上游给，core 只按结果走。**常量比较不算业务规则**（知识在 ③，core 只做机械比较）—— 本条为【实现判断】，待与用户确认口径。
+
+### 2.1b actor 权限的总原则（所有 actor 限制的总依据）
+
+> 【用户指令，2026-11-02 13:30】
+> **设计当然只有用户能确认。记录也只有用户能确认。这两个都是直接决定方向的。ai不能决定方向。ai的任务只有服从用户的意志。除非用户授权，否则没资格解释用户意志。**
+
+**⇒ 这是全部 actor 限制的**总依据**，不是逐个动作攒出来的规则：**
+- **`design`（设计）与 `record`（记录）两类结论只能由用户确认** —— 它们**直接决定方向**；
+- **ai 不决定方向**，只有服从用户意志；
+- **ai 无资格解释用户意志**（除非用户明确授权）—— ⇒ **"AI 觉得用户大概是这个意思"不构成授权；需要用户显式表态。**
+
+**⚠ core 侧的义务边界**：**⑧ 不自己判 actor 权限** —— 权限判定在 ⑦（准入）+ ③（`canTransition` 的 actor 参数）。**⑧ 只搬运 `Principal`，不产权限规则。**
+⇒ 但 **⑧ 必须把 `Principal` 传对**（尤其改名后的 `agentMessageLoop`，见 1.6b），否则 ⑦ 拿到的主体是错的，权限判定整体失效。
+
 
 ### 2.2 建卡三入口共用一个入口
 
@@ -230,7 +267,7 @@ type CascadePlan = {
 **为什么过滤旧章节**：② 把 `SECTION_NOT_IN_TEMPLATE` 定为 **error**，不过滤则模板改版后 fork 永久失败。
 **为什么补缺章节**：`MISSING_SECTION` 是 **error**，且校验发生在**建卡提交那一刻**（新卡还不存在、面板里也没有那些章节）。
 **补章依据 = 该章的 `default`**（`【用户指令，2026-11-02 11:26】` 后 `accepts` 移除）：`accepts` 没了，"从候选 action 里挑一个"的依据不存在 ⇒ `default` 是唯一依据。**没有 `default` 就不猜**（猜 `$type` = 替模板作者做决定），报错并指出章节。
-⚠ **实测：17 个模板 52 章里 8 章没有 `default`**（`delivery.yaml` 三章全无、`question.yaml` 的 `blocked` 等）⇒ 这条报错会真的触发，**属模板内容问题**，非实现缺陷。
+⚠ **当前 17 个模板 50 章全部有 `default`** ⇒ 这条报错在现有模板集上**不可达**；但它保留（模板可新增、新模板可能漏写）。详见 §7.4。
 **`droppedSections` 的 `payload` 只做判空、不持久化**：history 只记 `{ sectionId, hadContent }`，不记内容（否则卡变大、且可能含敏感数据）。core 侧**用完即弃，不保留引用**。
 
 ### 2.7b 建卡时的章节预填
@@ -288,6 +325,44 @@ resolveCurrent(sessionId) →
 **业务删除 = 写一张 `deleted: true` 的整卡覆写（墓碑），墓碑继续占号。**
 **core 中不存在任何业务路径调用 `① purgePhysical`**（物理删除会让编号可复用 ⇒ 撞主键）。
 
+**⚠ 归档不广播**（详见 3.7c 的三前提），但**要留 history**（用户 11-02 12:46「creat和fork和delete这几个事情还是要在历史里面的」）。
+⇒ 删除走 `appendHistory`，**不走 `applyStatus`**（它不改 status）。
+
+### 2.10b 计算态重算 = 监听链（`recompute.ts`）
+
+> 【用户指令，2026-11-02 12:46】
+> **子任务变了，就会广播到G01。G01就要算。不变就不变。变了就要继续往上面广播。**
+
+> 【用户指令，2026-11-02 02:25】
+> **所有任务卡都是监听自己的监听对象。目标看自己的子任务的状态变化。既然变了，扳机，触发时点就出来了。那当然应该触发。**
+
+**模型是"监听"，不是"上溯遍历"**：**每张卡只监听自己的直接子任务**（孙任务变了由子卡自己转发上来）。
+
+```
+某个 write 事务内：
+  status 变了（applyStatus 返回 changed）⇒ recomputeUpward(变化卡 id)
+    → 队列 = 这些卡的父卡
+    → 逐张：取直接子任务 → ③ deriveStatus(kind, { status, isHeld, children })
+       ├ 结果 = 当前 ⇒ 不写、不通知（链断）
+       └ 结果 ≠ 当前 ⇒ applyStatus 写卡 + 它的父卡入队（继续向上）
+```
+
+- **队列 + `visited`，不用递归** —— 栈深度恒定；`visited` **兼防环与去重**
+  （`validateRelations` 只校验形状、不查全局成环，损坏数据里 `A.parent=B` / `B.parent=A` 可达）；
+- **链断条件 = 重算结果等于当前状态** —— 监听模型的自然后果：**没有事件发生，就没有下一个监听者被唤醒**；
+- **`isHeld` = `claimedBy` 非空**（**不是**"是否正在处理中"）；
+- **`children` 传完整列表**（含墓碑 / 草稿 / 终态），**⑧ 不预先过滤** —— ③ 的 `liveChildren` 是**唯一的过滤点**，
+  两边都滤会不一致；
+- **只做计算态，不碰依赖**（用户：「唯一一个跨任务的是依赖。但是这个的触发时点是手动操作，所以不需要立刻检查」）
+  ⇒ `dependsOn` 不进本链，依赖的门在领取 / 转移时由 ③ 的 `canTransition`（`ctx.depsAllEnded`）判；
+- **触发者是"状态转移本身"**（用户 12:35「触发通知的是状态转移本身」）⇒ 每条真改了 status 的路径都要广播；
+  **归档不广播**（见 3.7c），**初值不广播**（建卡 / fork，见 3.7b）。
+- **成本**：一次调用扫一遍全量卡建 `parent → children` 索引（一次 O(n)），之后每张卡都是 map 查找。
+  当前量级（编号不上 99）可接受；若成热点，正解是 core 持有增量维护的索引。
+
+⚠ **`deriveStatus` 必须在 ③ 的服务面里**（`provide('taskboard2Types', { …, deriveStatus })`）——
+否则整条链不可用（⑧ 会记 `RECOMPUTE_UNAVAILABLE`，**不静默降级成"当作没变"**）。
+
 ### 2.11 `kindOverride?: never`
 
 建卡入口预留参数位，类型 `never`：
@@ -319,6 +394,36 @@ QUOTA_STATES     = { 处理中 }         // 计入「一个 AI 只能占 1 个�
 - **`actor` 消失 ≠ 释放**：占用清空只能由「离开 `OCCUPYING_STATES`」或显式 `release` 触发。
 - **孤儿占用（`claimedBy` 指向已消失的 actor）不是缺口**：`【用户指令，2026-11-01 07:00】`「用户可以释放（持有者消失时）」⇒ **由用户强制释放解决**（`principal: {type:'user'}` 走 `planRelease`）。
   ⚠ **脏卡标记不自动解锁**（标记不猜），**解锁 = 用户显式释放** —— 两者不冲突：**标记负责"让人知道"，用户释放负责"解决"**。
+
+### 2.13b 纯状态转移（`planTransition` / `transition`）
+
+> 【用户指令，2026-11-02 13:30】
+> **我加上去了。工作的进行和搁置的4个状态都可以用户点击失败。**
+
+**⑦ 新增 `planTransition(card, actor, ctx)`：纯状态转移，一次一张卡，对 5 个目标状态开放**
+（成功 / 失败 / 取消 / 拒绝 / 搁置）。
+
+**⑧ 侧对应新增 `transition(cardId, to, principal)`：**
+
+```
+⑦ planTransition(card, actor, { depsAllEnded, at })
+  → { items: [{ op:'setStatus', cardId, to }], events }
+→ 事务内：applyStatus({ card, to, from: 事务内旧卡.status, events, mode:'transition' })
+→ outcome.changed ⇒ recomputeUpward(父卡)
+```
+
+- **走 `status-write.ts` 的 `applyStatus(mode:'transition')`** —— 与领取 / 释放 / 采纳 / 级联 / 重算**同一条收口**，不另开路径；
+- **同值 ⇒ 不写盘、不写历史、不广播**（用户「不切是必要的」）；
+- **⑧ 只传 `depsAllEnded`**（复用 `planClaim` 已有的算法，`claims.ts` 的 `depsAllEnded`）。
+
+#### ⚠ 三道闸在 ⑦，不在 ⑧
+
+**「有成功的交付」「所有子任务完成」「有失败的交付或阻碍」这三道闸，⑦ 用 `all`（全量卡）自己算。**
+
+⇒ **⑧ 不参与子任务聚合判定**，只提供 `depsAllEnded`（依赖是否全部进入「完成」组）。
+⇒ **这与 2.18 / 6.5 的分工一致**：⑧ 持有**流程**（算事实、走收口、写历史、广播），⑦ 持有**准入**（这道坎能不能过）。
+
+⚠ **别把三道闸写进 ⑧**：它们需要"这张卡有哪些子任务、各自什么状态、有没有交付"—— **那是 ⑦ 的卡语义 + ③ 的分类知识**，⑧ 只按结构消费卡。
 
 ### 2.14 同词两义（命名分离，必须写死）
 
@@ -421,7 +526,7 @@ core **在激活空间时 `readAll(wsId)` 一次并长期持有**；**不在循�
 | 该章**没有** `default` | **`EMPTY_PAYLOAD_UNAVAILABLE`**，文案与 `detail` **都带 `sectionId`** |
 
 **不猜**：替模板作者选一个 `$type`，等于让 core 承担模板语义 —— 而 core 是**不认识 payload 的**。
-⚠ **这不是预留分支**：17 个模板 52 章里 8 章没有 `default`（`delivery.yaml` 三章全无、`question.yaml` 的 `blocked` 等）⇒ 会真的触发。**属模板内容问题**。
+⚠ **当前 17 个模板 50 章全部有 `default`** ⇒ 这条报错在现有模板集上不可达；保留是因为**模板可新增**（用户 11:26「模板可以改」）。详见 §7.4。
 
 ### 3.7 `default` 由 ③ 给，core 只搬运
 
@@ -429,6 +534,54 @@ core **在激活空间时 `readAll(wsId)` 一次并长期持有**；**不在循�
 - **core 不解释 `default` 的形状**（那是 payload，schema 校验归 ②、且只在创建时）；
 - **core 只做深拷贝 + 放进 `sections`** —— 注册表那份是共享的，调用方会改手上的副本。
 - **`emptyPayloadFor` 已不再用于 fork**（② 侧签名也改成 `emptyPayloadFor(preferredType?: string)`，⑧ 不用它）。
+
+### 3.7b 状态写入收口（`status-write.ts`）
+
+> 【用户指令，2026-11-02 12:35】
+> **1.要收口。2.要广播。**
+> **因为状态变化，是要去通知父任务的。是有通知机制的。**
+> **所有转移都要走。触发通知的是状态转移本身。**
+> **不切是必要的。因为状态转移会在"历史"里面留下一个记录。**
+
+**所有 status 写入过一个入口**（`status-write.ts`），**不在各调用点自行赋值**：
+
+```ts
+applyStatus({ card, to, from?, events?, mode }) → { changed, card }
+appendHistory(card, events) → Card        // 不改 status，只追加历史
+```
+
+| mode | 判等 | 写 history | `changed` |
+|---|---|---|---|
+| `init`（建卡 / fork 首值） | **不判**（没有旧值） | 写 | 恒 `true` |
+| `transition`（采纳 / 领取 / 释放 / 转移 / 级联 / 重算） | **同值 ⇒ 什么都不做** | 同值不写 | 真的变了才 `true` |
+
+- **同值 ⇒ 不写盘、不写 history、不广播** —— 用户「不切是必要的」；
+- **`from` 参数**：⑦ 的 `planClaim` / `planRelease` / `planAdopt` 给的是**整卡**（status 已是目标值），
+  若直接当基准会**恒同值 ⇒ 永不广播**。⇒ 用 `from` 传"事务内旧卡的 status"当基准，
+  **而不是让每个调用点自己拼 `{...card, status: old}`** —— 那个拼法写错不报错、只静默失效；
+- **「初值不广播」由调用路径保证**（建卡 / fork 那条路径**压根不调 `recomputeUpward`**），
+  不由 `changed` 决定 —— 这样这条规则只有一处；
+- **删除不走 `applyStatus`**：它不改 status，走 `appendHistory`（用 `applyStatus` 表达删除
+  会让读代码的人以为删除改了 status）。
+
+### 3.7c 「删除不广播」依赖三个前提（缺一即静默失效）
+
+**归档（墓碑化）不通知父卡。这个结论由三个前提共同支撑：**
+
+| # | 前提 | 住在哪 |
+|---|---|---|
+| ① | `liveChildren` **滤草稿** | ③ `packages/types/src/kind.ts` |
+| ② | `liveChildren` **滤墓碑** | ③ 同上 |
+| ③ | **归档前必是草稿**（`planDelete` 强制 `DRAFT`） | ⑦ `packages/taskcard/src/delete.ts:43` |
+
+**因果链**：归档前 —— 该子卡是草稿 ⇒ ① 已让它对父卡不可见；归档后 —— 它是墓碑 ⇒ ② 让它仍不可见
+⇒ **父卡看到的东西前后没变 ⇒ 无需广播。**
+
+⚠⚠ **三个前提缺一，这条结论就静默失效**（不报错、类型也不报）。尤其**③ 是"现阶段"的规则**：
+若将来允许"非草稿也能归档"，那张卡**归档前对父卡是可见的**、归档后不可见 ⇒ **必须改成广播**。
+
+⇒ **已双向留痕**：⑧ 的 `claims.ts` 删除处注释指向 ③ 的 `kind.ts`；③ 的 `liveChildren` JSDoc 指回 `claims.ts`。
+**跨包依赖的失效条件必须双向留痕，否则总有一边看不到。**
 
 ### 3.8 `accepts` 彻底移除
 
@@ -696,7 +849,10 @@ type CascadePlan   = { relationsPhase: RelationsItem[]; statusPhase: StatusItem[
 ### 6.5 ⑦ taskcard
 
 ```ts
-planCreate / planEditOrFork / planAdopt / planDelete / planFork / ...
+planCreate / planChange / planAdopt / planDelete / planFork / ...
+planClaim(card, actor, ctx)        // ctx 需 ⑧ 传入 { depsAllEnded, actorHasActiveWork, at }
+planRelease(card, principal, input)
+planTransition(card, actor, ctx)   // ✅ 新增：纯状态转移（成功/失败/取消/拒绝/搁置），一次一张卡
 changeIntent(card) → 封闭枚举（纯查询，结果不回灌 plan —— TOCTOU）
 planFork(src, newTemplateSections) → {
   newCard, relations, events,
@@ -712,6 +868,8 @@ planFork(src, newTemplateSections) → {
 - **`missingSections` 只带 `{ sectionId }`** —— 补什么由 ⑧ 从 ③ 的 `default` 取（`accepts` 已移除，见 2.7 / 3.6）；
 - **`droppedSections[].payload` 不得被 core 持久化**（只判空，用完即弃）；
 - **⑦ 不认识 `derive`**（derive 是面板预填，产物只是 `planCreate` 的普通输入字段）。
+- **`planTransition` 的三道闸在 ⑦**（「有成功的交付」/「所有子任务完成」/「有失败的交付或阻碍」，⑦ 用 `all` 全量卡自算）⇒ **⑧ 只传 `depsAllEnded`**，见 2.13b。
+- **主体类型是 `{ type: 'agentMessageLoop'; id }`**（原 `'loop'`，用户 11-02 13:30 改名），**⑦ 的 `describePrincipal` 产出的前缀必须与 ⑧ 的 `claimValueOf` 一致**（见 1.6b）。
 
 **⚠ core 不是"纯转发层"（③ 与我核对后的口径，两端一致）**：在 fork 路径上，core 承担**编排判断**，不是把数据原样递给某个模块：
 1. ⑦ 给出"丢哪些 / 缺哪些"（键集差异），**不判内容**；

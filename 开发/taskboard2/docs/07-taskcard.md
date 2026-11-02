@@ -46,6 +46,15 @@
 | **关系是有行为的，所以是英文 + 显示名；但「有行为」的只有「依赖」——效果是所有依赖对象都进入了完成态，这个卡才能被领取（提交 → 处理中那个按钮）** | `2026-11-01 13:18` |
 | **template 要有领域的**（卡上 `template.domain` 存快照；`domain` 仍纯展示、不校验语言） | `2026-11-02 00:23` |
 | **派生按钮的行为一律携带：选择派生提供的模板，把关系里面设置对方为父任务，标题用父任务的标题，加上 `-`，然后加上父任务对这个派生按钮写的 label。如果没有 label，就加模板名字。这只是初始化的行为，如果中途改变了模板，标题不会附随自动更改** | `2026-11-02 11:26` |
+| **状态转移，是一个函数。参数是目标状态，调用者。调用者可能是用户，ai，系统（后端）。用户和ai调用，就检查当前情况和权限。系统调用，就不读取那个目标状态的参数，自己按着转移规则数一下。切过去，或者不切** | `2026-11-02 13:50` |
+| **就是判断模板是这个额而且状态是这个 / 所有子任务都要完成，不包括草稿。因为父任务统计子任务，遍历，遍历不出来草稿 / 是的。子任务全部失败，取消，拒绝。只要有一个成功的交付。就可以成功。所以这个成功，是需要点击和调用，不是自动行为 / 报错。作为工具返回值。说为什么，哪一个子任务导致的 / 直接，不包含间接后代** | `2026-11-02 13:50` |
+| **设计当然只有用户能确认。记录也只有用户能确认。这两个都是直接决定方向的。ai 不能决定方向。ai 的任务只有服从用户的意志。除非用户授权，否则没资格解释用户意志** | `2026-11-02 13:30` |
+| **我加上去了。工作的进行和搁置的 4 个状态都可以用户点击失败** | `2026-11-02 13:30` |
+| **直接在 ts 里面写字面量。因为核心的含义就是随包分发不可关闭的。就是预设这个东西一直在工作。改模板名字就把这里一起改了就是** | `2026-11-02 13:30` |
+| **loop 确实是 ai。但我希望改名。loop 名字太离谱里。我说的是"消息循环"。消息必须体现出来。loop 要改名，前缀改就一起改。agentMessageLoop** | `2026-11-02 13:30` |
+| **要收口。要广播。因为状态变化，是要去通知父任务的。是有通知机制的。所有转移都要走。触发通知的是状态转移本身** | `2026-11-02 12:35` |
+| **不切是必要的。因为状态转移会在"历史"里面留下一个记录** | `2026-11-02 12:35` |
+| **编辑不会产生历史。只有状态转移会留下历史。记录编辑这得要多少个历史事件啊。history 记录的是卡。而编辑，是模板内容。卡不穿透到模板里面保存，只保存自己这个卡提供的额外的变化** | `2026-11-02 12:46` |
 
 以下两条为本轮设计过程中由 **Lead 转达、成员未亲收** 的表述，正文引用时按此强度处理：
 - 「采纳前可以原地改任何东西；采纳后不可原地改，要改只能 fork」
@@ -72,7 +81,7 @@ interface Card {
   note: string;                   // 追加项。永远可写，不随采纳清空
   history: { at: number; action: string; detail?: unknown }[];  // 追加项，只读
   deleted: boolean;               // 墓碑标记（独立字段，不是状态值）
-  claimedBy: string;              // 当前占用者 = **消息循环 id**（非会话 id）；'' = 无
+  claimedBy: string;              // 当前占用者 = **agent 消息循环 id**（非会话 id）；'' = 无
   claimedAt: number;              // 占用起始时间；与 claimedBy 同生同灭
 }
 ```
@@ -89,19 +98,20 @@ interface Card {
 isDraft(card): boolean                              // ⟺ status === DRAFT
 changeIntent(card): 'edit' | 'fork'                 // 纯查询，供 UI 出按钮文案；封闭枚举
 planCreate(input): Plan
-planChange(card, all, { editable, patch? }): Plan   // 草稿期原地编辑
+planChange(card, all, { editable, patch? }): Plan   // 草稿期原地编辑（不产历史）
 planFork(src, newTemplateSections): ForkPlan
 planAdopt(card, all): Plan                          // 采纳（含取代执行）
-planRelease(card, principal): Plan                  // principal = {type:'user'} | {type:'loop', id}
+planRelease(card, principal): Plan                  // principal = {type:'user'} | {type:'agentMessageLoop', id}
 planClaim(card, actor, ctx): Plan                   // ctx.actorHasActiveWork 必填
 planDelete(card): Plan
 planForkTransfer(src, all): { transfer, skip }      // 只读，供 fork 面板预览
 applyRelationPatches(card, patches): { ok:true; value: Relations } | { ok:false; issues: Issue[] }
+planTransition(card, all, { to, actor, depsAllEnded, at? }): PlanResult   // 整组状态转移，见 2.8
 ```
 
 - **所有 plan 只产出「意图」，不写盘**；落盘与事务归 ⑧。
 - **意图里给"卡的最终完整字段"，不给 diff**（⑧ 不反推字段语义）。
-- **`changeIntent` 的结果不得作为任何 plan 的输入**（TOCTOU：两次调用之间卡状态可能被别的消息循环改掉）⇒ ⑦ 内部重判。
+- **`changeIntent` 的结果不得作为任何 plan 的输入**（TOCTOU：两次调用之间卡状态可能被别的 agent 消息循环改掉）⇒ ⑦ 内部重判。
 - `planFork` 的返回额外含两个清单（见 2.5）。
 - **`applyRelationPatches`（复数）**：**所有 relations 写入必须经 ⑦** 的落实点（Lead D1 裁定）；入参是 **`patches: RelationPatch[]`**，**按数组顺序应用**。
 
@@ -109,15 +119,16 @@ applyRelationPatches(card, patches): { ok:true; value: Relations } | { ok:false;
 
 | 常量 | 值 | 含义 |
 |---|---|---|
-| `ADOPT_ACTION` | `'adopt'` | **「采纳」这个转移动作**（未指定 → 提交）。⑤ 按它排序用。 |
+| `ADOPT_ACTION` | `'adopt'` | **「采纳」这个转移动作**（未指定 → 提交 / 需要授权）。⑤ 按它排序用。 |
 | `SUPERSEDE_ACTION` | `'supersede'` | 采纳时执行取代（旧卡被处置）。 |
 | `CREATE_ACTION` | `'create'` | 建卡。 |
 | `FORK_ACTION` | `'fork'` | fork 建卡（历史写「分支」，不是「创建」）。 |
-| `EDIT_ACTION` | `'edit'` | 草稿期编辑。 |
+| ~~`EDIT_ACTION`~~ | `'edit'` | ~~草稿期编辑~~ ⇒ **编辑不产历史**（11-02 12:46）；常量保留以兼容 import，**⑦ 不再产出**。 |
 | `CLAIM_ACTION` | `'claim'` | 领取（提交 → 处理中）。 |
 | `RELEASE_ACTION` | `'release'` | 释放（处理中 → 提交）。 |
 | `FORCE_RELEASE_ACTION` | `'force_release'` | 用户强制释放（非本人持有），`detail` 带原 `claimedBy`。 |
 | `DELETE_ACTION` | `'delete'` | 删除（墓碑）。 |
+| `TRANSITION_ACTION` | `'transition'` | **整组状态转移**（见 2.8）；`detail` 带 `{ from, to }`。 |
 
 ⚠ 动作名**永不变**（改名会让旧历史失去可判别性）；要加动作就**新增**，不复用旧名。
 
@@ -215,6 +226,132 @@ planFork(src, newTemplateSections) → {
 
 - **依赖的行为**：`【用户指令，2026-11-01 13:18】`「效果是所有依赖对象都进入了完成态，这个卡才能被领取（从提交转为处理中的那个状态转换的按钮）」
 
+### 2.8 `planTransition` —— 整组状态转移（新增）
+
+> `【用户指令，2026-11-02 13:50】`
+> **状态转移，是一个函数。参数是目标状态，调用者。**
+> **调用者可能是用户，ai，系统（后端）**
+> **用户和ai调用，就检查当前情况和权限。**
+> **系统调用，就不读取那个目标状态的参数，自己按着转移规则数一下。切过去，或者不切**
+
+#### 2.8.1 签名
+
+```ts
+planTransition(ports, card, all, input: {
+  to: TaskState;               // 目标状态
+  actor: Principal;            // user / agentMessageLoop
+  depsAllEnded: boolean;       // ⑧ 算好的跨卡聚合（依赖是否全在完成组）
+  at?: number;                 // ⑧ 在事务内盖
+}): PlanResult
+```
+
+- **一次一张卡**（不是批量）。批量由 ⑧ 循环调。
+- **纯转移**：产出 `{ op:'setStatus', cardId, to }` + 一条 `transition` 事件。
+- **`TRANSITION_ACTION = 'transition'`**，`detail = { from, to }` ——
+  依据 `【用户指令，2026-11-02 12:35】`「触发通知的是状态转移本身」⇒ 历史必须能读出"变了什么"。
+
+#### 2.8.2 流程
+
+| 序 | 步骤 | 说明 |
+|---|---|---|
+| 1 | `card.deleted` ⇒ 拒 `already-deleted` | 墓碑不参与任何转移 |
+| 2 | 问 ③ `canTransition(kind, from, to, actor, {depsAllEnded})` | **不过就拒**（`transition-not-allowed`）；⑦ 不自己判状态机 |
+| 3 | `agentMessageLoop` 且 `kind === 'work'` 且 `to === COMPLETED` | **三道闸**（2.8.3） |
+| 4 | `agentMessageLoop` 且 `kind === 'work'` 且 `to === FAILED` | **一道闸**（2.8.4） |
+| 5 | `to === card.status` ⇒ 拒 | **同值不产计划**（见 2.8.5） |
+
+**⚠ 系统（后端）调用不在这条路上**：它不读 `to`，自己按规则数 —— 那是 ⑧ 的 `recompute`。
+
+**⚠ 现有的 `planAdopt` / `planClaim` / `planRelease` / `planDelete` 全部保留不动** ——
+它们有额外语义（采纳触发取代 / 领取设 `claimedBy` / 释放清占用 / 删除置墓碑），
+**`planTransition` 只管纯状态转移**。
+
+#### 2.8.3 `agentMessageLoop` 成功的三道闸（仅 `work`）
+
+只对**直接子任务**生效。
+
+> `【用户指令，2026-11-02 13:50】`
+> **是的。就是判断模板是这个额而且状态是这个。**
+> **所有子任务都要完成，不包括草稿。因为父任务统计子任务，遍历，遍历不出来草稿。**
+> **是的。子任务全部失败，取消，拒绝。只要有一个成功的交付。就可以成功。所以这个成功，是需要点击和调用，不是自动行为。**
+
+```ts
+const children = liveChildren(card);   // 直接子任务（不含间接后代），滤墓碑、滤草稿
+
+// 闸 1：必须有一个「成功」的「交付」子任务
+children.some((c) => c.template.ref === 'delivery' && c.status === COMPLETED)
+// 否则拒：{ kind: 'no-success-delivery' }
+
+// 闸 2：所有直接子任务都处于「完成」组
+const notDone = children.filter((c) => !isCompletedGroup(c.status));
+// 非空则拒：{ kind: 'children-not-completed', children: [{ id, status }] }
+
+// 闸 3：依赖对象都为「完成」⇒ 由 ⑧ 算好、经 input.depsAllEnded 递进 ③ 的 canTransition
+```
+
+**⚠ 关键点**：
+- **闸 2 只要求"在完成组"**（成功 / 失败 / 取消 / 拒绝 都算）⇒
+  **子任务全部失败/取消/拒绝时，只要有一个成功的交付，仍然可以成功**（用户 13:50 原话）。
+- **"成功"是需要点击/调用的显式行为，不是自动的**（同句原文）。
+- **滤草稿的依据**：用户 13:50「父任务统计子任务，遍历，遍历不出来草稿」。
+- **不含间接后代**：用户 13:50「直接，不包含间接后代。」
+
+**字面量 `'delivery'` / `'blocker'` 直接写在 ts 里**：
+
+> `【用户指令，2026-11-02 13:30】`
+> **直接在ts里面写字面量。因为核心的含义就是随包分发不可关闭的。就是预设这个东西一直在工作。**
+> **改模板名字就把这里一起改了就是。**
+
+⇒ **这是"⑦ 不写分类/模板字面量"这条通则的明确例外**，理由已由用户给出（预设随包分发、不可关闭）。
+
+#### 2.8.4 `agentMessageLoop` 失败的一道闸（仅 `work`）
+
+```ts
+children.some((c) => c.template.ref === 'delivery' && c.status === FAILED)
+|| children.some((c) => c.template.ref === 'blocker' && c.status === FAILED)
+// 否则拒：{ kind: 'no-failed-evidence' }
+```
+
+**⚠ 矩阵 155 / 166 行没有「所有子任务完成」的要求 ⇒ 失败不加那条闸。**
+
+#### 2.8.5 同值不产计划（`【用户指令，2026-11-02 12:35】`）
+
+> **不切是必要的。因为状态转移会在"历史"里面留下一个记录。**
+
+⇒ **`to === card.status` ⇒ 直接拒（`transition-not-allowed`）**，不产生 `setStatus`、不产生事件。
+⇒ ⑦ 只做这一层**便宜的短路**；**权威判断在 ⑧ 的写入收口处**（旧值只有写入方手上有）。
+
+#### 2.8.6 用户（`user`）没有那几道闸
+
+**只有 ③ 的 `canTransition` 一个条件。**
+
+> `【用户指令，2026-11-02 13:30】`
+> **设计当然只有用户能确认。记录也只有用户能确认。这两个都是直接决定方向的。ai不能决定方向。ai的任务只有服从用户的意志。除非用户授权，否则没资格解释用户意志。**
+
+- **设计卡 / 记录卡的「成功」只有用户能确认**；**ai 对这两类没有成功/失败入口**。
+- **工作卡**：`【用户指令，2026-11-02 13:30】`「我加上去了。工作的进行和搁置的 4 个状态都可以用户点击失败。」
+  ⇒ 工作卡的 `提交` / `处理中` / `需要信息` / `需要授权` 四个状态下，**用户都能置「失败」**。
+  **⚠ 这条要在 ③ 的 `canTransition` 里允许**（⑦ 只透传，不自己判）。
+
+#### 2.8.7 `RejectReason` 扩 3 个成员（带子任务 id）
+
+> `【用户指令，2026-11-02 13:50】`「报错。作为工具返回值。说为什么，哪一个子任务导致的。」
+
+```ts
+/** agent 成功闸 1：没有「成功」的「交付」子任务。 */
+| { readonly kind: 'no-success-delivery' }
+/** agent 成功闸 2：直接子任务未全部完成（带具体是谁）。 */
+| { readonly kind: 'children-not-completed';
+    readonly children: readonly { readonly id: string; readonly status: TaskState }[] }
+/** agent 失败闸：没有「失败」的「交付」或「阻碍」子任务。 */
+| { readonly kind: 'no-failed-evidence' }
+/** ③ 的 canTransition 判为不允许（含同值短路）。 */
+| { readonly kind: 'transition-not-allowed' }
+```
+
+⚠ `children` **必须带 `{ id, status }`** —— 用户要求"哪一个子任务导致的"。
+⑧ 拿它查表转文案，**不要在 ⑦ 里拼字符串**。
+
 ---
 
 ## 三、我的判断与实现选择
@@ -228,9 +365,15 @@ planFork(src, newTemplateSections) → {
 2. **`history.action` 是封闭的机器可读标识**（英文，不是中文文案）。
    `【用户指令，2026-11-01 03:32】`「任务板内部交互用的就是英文名。」 ⇒ ⑦ 不产中文、不消费中文。
    动作名**永不改名**（改名让旧历史失去可判别性），**新增就新增、不复用旧名**。
-3. **`claimedBy` 存消息循环 id，不是会话 id**。
+3. **`claimedBy` 存 agent 消息循环 id，不是会话 id**。
    依据：`【用户指令，2026-11-01 06:43】`「一个会话的子消息，也可以另外领取」—— 存会话 id 会实现成"整会话只能一张"。
    **`claimedBy` 的语义是"谁在占用"，不是"谁有权释放"**（权限差异由 `principal` 表达）。
+   **值的字面前缀是 `agentMessageLoop:<id>`**（`{type:'user'}` 存 `'user'`）。
+
+**⚠ 前缀变更（`loop:` → `agentMessageLoop:`）**
+`【用户指令，2026-11-02 13:30】`「loop 确实是 ai。但我希望改名……agentMessageLoop」「前缀改就一起改」。
+· **旧数据无法解析**（`principalOfClaim('loop:xxx')` ⇒ `undefined`）。
+· **原型阶段无真实数据，不做迁移**；若将来改这段，需同时考虑 `claimedBy` 里已存在的旧前缀。
 
 ### 3.2 编辑 / fork
 
@@ -367,6 +510,19 @@ planFork(src, newTemplateSections) → {
 | **`TemplateSection.accepts` / `MissingSection.accepts`** | `【Lead 决定，2026-11-02 12:10】`：③ 已彻底移除 `accepts`（`sectionsOf` 只返回 `{id, default?}`）⇒ ⑦ 侧留它会导致**运行时 `undefined` 而编译不报错**。补空 payload 改用**该章的 `default`**。 |
 | **`emptyPayloadFor(accepts)`** | 随 `accepts` 移除而作废（11-02 12:10）；补空 payload 改用 ③ 的 `default`。 |
 | **`{{ domain }}` 恢复条（11-02 00:23 那条）** | 先恢复、后随整个变量机制在 11-02 11:26 再次作废。**最终状态：不存在。** |
+| **`Principal = { type:'user' } \| { type:'loop'; id: string }` 里的 `'loop'` 名字** | `【用户指令，2026-11-02 13:30】`「loop 确实是 ai。但我希望改名。loop 名字太离谱里。我说的是"消息循环"。**消息必须体现出来。**」「loop 要改名，前缀改就一起改。**agentMessageLoop**」<br>⇒ 类型字面量改为 `'agentMessageLoop'`；`claimedBy` 前缀 `loop:` → `agentMessageLoop:`。<br>· **旧数据无法解析**（原型阶段无真实数据，**不做迁移**）。<br>· **中文措辞「消息循环」保留**，只是类型名字面量用 `agentMessageLoop`。 |
+| **「⑦ 一律不写模板名 / 分类字面量」这条通则的绝对化表述** | `【用户指令，2026-11-02 13:30】`「**直接在 ts 里面写字面量。因为核心的含义就是随包分发不可关闭的。就是预设这个东西一直在工作。**改模板名字就把这里一起改了就是。」<br>⇒ `planTransition` 里**故意**出现 `'work'` / `'delivery'` / `'blocker'` 字面量。**这是明确例外，不是漏改**；理由由用户给出（预设随包分发、不可关闭）。 |
+| **「状态转移只由 `recompute` 那条链通知父任务」的现状** | `【用户指令，2026-11-02 12:35】`「所有转移都要走。触发通知的是状态转移本身。」⇒ 新增 `planTransition` 把**用户 / ai 发起的转移也走同一条路**；系统那支仍归 ⑧ 的 `recompute`。 |
+| **「编辑留历史」** | `【用户指令，2026-11-02 12:46】`「编辑不会产生历史。只有状态转移会留下历史。记录编辑这得要多少个历史事件啊。」⇒ `planChange` 的 `events` 恒为空；`EDIT_ACTION` 保留常量但不再产出。 |
+
+**新增（本轮，11-02 13:30 / 13:35）**
+
+| 项 | 内容 |
+|---|---|
+| **`planTransition`** | ⑦ 新增的**整组状态转移**入口（纯转移，不含采纳/领取/释放/删除的额外语义）。见 §2.8。 |
+| **`RejectReason` 新增 4 个成员** | `no-success-delivery` / `children-not-completed`（带 `{id,status}[]`）/ `no-failed-evidence` / `transition-not-allowed`。见 §2.8.7。 |
+| **权限总原则（用户原话）** | `【用户指令，2026-11-02 13:30】`「设计当然只有用户能确认。记录也只有用户能确认。这两个都是直接决定方向的。ai 不能决定方向。ai 的任务只有服从用户的意志。除非用户授权，否则没资格解释用户意志。」⇒ **ai 对「设计 / 记录」没有成功/失败入口**。 |
+| **用户可置失败的 4 个状态** | `【用户指令，2026-11-02 13:30】`「我加上去了。工作的进行和搁置的 4 个状态都可以用户点击失败。」⇒ 工作卡的 `提交`/`处理中`/`需要信息`/`需要授权` 都能被用户置 `FAILED`。**这条落在 ③ 的 `canTransition`**。 |
 
 ---
 
@@ -426,7 +582,7 @@ planFork(src, newTemplateSections) → {
 | `payloadHasContent(payload)` | `→ boolean`；供 ⑧ 判 `hadContent`（⑦ 不调） |
 | ~~`emptyPayloadFor(accepts)`~~ | ❌ **已作废**（11-02 12:10）：`accepts` 已从 ③ 彻底移除 ⇒ 补空 payload 改用**该章的 `default`**（由 ⑧ 从 ③ 拿） |
 | `splitPayload` | **⑦ 不消费**；供 ⑧ 判 `hadContent`（挂服务面，⑦ 不用） |
-| ⑦ 的承诺 | **不出现任何 action 类型字面量**（`text`/`ask`/`markdown`）；不校验 payload、不解释 `$type` |
+| ⑦ 的承诺 | **不出现任何 action 类型字面量**（`text`/`ask`/`markdown`）；不校验 payload、不解释 `$type`。<br>⚠ **例外**：`transition.ts` 里出现 `'work'` / `'delivery'` / `'blocker'` **模板名**字面量（`【用户指令，2026-11-02 13:30】`「直接在 ts 里面写字面量……随包分发不可关闭」），**这是明确例外**。 |
 | 校验归属 | `validateForEdit`（单章 L1）/ `validateForCreate`（L1+L2+schema+`MISSING_SECTION`+`SECTION_NOT_IN_TEMPLATE` 双向）；**⑦ 不调**，全由 ⑧ 调 |
 | 事件与文案 | ⑦ 产数据（`reason`、事件 detail），**⑧ 查表转文案** |
 
@@ -439,6 +595,8 @@ planFork(src, newTemplateSections) → {
   1. **新增 `sectionId` ∈ 模板章节集**（(丙)）；
   2. **关系目标合法性**（存在 / 非草稿 / 非墓碑 / 同空间）—— ⑦ 没有空间概念，判不了。
 - **⑧ 算「依赖是否全部进入完成组」，作为入参交给 ③ 的 `canTransition`**（13:18 的"依赖行为"落点，见 3.5 第 18 条）—— ⑦ **不做这个跨卡聚合**。
+- **`planTransition` 的 `depsAllEnded` 同样由 ⑧ 算好传入**（见 §2.8）。**闸 1 / 闸 2 由 ⑦ 自己算**（它手上有 `all`，按 `relations.parent` 过滤即可），**不需要 ⑧ 传子任务清单**。
+- **状态写入收口（`【用户指令，2026-11-02 12:35】`）落点在 ⑧**：⑦ 产出 `{ op:'setStatus', cardId, to }` 或带 `status` 的整卡，**旧值只有写入方手上有**⇒ equal-check 的权威判断必须在 ⑧，⑦ 只做便宜的短路（`planTransition` 里 `to === card.status` ⇒ 拒）。
 - **⑧ 对 `droppedSections[].payload` 只做"判空"一个用途，用完即弃、不持久化**；`history` 只记 `{ sectionId, hadContent }`，**不记内容**。
 - **`planFork` 的两个清单由 ⑦ 给**（避免"哪些章丢/缺"出现第二份实现）。
 - ⑧ 补缺章：**按 `missingSections` 里的 `sectionId`，从 ③ 取该章的 `default`（或自行构造最小空 payload）**。

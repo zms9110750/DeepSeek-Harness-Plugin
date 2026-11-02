@@ -5,8 +5,15 @@
 > **本文档只描述 ③ 自己**：它对外给什么、它怎么判断、它明确不做什么。
 > 接口形状已与 ①②④⑦⑧ 逐条对齐；内容里的取舍标注来源等级。
 >
-> **最后更新（本批）：模板语法收缩** —— `accepts` / 预设取消，章节新增 `default`，`displayName` 改必填，`kindLetter` 与 `deriveStatus` 进服务面。
-> **（本批依据 lead 转达的 `【用户指令，2026-11-02 11:26】` 与 `【Lead 决定，12:10 / 12:25】`。）**
+> **最后更新（本批，`13:30` 之后）：**
+> ① **`liveChildren` 语义变更**（滤墓碑 → 滤墓碑 **+ 草稿**）；
+> ② **三条规则判据改**（`design.2.2` 判模板 `research`；`work.3.3`/`3.4` 改纯状态判）；
+> ③ **采纳权限按分类分**（design/record 允许 `agentMessageLoop`）；
+> ④ **`Actor` 的 `'loop'` 改名 `'agentMessageLoop'`**；
+> ⑤ **新增权限总原则**（用户 13:30）+ 工作卡失败权限记录。
+> **（本批依据 lead 转达的 `【用户指令，2026-11-02 12:46 / 13:15 / 13:20 / 13:30】`。）**
+>
+> **上一批：模板语法收缩** —— `accepts` / 预设取消，章节新增 `default`，`displayName` 改必填，`kindLetter` 与 `deriveStatus` 进服务面（依据 `11:26` 与 `Lead 决定 12:10 / 12:25`）。
 
 ---
 
@@ -119,11 +126,23 @@
 > 出现子任务为**调研**，这是明确的模板类型。因为调研是真的需要调研。别的工作，我不知道你实际上是做什么。比如写代码。那这个事情跟我的状态是没关系的。
 > 子任务能执行才是能执行。如果子任务是被搁置的。那自己的进行依赖子任务。那自己肯定要被搁置。子任务都不做，自己怎么做。
 
+> 【用户指令，2026-11-02 13:30】
+> **权限总原则**：设计当然只有用户能确认。记录也只有用户能确认。这两个都是直接决定方向的。ai不能决定方向。ai的任务只有服从用户的意志。除非用户授权，否则没资格解释用户意志。
+> **工作卡失败**：我加上去了。工作的进行和搁置的4个状态都可以用户点击失败。
+> **loop 改名**：loop确实是ai。但我希望改名。loop名字太离谱里。我说的是"消息循环"。消息必须体现出来。
+> loop要改名，前缀改就一起改。
+> agentMessageLoop
+> **模板名字面量**：直接在ts里面写字面量。因为核心的含义就是随包分发不可关闭的。就是预设这个东西一直在工作。
+> 改模板名字就把这里一起改了就是。
+
 ---
 
 **⚠️ 时间锚点说明**：
 - `2026-11-02 11:26` 这一批是 **lead 转述的要点**，**不是逐字原文**；完整原文见 lead 处记录。
 - `2026-11-02 02:25`（递归）为 lead 转述的逐字块。
+- **`2026-11-02 13:30` 这一批包含 4 件事，其中 2 件不归 ③**：
+  - ✅ **归 ③**：权限总原则（`canTransition` 的 actor 限制总依据）、工作卡失败权限、`loop` → `agentMessageLoop`（出现在 `Actor` 类型里）；
+  - ❌ **不归 ③**：「模板名字面量直接写在 ts 里」—— 那是 **⑧ 的注册编排**（`registerTemplate` 的调用处），**③ 只提供 `registerTemplate` 函数，不决定谁调用、名字写在哪**。**此处收录原话只为完整，③ 无对应改动。**
 
 ---
 
@@ -257,15 +276,27 @@ type RuleInput = {
 **转移判决：`canTransition(kind, from, to, actor, ctx) → { ok: true } | { ok: false, reason }`**
 
 ```ts
-type Actor = 'user' | 'ai' | 'host';
+type Actor = 'user' | 'agentMessageLoop' | 'host';
 type TransitionCtx = {
   depsAllEnded: boolean;        // 依赖目标是否全部处于「完成」组（= EndedStatus）
   actorHasActiveWork: boolean;  // 该 actor 名下是否已有「处理中的工作」卡
 };
 ```
-- `actor` 只分三种：用户 / AI / 宿主。足以表达「用户可、AI 不可」的条目（采纳、释放以外的若干）。
+- `actor` 只分三种：用户 / 消息循环 / 宿主。足以表达「用户可、AI 不可」的条目。
+- **⚠️ `'agentMessageLoop'` 是用户 `13:30` 的改名要求**：
+  > 「loop 确实是 ai。但我希望改名。loop 名字太离谱了。我说的是"**消息循环**"。**消息必须体现出来。**」「loop 要改名，前缀改就一起改。」「**agentMessageLoop**」
+  - **原名 `'loop'` 作废**（见 4.22）。
+  - **术语对应**：「AI」这个业务概念在代码里叫 `agentMessageLoop` —— **它体现"消息循环"这个机制，而不是泛指"AI"**。
 - **所有"外部世界的事实"都走 `ctx`，不走 `actor`** —— `actor` 只承载身份种类，不承载依赖、占用、计数等状态信息。
 - **③ 只给判决，不执行、不写状态、不维护领取。**
+
+**⭐ actor 限制的总依据（用户 `13:30` 逐字）：**
+> **设计当然只有用户能确认。记录也只有用户能确认。这两个都是直接决定方向的。ai 不能决定方向。ai 的任务只有服从用户的意志。除非用户授权，否则没资格解释用户意志。**
+
+- **⇒ 这句是 `canTransition` 里所有 actor 限制的总原则**，不是"某几条规则的局部理由"。
+- **⇒ 读法**：**"能确认方向"的动作用户专属**（确认设计、确认记录）；**AI 只能执行被授权的动作**。
+- **⇒ 13:15「我现在允许设计和记录，由 actor 为 ai 的时候通过」= 一次明确的「用户授权」** —— 正是上面那句里「除非用户授权」的那个"除非"。
+  - **⚠️ 这条授权的边界**：**它授权的是「采纳」这个动作**（草稿 → 需要授权），**不是"AI 可以确认设计/记录"** —— 确认（`AUTH_REQUIRED → COMPLETED`）仍然只有用户能做。
 
 **`ctx.depsAllEnded` 的用途（`DEPENDS_ON_GATE` 规则）：**
 - 规则：`to === WORKING && from === SUBMITTED && kind === 'work' && !ctx.depsAllEnded ⇒ 拒绝`。
@@ -276,12 +307,15 @@ type TransitionCtx = {
 
 **采纳与领取（转移的名字，不是状态值）：**
 
-| 动作 | 转移 | 允许者 |
-|---|---|---|
-| **采纳**（goal / work） | `UNSPECIFIED → SUBMITTED` | **仅用户** |
-| **采纳**（design / record） | `UNSPECIFIED → AUTH_REQUIRED` | **用户 / AI** |
-| **领取** | `SUBMITTED → WORKING` | 用户 / AI |
-| **释放** | `WORKING → SUBMITTED` | 用户 / AI |
+| 动作 | 转移 | 允许者 | ③ 代码是否强制 |
+|---|---|---|---|
+| **采纳**（goal / work） | `UNSPECIFIED → SUBMITTED` | **仅 `user`** | ✅ 已强制 |
+| **采纳**（design / record） | `UNSPECIFIED → AUTH_REQUIRED` | **`user` / `agentMessageLoop`** | ✅ 已强制（`host` 拒） |
+| **领取** | `SUBMITTED → WORKING` | `user` / `agentMessageLoop` | ⚠️ **未强制 actor**（只判依赖门 + 占位） |
+| **释放** | `WORKING → SUBMITTED` | `user` / `agentMessageLoop` | ⚠️ **未强制 actor**（准入在 ⑦ 的 `planRelease`） |
+| **确认**（design / record） | `AUTH_REQUIRED → COMPLETED` | **按权限总原则应仅 `user`** | ❌ **未强制**（走默认放行，见 5.5） |
+
+**⚠️ 最右列是本次核对新增的** —— **它把"矩阵要求"与"③ 代码现状"分开**，避免把设计意图读成已实现。
 
 - **⚠️「采纳」是同一个名字、两条不同转移**（目的地不同）：
   - **goal / work** 采纳后进「提交」（进入计算、可领取）；
@@ -289,9 +323,28 @@ type TransitionCtx = {
   - **⇒ 目的地按分类判定，不做「任意草稿→任意非草稿都算采纳」的放宽**（那会把非矩阵转移也套上采纳的限制）。
 - **采纳的 actor 限制按分类分**（用户 `13:15`「我现在允许设计和记录，由 actor 为 ai 的时候通过」）：
   - **goal / work ⇒ 仅 `user`**（依据用户 01:29「采纳是用户的按钮…只能用户来做」+ 矩阵 三/草稿、五/草稿只列「用户点击采纳」）；
-  - **design / record ⇒ `user` / `ai`**（依据用户 13:15 + 矩阵 四/草稿、六/草稿列了「ai 调用采纳」）；
+  - **design / record ⇒ `user` / `agentMessageLoop`**（依据用户 13:15 + 矩阵 四/草稿、六/草稿列了「ai 调用采纳」）；
   - **`host` 一律不允许**（矩阵里从未出现 ⇒ 不猜）。
   - **⚠️ 修正记录**：此前 ③ 把它实现成「全分类只能 user」，**是把 01:29 那句话的适用范围写宽了** —— 那句讲的是 goal/work 的草稿→提交，design/record 的草稿→需要授权是另一条转移。
+
+**⭐ 工作卡的「失败」权限（用户 `13:30` 新增）：**
+
+> **我加上去了。工作的进行和搁置的 4 个状态都可以用户点击失败。**
+
+**⇒ `kind === 'work'` 时，以下 4 个状态下 `user` 都可以置 `FAILED`：**
+
+| 状态 | 组 |
+|---|---|
+| `SUBMITTED` | 进行 |
+| `WORKING` | 进行 |
+| `INPUT_REQUIRED` | 搁置 |
+| `AUTH_REQUIRED` | 搁置 |
+
+- **⚠️ 这句只授权 `user`，不授权 `agentMessageLoop`** —— 原文是「都可以**用户**点击失败」。
+- **⚠️ 只针对 `kind === 'work'`** —— 原文是「**工作的**进行和搁置的 4 个状态」。
+- **⇒ 其它分类（goal / design / record）的失败权限不受此句影响**，仍按各自矩阵条款。
+- **⚠️ ③ 的实现现状**：`canTransition` **没有为这条写专门分支** —— 因为它的默认路径是「其余转移 ⇒ 放行」，`work` 的这 4 个状态 → `FAILED` **本来就会被放行**。**⇒ 这条是"确认已有行为正确"，不是"新增规则"。**
+  - **⚠️ 但 `user` 专属这一点没有在代码里强制**：现在 `agentMessageLoop` 走这条路也会被放行。**若要求严格只允许 `user`，需要在 `canTransition` 加一条分支。**（**待确认项，见 5.4**）
 - 依据用户 01:29（领取是提交→处理中）+ 06:55（释放回提交）。**【事实·用户原话】**
 - **采纳不产生任何关系**；「取代」只在 fork 时建立，与采纳无关。**【实现判断·已与⑦对齐】**
 
@@ -488,6 +541,8 @@ ctx.provide('taskboard2Types', {
 | **4.19** | **「预设模板」整个概念（含 `presetOf` 字段、预设注册路径、预设继承 kind/domain/codePrefix）** | 见下方「4.18 与 4.19 的单独说明」。 |
 | **4.20** | **`SectionAccepts` 类型名** | 带 `accepts` 语义；删字段后名不副实 ⇒ 改名 **`SectionInfo`**。 |
 | **4.21** | **「模板层 `computeRules`」这条设计意图（三层结构：模板层 → 分类层 → 兜底）** | **代码从未实现**：`deriveStatus(kind, input)` 只收分类 id，**没有模板参数** ⇒ 模板层规则在签名上进不来。**本文件中凡是写"模板层可注册 computeRules"的地方，都是设计意图而非现状。** 若要真做，需先裁「模板层规则从哪来」（`TemplateDef` 加字段？还是 `resolve` 时合并？）——**这是待裁项，不是已完成项。** |
+| **4.22** | **`Actor` 的 `'loop'` 取值** | 用户 `13:30`「loop 名字太离谱了。我说的是"消息循环"。**消息必须体现出来。**」「**agentMessageLoop**」⇒ 改为 **`'agentMessageLoop'`**。**⑦ 的 `Principal` 同步改名**（`packages/taskcard/src/types.ts:106` **已改**，我核过）。 |
+| **4.23** | **`liveChildren` 只滤墓碑的旧语义** | 见下方「4.23 的单独说明」。 |
 
 ### 4.7 「`'unresolved'`」的单独说明
 
@@ -514,6 +569,37 @@ ctx.provide('taskboard2Types', {
 - **理由**：**用户 11:26 后模板语法里没有预设概念** ⇒ 注册表只剩一种模板。
 - **连带**：⑧ 的 `derive[].template` 现在**只能指向普通模板**；"指向预设"这种情形不存在了。
 
+### 4.23 `liveChildren` 旧语义作废的单独说明
+
+**作废的旧实现：**
+```ts
+// 旧（本批之前）
+function liveChildren(children) {
+  return children.filter((child) => !child.deleted);   // 只滤墓碑
+}
+```
+
+**新实现：**
+```ts
+function liveChildren(children) {
+  return children.filter((child) => !child.deleted && !isDraftStatus(child.status));
+}
+```
+
+**理由（用户原话，两句都要）：**
+> **不算。新卡默认草稿。而草稿不是有效卡，创建一个草稿是不广播的。**（`12:46`）
+> **这里的计算都要是有效卡，就是进行，或者搁置。草稿是不算的。**（`13:15`）
+> **所有的转化规则里面都特意没纳入草稿。**（`13:15`）
+
+**⇒ 为什么这是一个真 bug，不只是措辞问题：**
+- **改前**：一张 `design` 卡下面建一张**草稿状态的调研（work）子卡** ⇒ `design.2.2` 命中（`work` 且非终态）⇒ **设计卡立刻跳到「需要信息」**，而**用户连调研都还没采纳**。
+- **改后**：只有草稿子卡 ⇒ `liveChildren` 为空 ⇒ 不命中任何规则 ⇒ 落 `baseStatus`，与矩阵一致。
+
+**⚠️ 受影响的规则精确是 2 条**（不是全部 8 条）：
+- **只有 `goal` / `work` 的 `initialStatus` 是 `UNSPECIFIED`**，`design` / `record` 生来 `AUTH_REQUIRED` ⇒ **草稿子卡只可能出现在 goal/work 类子卡上**；
+- **⇒ 改动实际影响 `design.2.2` 与 `work.3.3`**（判据含「非终态」的两条）；其余 6 条判据都是「等于某具体状态」，草稿 `UNSPECIFIED` 不匹配任何一个。
+
+**⚠️ 跨包影响（已在代码注释里双向留痕）：** ⑧ 的「删除不广播」依赖本函数**同时**滤墓碑与草稿（见 5.4 与 `kind.ts` 的 `liveChildren` JSDoc）。
 ---
 
 ## 五、待用户裁决
@@ -549,6 +635,55 @@ ctx.provide('taskboard2Types', {
 - **多分类模板：当前不支持。** 注册表是 `Map<name, def>`，一个 `name` 只能有一个 `kind` ⇒ 「空模板可用于四分类 / 外部一模板多分类」**表达不出来**。
   - **若将来要支持**，必须**连带确认「创建期 `card.template.kind` 的快照从哪来」**，否则 core 还要再裁一次。
 
+### 5.4 `work` 的「失败」权限是否要强制 `user` 专属 —— **需 lead 确认**
+
+**用户 `13:30` 原话：**
+> **我加上去了。工作的进行和搁置的 4 个状态都可以用户点击失败。**
+
+- **⇒ 明确的部分**：`kind === 'work'` 在 `SUBMITTED` / `WORKING` / `INPUT_REQUIRED` / `AUTH_REQUIRED` 四态下，`user` 可以置 `FAILED`。
+- **⚠️ 未明确的部分**：「**用户**点击失败」这句，**是"只允许用户"还是"至少用户能"？**
+
+**③ 的现状（代码事实）：**
+- `canTransition` 的默认路径是「其余转移 ⇒ 放行」 ⇒ **这 4 条转移对 `user` / `agentMessageLoop` / `host` 都会被放行**；
+- **⇒ `user` 专属这一层没有在 ③ 里强制。**
+
+**两个选项：**
+| 选项 | 含义 | 代价 |
+|---|---|---|
+| **(甲) 不强制，保持放行** | 「用户能点失败」是**至少**用户能；AI 也能（矩阵五/提交里本来就有「ai 调用失败，且具有一个失败的交付或阻碍」） | **零改动** |
+| **(乙) 强制 `user` 专属** | 加一条 `kind === 'work' && to === FAILED && actor !== 'user' ⇒ deny` | 与矩阵五/提交的「**ai 调用失败**」条款**冲突** |
+
+**⚠️ 我倾向 (甲)**，因为**矩阵五/提交明确列了「ai 调用失败，且具有一个失败的交付或阻碍，变成失败」** —— 若强制 user 专属，会把这条已有条款打死。
+**⇒ 但这是裁决题，不是我能定的。等你裁。**
+
+**⚠️ 另一条相关事实（代码与矩阵的差异，不影响本批但要知道）：**
+- 矩阵 五/提交 的 AI 失败条件是「**且具有一个失败的交付或阻碍**」；
+- ③ 的 `canTransition` **不做这个前置条件检查**（它只看从/到/actor，$type 级别的 payload 事实它不知道）⇒ **这个前置条件应由 ⑦/⑧ 在动作准入时判，不在 ③。**
+
+### 5.5 「确认方向」类动作的 `user` 专属是否要在 ③ 强制 —— **需 lead 确认**
+
+**用户 `13:30` 权限总原则：**
+> **设计当然只有用户能确认。记录也只有用户能确认。这两个都是直接决定方向的。ai 不能决定方向。**
+
+**⇒ 明确要求**：`design` / `record` 的**确认**（`AUTH_REQUIRED → COMPLETED`）**只有用户能做**。
+
+**③ 的现状（代码事实）：**
+- `canTransition` **没有为"确认"写任何 actor 分支**；
+- **⇒ 它走默认路径「其余转移 ⇒ 放行」** ⇒ **`agentMessageLoop` 也能确认设计/记录**；
+- **⇒ 这与用户 13:30 的权限总原则冲突。**
+
+**⚠️ 但这条不是"③ 应该补"，需先确认「谁该强制它」：**
+| 选项 | 含义 |
+|---|---|
+| **(甲) ③ 补分支** | `kind ∈ {design, record} && from === AUTH_REQUIRED && to === COMPLETED && actor !== 'user' ⇒ deny` |
+| **(乙) ⑦/⑧ 层拦** | ③ 只判状态机合法性，动作权限由上层动作表（哪个按钮谁能点）决定 |
+
+**⚠️ 我倾向 (甲)，理由：**
+- **`canTransition` 的签名里已经有 `actor`** —— 若"确认只能用户"不在这里判，**`actor` 这个参数就没有存在意义了**（至少对确认这类动作用不上）；
+- **且 ③ 已经在用 `actor` 判采纳** ⇒ **同一类判断分散两层，会形成两个真值来源**。
+
+**⇒ 但这是裁决题。等你裁。**
+
 ---
 
 ## 六、需要与其它成员对齐的
@@ -556,7 +691,10 @@ ctx.provide('taskboard2Types', {
 ### 6.1 与 ⑧ core
 - 调 **`registerTemplate`（单参数）/ `markTemplateRegistryReady` / `resolve` / `sectionsOf` / `templateMeta` / `nextId` / `parse` / `normalize` / `toDisplay` / `initialStatus` / `kindLetter` / `canTransition` / `deriveStatus`**。
 - **`canTransition` 要传 `ctx`**：`ctx.depsAllEnded`（依赖是否全部在完成组）+ `ctx.actorHasActiveWork`（该 actor 是否已有处理中的工作卡）。**两者都由 ⑧ 计算后传入，③ 不自己查。`undefined` 必须报错，不得给默认值。**
+- **⚠️ `actor` 的取值（用户 13:30 改名）**：③ 的 `Actor` 是 **`'user' | 'agentMessageLoop' | 'host'`**。**⑧ 若要传 `'ai'` 或 `'loop'` ⇒ 类型不通过、且运行期会走错分支。**
 - **启动编排**：读 YAML → 解析 → 调 **`registerTemplate(obj)`（单参数）** → 全部注册完后调 **`markTemplateRegistryReady()`**。**③ 不自动注册**，所以 `apply` 跑完模板并不在 ⇒ ⑧ 必须显式触发。
+  - **⚠️ 用户 `13:30` 的另一句**：「**直接在 ts 里面写字面量**。因为核心的含义就是随包分发不可关闭的。就是预设这个东西一直在工作。改模板名字就把这里一起改了就是。」
+  - **⇒ 这句是对 ⑧ 说的，不归 ③**：③ 只提供 `registerTemplate` 函数，**模板名写在哪（YAML 还是 ts 字面量）由 ⑧ 的注册编排决定**。
 - **`resolve(ref).displayName` 与 `.kind`**：建卡时 `.kind` 填入 `card.template.kind`；派生按钮拼标题用 `.displayName`（**必填，不用兜底**）。
 - **`sectionsOf` 的返回形状（唯一正确版本）**：
   ```ts
@@ -582,6 +720,9 @@ ctx.provide('taskboard2Types', {
 
 ### 6.3 与 ⑦ taskcard
 - ③ 供给 ⑦：**`DRAFT` / `type Kind` / `initialStatus(kind)` / `canTransition(kind, from, to, actor, ctx)` / `resolve(ref)`**。
+- **⚠️ `actor` 的取值类型变了（用户 13:30）**：③ 的 `Actor` 是 **`'user' | 'agentMessageLoop' | 'host'`**；⑦ 的 `Principal` 是 **`{ type: 'user' } | { type: 'agentMessageLoop'; id: string }`**（`packages/taskcard/src/types.ts:106`，**已改，我核过**）。
+  - **⇒ ⑦ 调 `canTransition` 时要传 `principal.type`**（`'user'` / `'agentMessageLoop'`），**不能传整个 `Principal` 对象**。
+  - **⇒ ⑦ 侧没有 `'host'`** —— `host` 只存在于 ③ 的类型里，⑦ 不会传。
 - ⑦ **不需要** `sectionsOf` / `templateMeta`（⑦ 对 `sections` 内容零参与；`sectionId` 只做键集比较）。
 - **依赖完成度判定不归 ⑦**：⑦ 的 `planClaim` 只做单卡准入 + `actorHasActiveWork` 非空校验；**「提交→处理中」的合法性（含 `depsAllEnded`）归 ③ 的 `canTransition`**，`depsAllEnded` 由 ⑧ 算好传入。
 - **卡形状 `template: { ref, kind }`**；`ref` 的值 = 模板 `name`；`kind` 存英文 id。
